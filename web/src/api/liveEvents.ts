@@ -77,7 +77,7 @@ export function useAuctionEvents(): void {
         }
         syncServerTime(server_time)
         // A newer epoch resets the cache (see onReseed below), which also refetches.
-        const reseeded = noteDataEpoch(epoch) === 'reseeded'
+        const reseeded = noteDataEpoch(epoch)
         // Initial reads waited for this hello (streamGate), so they can't have missed a bid.
         const readBeforeSubscribing = streamLive()
         if (!reseeded && readBeforeSubscribing) {
@@ -100,7 +100,7 @@ export function useAuctionEvents(): void {
       }
     }
 
-    // Reseeded (learned from a hello or any response): bid counts restarted, so cached snapshots
+    // Reseeded (a hello with a new epoch): bid counts restarted, so cached snapshots
     // and what live events showed would wrongly look newer than fresh data. Drop both.
     const stopWatchingReseeds = onReseed(() => {
       forgetSeen()

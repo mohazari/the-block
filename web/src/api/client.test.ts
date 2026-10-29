@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { serverNow } from '../lib/serverClock'
 import { ApiError, api, toSearchParams } from './client'
-import { noteDataEpoch } from './dataEpoch'
 
 function respond(status: number, body: unknown, headers: Record<string, string> = {}) {
   return vi
@@ -73,16 +72,5 @@ describe('api', () => {
     vi.stubGlobal('fetch', respond(200, { server_time: serverTime, items: [] }))
     await api('/vehicles')
     expect(Math.abs(serverNow() - Date.parse(serverTime))).toBeLessThan(1_000)
-  })
-
-  it('refuses a response answered from data that was reset after the request was sent', async () => {
-    noteDataEpoch('old')
-    let answer!: (response: Response) => void
-    vi.stubGlobal('fetch', () => new Promise<Response>((resolve) => (answer = resolve)))
-    const request = api('/vehicles')
-    await Promise.resolve()
-    noteDataEpoch('new') // a hello reports the reseed while the request is in flight
-    answer(new Response('{"items": []}', { headers: { 'X-Data-Epoch': 'old' } }))
-    await expect(request).rejects.toMatchObject({ code: 'data_reset', status: 0 })
   })
 })

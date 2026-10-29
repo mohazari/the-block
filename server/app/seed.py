@@ -6,8 +6,11 @@ Run `python -m app.seed --reset` (or `npm run reset-db`) to start over with a fr
 import argparse
 import json
 import logging
+import os
 import random
 import re
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -197,11 +200,40 @@ def reset(engine: Engine, data_path: Path, now: datetime) -> None:
     logger.info("Seeded %d vehicles from %s", count, data_path)
 
 
+def reset_running_server(url: str) -> bool:
+    """Ask a running dev server to reseed itself. Returns False if no server is listening."""
+    request = urllib.request.Request(url, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=30):
+            return True
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            raise SystemExit(
+                "A server is running without dev reset enabled. Stop it first, or start it "
+                "with `npm run dev`."
+            ) from None
+        raise
+    except (urllib.error.URLError, ConnectionError):
+        return False
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reset", action="store_true", help="drop all data and reseed")
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="with --reset: if the dev server is running, have it reseed itself so open tabs "
+        "resync (otherwise reset the database file directly)",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    if args.reset and args.live:
+        port = os.environ.get("API_PORT", "8000")
+        if reset_running_server(f"http://127.0.0.1:{port}/api/dev/reset"):
+            logger.info("The running server reseeded its data; open tabs resync automatically.")
+            return
 
     settings = Settings.from_env()
     engine = create_db_engine(settings.database_url)

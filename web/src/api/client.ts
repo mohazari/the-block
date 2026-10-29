@@ -1,6 +1,5 @@
 import { bidderId } from '../lib/bidder'
 import { syncServerTime } from '../lib/serverClock'
-import { noteDataEpoch } from './dataEpoch'
 import { waitForStream } from './streamGate'
 import type { AuctionSnapshot } from './types'
 
@@ -73,10 +72,6 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   }
 
   const receivedAt = Date.now()
-  if (noteDataEpoch(response.headers.get('X-Data-Epoch'), sentAt) === 'stale') {
-    // Answered from data that has since been reset: never apply it. Queries retry (status 0).
-    throw new ApiError(0, 'data_reset', 'The auction data was just reset. Please try again.')
-  }
   if (response.status === 204) return undefined as T
   const payload: unknown = await response.json().catch(() => undefined)
 

@@ -10,11 +10,10 @@ from sqlalchemy.orm import sessionmaker
 from app.clock import Clock, SystemClock
 from app.config import Settings
 from app.db import create_db_engine, write_engine
-from app.epoch import DataEpochHeader, EpochWatcher
 from app.errors import install_error_handlers
 from app.events import EventBroker
-from app.routers import bids, events, me, vehicles
-from app.seed import ensure_seeded
+from app.routers import bids, dev, events, me, vehicles
+from app.seed import data_epoch, ensure_seeded
 from app.simulator import RivalSimulator
 
 logger = logging.getLogger(__name__)
@@ -35,12 +34,10 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
         app.state.write_sessions = sessionmaker(write_engine(engine), expire_on_commit=False)
         app.state.broker = broker = EventBroker()
         broker.bind(asyncio.get_running_loop())
-        app.state.epoch = epoch = EpochWatcher(
-            engine,
-            on_change=lambda _epoch: broker.close_all(),
-            listeners=lambda: broker.subscriber_count,
-        )
-        background = [asyncio.create_task(epoch.run())]
+        # Identifies this copy of the data; sent with every hello (see routers/dev.py).
+        app.state.data_epoch = data_epoch(engine)
+        app.state.data_path = settings.data_path
+        background: list[asyncio.Task[None]] = []
 
         if settings.simulator_enabled:
             simulator = RivalSimulator(
@@ -57,12 +54,13 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
 
     app = FastAPI(title="The Block API", version="0.1.0", lifespan=lifespan)
     install_error_handlers(app)
-    app.add_middleware(DataEpochHeader)
 
     app.include_router(vehicles.router)
     app.include_router(bids.router)
     app.include_router(me.router)
     app.include_router(events.router)
+    if settings.dev_reset_enabled:
+        app.include_router(dev.router)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

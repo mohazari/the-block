@@ -245,24 +245,6 @@ describe('live auction events', () => {
     expect(myBidsReads).toBe(1)
   })
 
-  it('drops the cache when any response shows the data was reseeded', async () => {
-    let epoch = '2026-10-29T08:00:00Z'
-    let detail = vehicleDetail({ auction: auction({ bid_count: 16 }) })
-    vi.stubGlobal('fetch', async (input: string) => {
-      const url = new URL(input, 'http://test')
-      const body = url.pathname === '/api/vehicles/veh-1' ? detail : []
-      return new Response(JSON.stringify(body), { headers: { 'X-Data-Epoch': epoch } })
-    })
-    const { queryClient } = renderRoute('/vehicles/veh-1')
-    const bidding = await panel()
-
-    // npm run reset-db, and this tab's stream hasn't reconnected yet.
-    epoch = '2026-10-29T09:00:00Z'
-    detail = vehicleDetail({ auction: auction({ bid_count: 3, current_bid: 9000 }) })
-    act(() => void queryClient.invalidateQueries())
-    expect(await bidding.findByText('3 bids')).toBeInTheDocument()
-  })
-
   it('refreshes My bids for a first bid after a reseed even if the bid id repeats', async () => {
     serveDetail()
     const { queryClient } = renderRoute('/vehicles/veh-1')

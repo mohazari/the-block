@@ -15,15 +15,11 @@ from app.clock import FrozenClock
 from app.db import write_engine
 from app.domain.auction import min_next_bid
 from app.domain.bidders import RIVAL_BIDDER_IDS
-from app.epoch import EpochWatcher
 from app.events import BidEvent, EventBroker
 from app.models import Vehicle
 from app.routers.events import events as events_endpoint
-from app.seed import data_epoch, reset
 from app.services.bidding import BidResult, place_bid
 from app.simulator import HUMAN_LEAD_GRACE, RivalSimulator
-
-from .conftest import DATA_PATH
 
 ME = "browser-me-0001"
 OTHER = "browser-other-02"
@@ -147,7 +143,7 @@ def test_stream_says_hello_then_relays_personalized_bids(
                 state=SimpleNamespace(
                     broker=broker,
                     clock=clock,
-                    epoch=EpochWatcher(seeded_engine, on_change=lambda _epoch: None),
+                    data_epoch="epoch-1",
                 )
             )
         )
@@ -161,7 +157,7 @@ def test_stream_says_hello_then_relays_personalized_bids(
 
     hello, bid = asyncio.run(scenario())
     assert hello.event == "hello" and hello.retry == 2000
-    assert hello.data["epoch"] == data_epoch(seeded_engine)
+    assert hello.data["epoch"] == "epoch-1"
     assert bid.event == "bid" and bid.id is None  # events aren't replayable; no ids
     assert bid.data.outbid_you and bid.data.vehicle_id == vehicle_id
 
@@ -302,18 +298,7 @@ def test_publish_failures_never_fail_the_bid(
     assert response.status_code == 201
 
 
-def test_a_reseed_under_a_running_server_ends_every_stream(
-    seeded_engine: Engine, clock: FrozenClock
-) -> None:
-    """npm run reset-db from another process: idle tabs must still find out."""
-    watcher = EpochWatcher(seeded_engine, on_change=lambda _epoch: None)
-    before = watcher.current
-    assert watcher.check() is None
-
-    reset(seeded_engine, DATA_PATH, clock.now() + timedelta(days=1))
-    assert watcher.check() == data_epoch(seeded_engine)
-    assert watcher.current == before  # the thread only reads; run() updates it on the loop
-
+def test_ending_every_stream_lets_clients_reconnect_and_resync() -> None:
     async def scenario() -> Any:
         broker = EventBroker()
         broker.bind(asyncio.get_running_loop())
@@ -322,107 +307,3 @@ def test_a_reseed_under_a_running_server_ends_every_stream(
             return await asyncio.wait_for(subscriber.queue.get(), timeout=1)
 
     assert asyncio.run(scenario()) is None  # the stream ends; the browser reconnects
-
-
-def test_api_responses_carry_the_epoch_from_memory(client: TestClient) -> None:
-    watcher = client.app.state.epoch  # type: ignore[attr-defined]
-    assert client.get("/api/health").headers["X-Data-Epoch"] == watcher.current
-    watcher.current = "2099-01-01T00:00:00+00:00"  # as if the watcher just noticed a reseed
-    response = client.get("/api/vehicles", params={"page_size": 1})
-    assert response.headers["X-Data-Epoch"] == "2099-01-01T00:00:00+00:00"
-
-
-def test_watcher_updates_the_epoch_and_ends_streams_together(
-    seeded_engine: Engine, clock: FrozenClock, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr("app.epoch.CHECK_EVERY_SECONDS", 0.01)
-    seen_at_close: list[str] = []
-    watcher = EpochWatcher(
-        seeded_engine,
-        on_change=lambda _epoch: seen_at_close.append(watcher.current),
-        listeners=lambda: 1,  # a browser is connected, so the watcher checks
-    )
-    reset(seeded_engine, DATA_PATH, clock.now() + timedelta(days=1))
-
-    async def scenario() -> None:
-        task = asyncio.create_task(watcher.run())
-        while not seen_at_close:
-            await asyncio.sleep(0.01)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-
-    asyncio.run(scenario())
-    assert seen_at_close == [data_epoch(seeded_engine)]
-
-
-def test_watcher_idles_when_nobody_is_connected(
-    seeded_engine: Engine, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr("app.epoch.CHECK_EVERY_SECONDS", 0.01)
-    checks = 0
-    watcher = EpochWatcher(seeded_engine, on_change=lambda _epoch: None)
-    original = watcher.check
-
-    def counting_check() -> str | None:
-        nonlocal checks
-        checks += 1
-        return original()
-
-    monkeypatch.setattr(watcher, "check", counting_check)
-
-    async def run_for(seconds: float) -> None:
-        task = asyncio.create_task(watcher.run())
-        await asyncio.sleep(seconds)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-
-    asyncio.run(run_for(0.1))
-    assert checks == 0  # no streams open: no database reads
-
-
-def test_first_request_after_idling_rechecks_before_answering(
-    client: TestClient, clock: FrozenClock
-) -> None:
-    """A response must never carry an epoch older than the data it was built from."""
-    watcher = client.app.state.epoch  # type: ignore[attr-defined]
-    engine = client.app.state.engine  # type: ignore[attr-defined]
-    reset(engine, DATA_PATH, clock.now() + timedelta(days=1))  # npm run reset-db, while idle
-    watcher._checked_at = 0  # idle for a long while
-    response = client.get("/api/vehicles", params={"page_size": 1})
-    assert response.headers["X-Data-Epoch"] == data_epoch(engine)
-
-
-def test_a_failing_stream_close_does_not_stop_the_watcher(
-    seeded_engine: Engine, clock: FrozenClock
-) -> None:
-    calls: list[str] = []
-
-    def failing(epoch: str) -> None:
-        calls.append(epoch)
-        raise RuntimeError("boom")
-
-    watcher = EpochWatcher(seeded_engine, on_change=failing)
-
-    async def scenario() -> None:
-        reset(seeded_engine, DATA_PATH, clock.now() + timedelta(days=1))
-        await watcher.refresh()  # logged, not raised
-        reset(seeded_engine, DATA_PATH, clock.now() + timedelta(days=2))
-        await watcher.refresh()
-
-    asyncio.run(scenario())
-    assert len(calls) == 2
-
-
-def test_unexpected_errors_carry_the_epoch_too(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def crash(*_args: object, **_kwargs: object) -> None:
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr("app.routers.vehicles.search_inventory", crash)
-    # Same running app, but see the 500 response as a browser would instead of re-raising.
-    response = TestClient(client.app, raise_server_exceptions=False).get("/api/vehicles")
-    assert response.status_code == 500
-    assert response.headers["X-Data-Epoch"] == client.app.state.epoch.current  # type: ignore[attr-defined]

@@ -5,23 +5,15 @@ describe('data epoch', () => {
   it('treats any change as a reseed, including an older database', () => {
     const reseeded = vi.fn()
     const stop = onReseed(reseeded)
-    expect(noteDataEpoch('b')).toBe('current') // first one: just recorded
-    expect(noteDataEpoch('b')).toBe('current')
-    expect(noteDataEpoch('a')).toBe('reseeded') // e.g. a restored backup: not "newer", still new
+    expect(noteDataEpoch('b')).toBe(false) // the first hello: just recorded
+    expect(noteDataEpoch('b')).toBe(false)
+    expect(noteDataEpoch('a')).toBe(true) // e.g. a restored backup: not "newer", still different
     expect(reseeded).toHaveBeenCalledTimes(1)
     stop()
   })
 
-  it('discards a response sent before the last reset instead of flipping back', () => {
-    noteDataEpoch('old')
-    const sentBeforeReset = Date.now() - 1000
-    expect(noteDataEpoch('new')).toBe('reseeded')
-    expect(noteDataEpoch('old', sentBeforeReset)).toBe('stale')
-    expect(noteDataEpoch('new', Date.now())).toBe('current')
-  })
-
-  it('ignores a missing or empty epoch', () => {
-    expect(noteDataEpoch('')).toBe('current')
-    expect(noteDataEpoch(null)).toBe('current')
+  it('ignores an empty epoch', () => {
+    expect(noteDataEpoch('')).toBe(false)
+    expect(noteDataEpoch('a')).toBe(false) // still the first real one
   })
 })

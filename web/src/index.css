@@ -1,1 +1,144 @@
 @import 'tailwindcss';
+
+@import '@fontsource/barlow/latin-400.css';
+@import '@fontsource/barlow/latin-500.css';
+@import '@fontsource/barlow/latin-600.css';
+@import '@fontsource/barlow/latin-700.css';
+@import '@fontsource/barlow-condensed/latin-500.css';
+@import '@fontsource/barlow-condensed/latin-600.css';
+@import '@fontsource/barlow-condensed/latin-700.css';
+
+/*
+ * Design tokens. Components use the semantic names (ink, surface, action, win, outbid…), never
+ * raw hex, so dark mode is one block of overrides.
+ *
+ * Signal colors carry strict meaning and are never decorative:
+ *   win (green)    you're the high bidder · green light
+ *   caution (amber) time pressure · yellow light
+ *   outbid (red)   you've been outbid · red light (as-is)
+ *   action (blue)  OPENLANE blue — things you can do
+ */
+:root {
+  color-scheme: light;
+  --lane: #f3f5f8; /* page */
+  --surface: #ffffff;
+  --surface-sunk: #e9edf2;
+  --ink: #1c2430; /* asphalt */
+  --ink-muted: #556171;
+  --ink-faint: #8792a0;
+  --line: #dbe1e8;
+  --line-strong: #c3ccd6;
+
+  --action: #1f5bff;
+  --action-hover: #1749d6;
+  --action-ink: #ffffff;
+  --action-soft: #e8efff;
+
+  --win: #127a4b;
+  --win-soft: #e3f4ec;
+  --caution: #8a5a00;
+  --caution-bright: #e0a100;
+  --caution-soft: #fcf2dc;
+  --outbid: #c62f25;
+  --outbid-soft: #fde9e7;
+
+  --stage: #e9edf2; /* illustration backdrop */
+  --stage-floor: #dde3ea;
+  --car-outline: rgb(28 36 48 / 0.45);
+  --focus: #1f5bff;
+}
+
+/* index.html resolves the theme (saved choice, else the system's) into data-theme before paint. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --lane: #10151c;
+  --surface: #171e27;
+  --surface-sunk: #0c1117;
+  --ink: #e8edf3;
+  --ink-muted: #a3afbd;
+  --ink-faint: #6f7c8b;
+  --line: #26303c;
+  --line-strong: #364252;
+
+  --action: #5c8bff;
+  --action-hover: #7aa1ff;
+  --action-ink: #0b1220;
+  --action-soft: #1a2747;
+
+  --win: #3ccf8e;
+  --win-soft: #12301f;
+  --caution: #f2bb3d;
+  --caution-bright: #f2bb3d;
+  --caution-soft: #332611;
+  --outbid: #ff7a6e;
+  --outbid-soft: #3a1714;
+
+  --stage: #1d2530;
+  --stage-floor: #19212b;
+  --car-outline: rgb(232 237 243 / 0.35);
+  --focus: #7aa1ff;
+}
+
+@theme inline {
+  --font-sans: 'Barlow', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Barlow Condensed', 'Barlow', ui-sans-serif, sans-serif;
+
+  --color-lane: var(--lane);
+  --color-surface: var(--surface);
+  --color-surface-sunk: var(--surface-sunk);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-action: var(--action);
+  --color-action-hover: var(--action-hover);
+  --color-action-ink: var(--action-ink);
+  --color-action-soft: var(--action-soft);
+  --color-win: var(--win);
+  --color-win-soft: var(--win-soft);
+  --color-caution: var(--caution);
+  --color-caution-bright: var(--caution-bright);
+  --color-caution-soft: var(--caution-soft);
+  --color-outbid: var(--outbid);
+  --color-outbid-soft: var(--outbid-soft);
+  --color-stage: var(--stage);
+  --color-stage-floor: var(--stage-floor);
+
+  /* Radius follows hierarchy: controls are tight, panels softer. */
+  --radius-control: 6px;
+  --radius-panel: 10px;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--lane);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Prices, countdowns and lot numbers must not jitter as digits change. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  button,
+  [role='button'],
+  summary,
+  label[for],
+  select {
+    cursor: pointer;
+  }
+}

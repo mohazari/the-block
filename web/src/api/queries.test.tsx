@@ -57,4 +57,33 @@ describe('useWatch', () => {
     expect(queryClient.getQueryData<VehicleDetail>(key)?.auction.current_bid).toBe(23300)
     vi.unstubAllGlobals()
   })
+
+  it('sends quick toggles one after another, in click order', async () => {
+    const queryClient = createQueryClient()
+    const started: string[] = []
+    const finish: (() => void)[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init: RequestInit) => {
+        started.push(init.method!)
+        return new Promise<Response>((resolve) =>
+          finish.push(() => resolve(new Response(null, { status: 204 }))),
+        )
+      }),
+    )
+    const { result } = renderHook(() => useWatch(), {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      ),
+    })
+
+    act(() => {
+      result.current.mutate({ vehicleId: 'veh-1', watching: true })
+      result.current.mutate({ vehicleId: 'veh-1', watching: false })
+    })
+    await waitFor(() => expect(started).toEqual(['PUT']))
+    act(() => finish[0]!())
+    await waitFor(() => expect(started).toEqual(['PUT', 'DELETE']))
+    vi.unstubAllGlobals()
+  })
 })

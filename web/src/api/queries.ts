@@ -104,6 +104,9 @@ const showsWatching = {
 export function useWatch() {
   const queryClient = useQueryClient()
   return useMutation({
+    // Run toggles one after another, in click order: a quick watch-unwatch must not reach the
+    // server as a PUT and DELETE racing each other.
+    scope: { id: 'watchlist' },
     mutationFn: ({ vehicleId, watching }: { vehicleId: string; watching: boolean }) =>
       api<void>(`/me/watchlist/${vehicleId}`, { method: watching ? 'PUT' : 'DELETE' }),
     onMutate: async ({ vehicleId, watching }) => {

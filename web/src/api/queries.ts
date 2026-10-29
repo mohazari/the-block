@@ -77,29 +77,38 @@ export function useMyBids() {
   })
 }
 
-/** Apply `update` to this vehicle wherever it is cached: inventory pages, its detail, My bids. */
+/**
+ * Apply `update` to this vehicle wherever it is cached: inventory pages, its detail, My bids and
+ * the watchlist. When `update` returns the vehicle unchanged, nothing is written — an updater
+ * returning `undefined` is what tells TanStack Query to skip the write and the re-render.
+ */
 export function updateCachedVehicle(
   queryClient: QueryClient,
   vehicleId: string,
   update: <T extends VehicleSummary>(vehicle: T) => T,
 ): void {
-  queryClient.setQueriesData<VehicleList>(
-    { queryKey: queryKeys.inventoryAll },
-    (list) =>
-      list && {
-        ...list,
-        items: list.items.map((item) => (item.id === vehicleId ? update(item) : item)),
-      },
-  )
-  queryClient.setQueryData<VehicleDetail>(
-    queryKeys.vehicle(vehicleId),
-    (detail) => detail && update(detail),
-  )
-  queryClient.setQueryData<MyBid[]>(queryKeys.myBids, (bids) =>
-    bids?.map((bid) => (bid.id === vehicleId ? update(bid) : bid)),
-  )
-  queryClient.setQueryData<VehicleSummary[]>(queryKeys.watchlist, (watched) =>
-    watched?.map((vehicle) => (vehicle.id === vehicleId ? update(vehicle) : vehicle)),
+  const patch = <T extends VehicleSummary>(items: T[]): T[] | undefined => {
+    let changed = false
+    const next = items.map((item) => {
+      if (item.id !== vehicleId) return item
+      const updated = update(item)
+      changed ||= updated !== item
+      return updated
+    })
+    return changed ? next : undefined
+  }
+  queryClient.setQueriesData<VehicleList>({ queryKey: queryKeys.inventoryAll }, (list) => {
+    const items = list && patch(list.items)
+    return items && { ...list, items }
+  })
+  queryClient.setQueryData<VehicleDetail>(queryKeys.vehicle(vehicleId), (detail) => {
+    const updated = detail && update(detail)
+    return updated === detail ? undefined : updated
+  })
+  queryClient.setQueryData<MyBid[]>(queryKeys.myBids, (bids) => bids && patch(bids))
+  queryClient.setQueryData<VehicleSummary[]>(
+    queryKeys.watchlist,
+    (watched) => watched && patch(watched),
   )
 }
 

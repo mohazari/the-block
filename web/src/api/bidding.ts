@@ -20,10 +20,11 @@ export function applyAuction(
   if (bid?.is_you) recordOwnBid(queryClient, vehicleId, bid)
   if (bid) {
     queryClient.setQueryData<VehicleDetail>(queryKeys.vehicle(vehicleId), (detail) => {
-      if (!detail) return detail
+      if (!detail) return undefined
       const recentBids = mergeBid(detail.recent_bids, bid, detail.recent_bids_limit)
       // A bid we already have (your own bid's live echo) leaves the cache, and the page, alone.
-      return recentBids === detail.recent_bids ? detail : { ...detail, recent_bids: recentBids }
+      // (Returning undefined skips the write; returning `detail` would still write and notify.)
+      return recentBids === detail.recent_bids ? undefined : { ...detail, recent_bids: recentBids }
     })
   }
 }

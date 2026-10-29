@@ -145,14 +145,18 @@ describe('applyAuction', () => {
     unsubscribe()
   })
 
-  it('leaves the cached detail untouched when a bid is already in the history', () => {
+  it('leaves the cached detail untouched when a bid is already in the history', async () => {
     const queryClient = createQueryClient()
     const key = queryKeys.vehicle('veh-1')
     const detail = vehicleDetail({ auction: auction({ bid_count: 17 }) })
     queryClient.setQueryData(key, detail)
     const cached = queryClient.getQueryData<VehicleDetail>(key)
+    const updatedAt = queryClient.getQueryState(key)!.dataUpdatedAt
+    await new Promise((resolve) => setTimeout(resolve, 5))
     applyAuction(queryClient, 'veh-1', auction({ bid_count: 16 }), detail.recent_bids[0])
     expect(queryClient.getQueryData<VehicleDetail>(key)).toBe(cached)
+    // Not merely the same object: no write at all, so observers aren't notified.
+    expect(queryClient.getQueryState(key)!.dataUpdatedAt).toBe(updatedAt)
   })
 
   it('restarts a My bids refetch that began before your first bid was committed', async () => {

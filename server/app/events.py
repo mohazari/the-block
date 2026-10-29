@@ -118,11 +118,6 @@ class EventBroker:
         except Exception:
             logger.exception("Failed to publish bid event")
 
-    def close_all(self) -> None:
-        """End every stream (e.g. after a reseed): clients reconnect and receive a fresh hello."""
-        for subscriber in list(self._subscribers):
-            self._end(subscriber)
-
     def _end(self, subscriber: Subscriber) -> None:
         self._subscribers.discard(subscriber)
         if subscriber.queue.full():

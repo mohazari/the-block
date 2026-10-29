@@ -14,8 +14,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.epoch import HEADER as EPOCH_HEADER
-from app.epoch import epoch_for
+from app.epoch import epoch_headers, is_api
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +67,6 @@ def install_error_handlers(app: FastAPI) -> None:
         logger.exception("Unhandled error on %s %s", request.method, request.url.path)
         response = _response(500, "internal_error", "Something went wrong on our side.")
         # Starlette answers unhandled errors outside every middleware, DataEpochHeader included.
-        epoch = epoch_for(request.app, request.url.path)
-        if epoch is not None:
-            response.headers[EPOCH_HEADER] = epoch
+        if is_api(request.url.path):
+            response.headers.update(dict(epoch_headers(request.app)))
         return response

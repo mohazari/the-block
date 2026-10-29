@@ -1,5 +1,8 @@
+import asyncio
 import sys
+import threading
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -85,8 +88,10 @@ def test_a_server_that_fails_to_start_lets_go_of_the_database(
 
 def test_responses_carry_the_epoch_read_at_startup(tmp_path: Path, clock: FrozenClock) -> None:
     with TestClient(create_app(_settings(tmp_path), clock)) as client:
+        state: Any = client.app.state  # type: ignore[attr-defined]
         response = client.get("/api/vehicles", params={"page_size": 1})
-        assert response.headers["X-Data-Epoch"] == client.app.state.data_epoch  # type: ignore[attr-defined]
+        assert response.headers["X-Data-Epoch"] == state.data_epoch
+        assert response.headers["X-Server-Run"] == state.run_id
         assert "X-Data-Epoch" not in client.get("/docs").headers  # API responses only
 
 
@@ -103,3 +108,23 @@ def test_unexpected_errors_carry_the_epoch_too(
         response = client.get("/api/vehicles")
         assert response.status_code == 500
         assert response.headers["X-Data-Epoch"] == app.state.data_epoch
+        assert response.headers["X-Server-Run"] == app.state.run_id
+
+
+def test_a_server_shut_down_while_waiting_for_the_lock_never_keeps_it(
+    tmp_path: Path, clock: FrozenClock
+) -> None:
+    holder = DatabaseLock(lock_path(f"sqlite:///{tmp_path / 'dev.db'}"))
+    assert holder.try_acquire()
+    waiter = DatabaseLock(lock_path(f"sqlite:///{tmp_path / 'dev.db'}"))
+    give_up = threading.Event()
+
+    async def scenario() -> None:
+        waiting = asyncio.ensure_future(asyncio.to_thread(waiter.acquire, 30, give_up))
+        await asyncio.sleep(0.2)
+        give_up.set()  # what a cancelled startup does
+        await waiting
+
+    asyncio.run(scenario())
+    holder.release()
+    assert _lock_is_free(tmp_path)  # the waiter stopped instead of grabbing it later

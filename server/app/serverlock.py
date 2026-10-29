@@ -9,6 +9,7 @@ server reads the new epoch and every tab resyncs when its stream reconnects.
 
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import IO
@@ -18,6 +19,7 @@ from sqlalchemy import make_url
 # How long a starting server waits for the lock: `reset-db` holds it for a second or so, and a
 # --reload worker can briefly overlap the one it replaces.
 WAIT_FOR_LOCK_SECONDS = 15.0
+LOCK_SUFFIX = ".server"
 
 
 def lock_path(database_url: str) -> Path | None:
@@ -26,7 +28,7 @@ def lock_path(database_url: str) -> Path | None:
     if not database or database == ":memory:":
         return None
     file = Path(database).resolve()
-    return file.with_name(f"{file.name}.server")
+    return file.with_name(f"{file.name}{LOCK_SUFFIX}")
 
 
 def _try_lock(file: IO[bytes]) -> bool:
@@ -62,15 +64,21 @@ class DatabaseLock:
         self._file = file
         return True
 
-    def acquire(self, wait: float) -> None:
-        """Blocking (polls): call it off the event loop."""
+    @property
+    def database_name(self) -> str:
+        return self._path.name.removesuffix(LOCK_SUFFIX) if self._path else "the database"
+
+    def acquire(self, wait: float, give_up: threading.Event | None = None) -> None:
+        """Blocking (polls): call it off the event loop. `give_up` stops the wait early."""
         deadline = time.monotonic() + wait
         while not self.try_acquire():
+            if give_up is not None and give_up.is_set():
+                return
             if time.monotonic() > deadline:
                 raise RuntimeError(
-                    f"{self._path and self._path.stem} is in use by another server or a "
-                    "reset still running. Stop the other server (or wait for the reset), then "
-                    "start this one again."
+                    f"{self.database_name} is in use by another server or a reset still "
+                    "running. Stop the other server (or wait for the reset), then start this "
+                    "one again."
                 )
             time.sleep(0.1)
 

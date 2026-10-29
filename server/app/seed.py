@@ -206,18 +206,18 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     settings = Settings.from_env()
-    path = lock_path(settings.database_url)
-    lock = DatabaseLock(path)
+    lock = DatabaseLock(lock_path(settings.database_url))
     if not lock.try_acquire():
-        database = path.name.removesuffix(".server") if path else settings.database_url
+        # Held by a running server, or another seed/reset in progress. Resetting under a server
+        # would leave it serving the old data's epoch (see serverlock.py); a restart reads the
+        # new one, and open tabs resync.
         if not args.reset:
-            logger.info("A server is using %s; it seeds the data itself.", database)
+            logger.info("%s is in use (a running server seeds it itself).", lock.database_name)
             return
-        # Resetting under a running server would leave it serving the old data's epoch and
-        # streams (see serverlock.py). A restart reads the new epoch; open tabs then resync.
         raise SystemExit(
-            f"{database} is in use by a running server. Stop it (Ctrl-C in the `npm run dev` "
-            "terminal), run this again, then start it: open tabs resync by themselves."
+            f"{lock.database_name} is in use by a running server (or another reset). Stop the "
+            "server (Ctrl-C in the `npm run dev` terminal), run this again, then start it: "
+            "open tabs resync by themselves."
         )
     try:  # no server can start on this file until we're done
         engine = create_db_engine(settings.database_url)

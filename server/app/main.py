@@ -1,6 +1,8 @@
 import asyncio
 import contextlib
 import logging
+import secrets
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -32,7 +34,18 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
         # Before seeding, and for the server's whole life: reset-db must not reset the file under
         # it (see serverlock.py). Waiting for it is blocking, so it runs off the event loop.
         database_lock = DatabaseLock(lock_path(settings.database_url))
-        await asyncio.to_thread(database_lock.acquire, serverlock.WAIT_FOR_LOCK_SECONDS)
+        give_up = threading.Event()
+        waiting = asyncio.ensure_future(
+            asyncio.to_thread(database_lock.acquire, serverlock.WAIT_FOR_LOCK_SECONDS, give_up)
+        )
+        try:
+            await asyncio.shield(waiting)
+        except asyncio.CancelledError:
+            # Shut down while waiting: stop the thread, and let go if it got the lock meanwhile.
+            give_up.set()
+            await asyncio.gather(waiting, return_exceptions=True)
+            database_lock.release()
+            raise
         try:
             async with _running(app):
                 yield
@@ -52,6 +65,7 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
             broker.bind(asyncio.get_running_loop())
             # Identifies this copy of the data (see epoch.py). It can only change between runs.
             app.state.data_epoch = data_epoch(engine)
+            app.state.run_id = secrets.token_hex(8)
             background: list[asyncio.Task[None]] = []
 
             if settings.simulator_enabled:

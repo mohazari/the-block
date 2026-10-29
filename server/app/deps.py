@@ -40,14 +40,18 @@ def get_write_session(request: Request) -> Iterator[Session]:
         yield session
 
 
+def validate_bidder_id(value: str | None, field: str) -> str | None:
+    if value is None:
+        return None
+    if not _BIDDER_ID.match(value) or value in RIVAL_BIDDER_IDS:
+        raise ApiError(400, "invalid_bidder_id", f"{field}: 8-64 letters, digits or dashes.")
+    return value
+
+
 def get_bidder_id(
     x_bidder_id: Annotated[str | None, Header(description="Anonymous browser id.")] = None,
 ) -> str | None:
-    if x_bidder_id is None:
-        return None
-    if not _BIDDER_ID.match(x_bidder_id) or x_bidder_id in RIVAL_BIDDER_IDS:
-        raise ApiError(400, "invalid_bidder_id", "X-Bidder-Id: 8-64 letters, digits or dashes.")
-    return x_bidder_id
+    return validate_bidder_id(x_bidder_id, field="X-Bidder-Id")
 
 
 def require_bidder_id(bidder_id: Annotated[str | None, Depends(get_bidder_id)]) -> str:

@@ -6,7 +6,7 @@ raw bidder ids private: they simply have no field here.
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -175,3 +175,14 @@ class MyBid(VehicleSummary):
     my_top_bid: int
     my_last_bid_at: datetime
     standing: Standing
+
+
+class AuctionEvent(BaseModel):
+    """One live update on /api/events, personalized for the subscribing bidder."""
+
+    type: Literal["bid", "sold"]
+    vehicle_id: str
+    auction: AuctionSnapshot
+    bid: BidOut
+    outbid_you: bool = Field(description="You led until this bid.")
+    extended: bool

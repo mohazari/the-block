@@ -93,19 +93,24 @@ export function useInventoryParams() {
           if (next.get('page') === '1') next.delete('page')
           return next
         },
-        { replace },
+        // flushSync: these inputs are controlled by the URL, and a transition would let a
+        // clicked checkbox snap back for a moment (caught by the e2e tests).
+        { replace, flushSync: true },
       )
     },
     [setParams],
   )
 
   const clearAll = useCallback(() => {
-    setParams((current) => {
-      const next = new URLSearchParams()
-      const sort = current.get('sort')
-      if (sort) next.set('sort', sort)
-      return next
-    })
+    setParams(
+      (current) => {
+        const next = new URLSearchParams()
+        const sort = current.get('sort')
+        if (sort) next.set('sort', sort)
+        return next
+      },
+      { flushSync: true },
+    )
   }, [setParams])
 
   return { query, update, clearAll }

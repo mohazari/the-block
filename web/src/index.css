@@ -24,8 +24,8 @@
   --surface: #ffffff;
   --surface-sunk: #e9edf2;
   --ink: #1c2430; /* asphalt */
-  --ink-muted: #556171;
-  --ink-faint: #8792a0;
+  --ink-muted: #4a5565;
+  --ink-faint: #606c7c; /* faintest shade with 4.5:1 on every surface */
   --line: #dbe1e8;
   --line-strong: #c3ccd6;
 
@@ -56,7 +56,7 @@
   --surface-sunk: #0c1117;
   --ink: #e8edf3;
   --ink-muted: #a3afbd;
-  --ink-faint: #6f7c8b;
+  --ink-faint: #798694;
   --line: #26303c;
   --line-strong: #364252;
 

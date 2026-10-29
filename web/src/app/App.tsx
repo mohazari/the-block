@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { RouterProvider } from 'react-router'
+// From react-router/dom: the DOM build supports flushSync (synchronous URL-driven inputs).
+import { RouterProvider } from 'react-router/dom'
 import { AppProviders } from './AppProviders'
 import { createQueryClient } from './queryClient'
 import { createRouter } from './router'

@@ -8,12 +8,14 @@ export default defineConfig({
   server: {
     // Same-origin API in dev: no CORS config, and EventSource works unchanged.
     proxy: {
-      '/api': 'http://127.0.0.1:8000',
+      // The e2e run points this at its own isolated API instance.
+      '/api': process.env.API_URL ?? 'http://127.0.0.1:8000',
     },
   },
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     css: false,
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 })

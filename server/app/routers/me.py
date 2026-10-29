@@ -64,9 +64,9 @@ def my_watchlist(session: DbSession, now: Now, bidder_id: RequiredBidderId) -> l
         .join(WatchlistEntry, WatchlistEntry.vehicle_id == Vehicle.id)
         .where(WatchlistEntry.bidder_id == bidder_id)
     ).all()
-    ids = [vehicle.id for vehicle in vehicles]
-    bid_on = ids_for_bidder(session, bidder_id, Bid, ids)
-    items = [summarize(vehicle, now, bidder_id, ids, bid_on) for vehicle in vehicles]
+    watched = {vehicle.id for vehicle in vehicles}  # every row, by construction
+    bid_on = ids_for_bidder(session, bidder_id, Bid, watched)
+    items = [summarize(vehicle, now, bidder_id, watched, bid_on) for vehicle in vehicles]
     items.sort(key=lambda item: open_first_key(item.auction))
     return items
 

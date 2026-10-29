@@ -91,8 +91,15 @@ def test_rejections_carry_a_fresh_snapshot(
     assert error["message"]
 
 
-def test_you_cannot_outbid_yourself(client: TestClient) -> None:
-    vehicle = _live_without_buy_now(client)
+def test_you_cannot_outbid_yourself_once_the_reserve_is_met(client: TestClient) -> None:
+    vehicle = _find(
+        client,
+        lambda v: (
+            v["auction"]["status"] == "live"
+            and not v["auction"]["buy_now_available"]
+            and v["auction"]["reserve_status"] == "no_reserve"
+        ),
+    )
     first = _bid(client, vehicle["id"], vehicle["auction"]["min_next_bid"]).json()
     again = _bid(client, vehicle["id"], first["auction"]["min_next_bid"])
     assert again.status_code == 409
@@ -337,3 +344,20 @@ def test_lock_timeout_is_a_retryable_503(
     assert response.status_code == 503
     assert response.headers["Retry-After"] == "1"
     assert response.json()["error"]["code"] == "busy"
+
+
+def test_leader_can_raise_toward_an_unmet_reserve(client: TestClient) -> None:
+    vehicle = _find(
+        client,
+        lambda v: (
+            v["auction"]["status"] == "live"
+            and not v["auction"]["buy_now_available"]
+            and v["auction"]["reserve_status"] == "not_met"
+        ),
+    )
+    first = _bid(client, vehicle["id"], vehicle["auction"]["min_next_bid"]).json()
+    assert first["auction"]["reserve_status"] == "not_met"
+
+    raise_ = _bid(client, vehicle["id"], first["auction"]["min_next_bid"])
+    assert raise_.status_code == 201, raise_.text
+    assert raise_.json()["auction"]["is_high_bidder"]

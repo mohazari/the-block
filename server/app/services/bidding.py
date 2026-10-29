@@ -16,10 +16,12 @@ from app.clock import Clock
 from app.domain.auction import (
     AuctionStatus,
     BidRejection,
+    ReserveStatus,
     auction_status,
     buy_now_available,
     extended_close,
     min_next_bid,
+    reserve_status,
     validate_bid,
 )
 from app.errors import ApiError
@@ -156,6 +158,10 @@ def place_bid(
             if buy_now_available(status, vehicle.buy_now_price, vehicle.current_bid)
             else None
         ),
+        reserve_met=reserve_status(
+            vehicle.reserve_price, vehicle.current_bid, vehicle.buy_now_price
+        )
+        is not ReserveStatus.NOT_MET,
     )
     if rejection is not None:
         raise BidRejectedError(rejection, vehicle, now)

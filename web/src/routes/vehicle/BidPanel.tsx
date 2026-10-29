@@ -51,13 +51,21 @@ export function BidPanel({ vehicle }: { vehicle: VehicleDetail }) {
 
       {status !== 'ended' && (
         <div className="space-y-5 p-5">
-          {standing === 'leading' ? (
+          {standing === 'leading' && auction.reserve_status !== 'not_met' ? (
             <p className="text-ink-muted text-sm">
               You lead at {formatMoney(auction.current_bid!)}. We'll show you right away if someone
               outbids you.
             </p>
           ) : (
-            <BidForm vehicleId={vehicle.id} auction={auction} status={status} />
+            <>
+              {standing === 'leading' && (
+                <p className="text-ink-muted text-sm">
+                  You lead, but the reserve isn't met yet. If no one bids higher, raising your bid
+                  is the only way this car sells.
+                </p>
+              )}
+              <BidForm vehicleId={vehicle.id} auction={auction} status={status} />
+            </>
           )}
           {auction.buy_now_available && auction.buy_now_price !== null && (
             <BuyNow vehicleId={vehicle.id} price={auction.buy_now_price} />

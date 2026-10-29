@@ -1,24 +1,36 @@
 /**
  * Which copy of the server's data the cache came from. Bid counts order snapshots, but they
- * restart when the server reseeds (`npm run reset-db`, or the automatic reseed) — so a newer
- * epoch means "drop the cache", not "compare". It arrives two ways: every hello (the server
- * ends all streams on a reseed, so even idle tabs reconnect) and every API response header (for
- * a tab whose stream is down, or the seconds before it reconnects).
+ * restart when the server reseeds (`npm run reset-db`, the automatic reseed, a restored or
+ * different database) — so a different epoch means "drop the cache", not "compare".
+ *
+ * Epochs are opaque: any change is a reseed. They arrive two ways: every hello (authoritative;
+ * the server ends all streams on a reseed, so even idle tabs reconnect) and every API response
+ * header (for a tab whose stream is down, or the seconds before it reconnects). A response to a
+ * request sent before the last reset is stale — it was answered from the old data — so it
+ * neither flips the epoch back nor gets applied.
  */
+export type EpochVerdict = 'current' | 'reseeded' | 'stale'
+
 let known: string | undefined
+let lastResetAt = Number.NEGATIVE_INFINITY
 const listeners = new Set<() => void>()
 
-/**
- * Records an epoch; returns whether it means the data was reseeded. Epochs are seeding
- * timestamps, so they only move forward: a response stamped before a reseed but delivered
- * after one can't flip the cache back.
- */
-export function noteDataEpoch(epoch: string | null | undefined): boolean {
-  if (!epoch || (known !== undefined && epoch <= known)) return false
-  const reseeded = known !== undefined
+/** @param requestSentAt when the request was sent (omit for hello, which is always current). */
+export function noteDataEpoch(
+  epoch: string | null | undefined,
+  requestSentAt?: number,
+): EpochVerdict {
+  if (!epoch || epoch === known) return 'current'
+  if (known === undefined) {
+    known = epoch
+    return 'current'
+  }
+  // Same millisecond counts as before: when it's ambiguous, retrying is the safe side.
+  if (requestSentAt !== undefined && requestSentAt <= lastResetAt) return 'stale'
   known = epoch
-  if (reseeded) listeners.forEach((listener) => listener())
-  return reseeded
+  lastResetAt = Date.now()
+  listeners.forEach((listener) => listener())
+  return 'reseeded'
 }
 
 export function onReseed(listener: () => void): () => void {
@@ -29,4 +41,5 @@ export function onReseed(listener: () => void): () => void {
 /** Test hook. */
 export function resetDataEpoch(): void {
   known = undefined
+  lastResetAt = Number.NEGATIVE_INFINITY
 }

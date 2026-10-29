@@ -2,21 +2,26 @@ import { describe, expect, it, vi } from 'vitest'
 import { noteDataEpoch, onReseed } from './dataEpoch'
 
 describe('data epoch', () => {
-  it('reports a reseed only when the epoch moves forward', () => {
+  it('treats any change as a reseed, including an older database', () => {
     const reseeded = vi.fn()
     const stop = onReseed(reseeded)
-    expect(noteDataEpoch('2026-10-29T08:00:00Z')).toBe(false) // first one: just recorded
-    expect(noteDataEpoch('2026-10-29T08:00:00Z')).toBe(false)
-    expect(noteDataEpoch('2026-10-29T09:00:00Z')).toBe(true)
-    // A response stamped before the reseed but delivered after it can't flip back.
-    expect(noteDataEpoch('2026-10-29T08:00:00Z')).toBe(false)
+    expect(noteDataEpoch('b')).toBe('current') // first one: just recorded
+    expect(noteDataEpoch('b')).toBe('current')
+    expect(noteDataEpoch('a')).toBe('reseeded') // e.g. a restored backup: not "newer", still new
     expect(reseeded).toHaveBeenCalledTimes(1)
     stop()
   })
 
+  it('discards a response sent before the last reset instead of flipping back', () => {
+    noteDataEpoch('old')
+    const sentBeforeReset = Date.now() - 1000
+    expect(noteDataEpoch('new')).toBe('reseeded')
+    expect(noteDataEpoch('old', sentBeforeReset)).toBe('stale')
+    expect(noteDataEpoch('new', Date.now())).toBe('current')
+  })
+
   it('ignores a missing or empty epoch', () => {
-    expect(noteDataEpoch('')).toBe(false)
-    expect(noteDataEpoch(null)).toBe(false)
-    expect(noteDataEpoch('2026-10-29T08:00:00Z')).toBe(false) // still the first real one
+    expect(noteDataEpoch('')).toBe('current')
+    expect(noteDataEpoch(null)).toBe('current')
   })
 })

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   currentRunId,
+  sentWith,
   noteHello,
   noteResponse,
   noteStreamDown,
@@ -23,11 +24,11 @@ describe('data epoch', () => {
     expect(noteHello('run-2', 'e')).toBe(false)
   })
 
-  it('treats a response from a run it has moved on from as other data', () => {
+  it('treats a response from a run it has moved on from as other data, if the data differs', () => {
     noteHello('run-1', 'old')
     noteStreamDown()
-    expect(noteResponse('run-2', 'new', currentRunId())).toBe(true) // adopted: newer
-    expect(noteResponse('run-1', 'old', 'run-1')).toBe(false) // a straggler: no flip back
+    expect(noteResponse('run-2', 'new', sentWith())).toBe(true) // adopted: newer
+    expect(noteResponse('run-1', 'old', sentWith())).toBe(false) // a straggler: no flip back
     expect(currentRunId()).toBe('run-2')
   })
 
@@ -36,7 +37,7 @@ describe('data epoch', () => {
     const stop = onStaleStream(stale)
     noteHello('run-1', 'a')
     // The stream says run-1, but run-2 answered: run-1 is gone and the stream died silently.
-    expect(noteResponse('run-2', 'b', currentRunId())).toBe(true)
+    expect(noteResponse('run-2', 'b', sentWith())).toBe(true)
     expect(currentRunId()).toBe('run-2')
     expect(stale).toHaveBeenCalledTimes(1) // and the stream is told to reconnect
     stop()
@@ -46,7 +47,7 @@ describe('data epoch', () => {
     const stale = vi.fn()
     const stop = onStaleStream(stale)
     noteHello('run-1', 'a')
-    const sent = currentRunId() // a request goes out...
+    const sent = sentWith() // a request goes out...
     noteHello('run-3', 'c') // ...the stream reconnects to run-3 meanwhile...
     // ...and run-2 answers, which lived and died in between (or not: it can't be ordered).
     expect(noteResponse('run-2', 'b', sent)).toBe(false)
@@ -57,7 +58,7 @@ describe('data epoch', () => {
 
   it('still adopts a new run after a reconnect to the same run', () => {
     noteHello('run-1', 'a')
-    const sent = currentRunId()
+    const sent = sentWith()
     noteHello('run-1', 'a') // the stream blipped and came back to run-1
     expect(noteResponse('run-2', 'b', sent)).toBe(true) // still the newest news
   })
@@ -65,7 +66,7 @@ describe('data epoch', () => {
   it('always believes a hello, even for a run it had retired', () => {
     noteHello('run-1', 'a')
     noteStreamDown()
-    noteResponse('run-2', 'b', currentRunId())
+    noteResponse('run-2', 'b', sentWith())
     expect(noteHello('run-1', 'a')).toBe(true) // the stream is connected to it
   })
 
@@ -78,7 +79,7 @@ describe('data epoch', () => {
     })
     const quiet = vi.spyOn(console, 'error').mockImplementation(() => {})
     noteHello('run-1', 'a')
-    expect(noteResponse('run-2', 'b', currentRunId())).toBe(true)
+    expect(noteResponse('run-2', 'b', sentWith())).toBe(true)
     expect(currentRunId()).toBe('run-2')
     expect(quiet).toHaveBeenCalledTimes(2) // both failures reported, neither escaped
     quiet.mockRestore()
@@ -89,5 +90,22 @@ describe('data epoch', () => {
   it('accepts an empty epoch as a value', () => {
     noteHello('run-1', '')
     expect(noteHello('run-2', '')).toBe(false) // same (empty) data
+  })
+
+  it('accepts a late answer from the previous run when the restart kept the data', () => {
+    noteHello('run-1', 'e')
+    const sent = sentWith()
+    noteHello('run-2', 'e') // restarted, same data
+    expect(noteResponse('run-1', 'e', sent)).toBe(true) // e.g. a bid's rejection: still valid
+    expect(currentRunId()).toBe('run-2') // without moving the tab back
+  })
+
+  it('falls back to "was there a reseed meanwhile?" for a response missing a header', () => {
+    noteHello('run-1', 'old')
+    const sent = sentWith()
+    expect(noteResponse('run-1', null, sent)).toBe(true) // no epoch, no reseed: fine
+    noteHello('run-2', 'new') // reseeded while it was in flight
+    expect(noteResponse('run-1', null, sent)).toBe(false)
+    expect(noteResponse('', 'old', sent)).toBe(false) // an empty run header is no run
   })
 })

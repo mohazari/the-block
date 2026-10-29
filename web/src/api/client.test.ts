@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { serverNow } from '../lib/serverClock'
-import { ApiError, api, isFromOtherData, toSearchParams } from './client'
+import { ApiError, api, send, toSearchParams } from './client'
 import { noteHello, noteStreamDown, onReseed } from './dataEpoch'
 
 function respond(status: number, body: unknown, headers: Record<string, string> = {}) {
@@ -125,8 +125,7 @@ describe('api', () => {
       'fetch',
       vi.fn().mockResolvedValue(new Response('{"ok": 1}', { status: 201, headers })),
     )
-    const placed = await api('/vehicles/veh-1/bids', { method: 'POST', body: { amount: 1 } })
-    expect(placed).toEqual({ ok: 1 }) // the outcome stands
-    expect(isFromOtherData(placed)).toBe(true)
+    const placed = await send('/vehicles/veh-1/bids', { method: 'POST', body: { amount: 1 } })
+    expect(placed).toEqual({ data: { ok: 1 }, sameData: false }) // the outcome stands, flagged
   })
 })

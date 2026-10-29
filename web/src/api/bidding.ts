@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { mergeBid, noteSeen } from './auctionLedger'
-import { ApiError, api, isFromOtherData } from './client'
+import { ApiError, send, type Answer } from './client'
 import { queryKeys, updateCachedVehicle } from './queries'
 import type { AuctionSnapshot, BidOut, BidPlaced, MyBid, VehicleDetail } from './types'
 
@@ -87,15 +87,18 @@ interface PlaceBid {
   idempotencyKey: string
 }
 
-function useAuctionMutation<V>(vehicleId: string, request: (variables: V) => Promise<BidPlaced>) {
+function useAuctionMutation<V>(
+  vehicleId: string,
+  request: (variables: V) => Promise<Answer<BidPlaced>>,
+) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: request,
     // The data may be reset while a bid is in flight; its snapshot could then describe other
     // data. The outcome is still shown, but only a snapshot from the cache's data enters it
     // (after a reset everything is refetched anyway).
-    onSuccess: (placed) => {
-      if (!isFromOtherData(placed)) applyAuction(queryClient, vehicleId, placed.auction, placed.bid)
+    onSuccess: ({ data, sameData }) => {
+      if (sameData) applyAuction(queryClient, vehicleId, data.auction, data.bid)
     },
     onError: (error) => {
       // Rejections carry the auction as it is now; show it instead of the stale view.
@@ -108,7 +111,7 @@ function useAuctionMutation<V>(vehicleId: string, request: (variables: V) => Pro
 
 export function usePlaceBid(vehicleId: string) {
   return useAuctionMutation(vehicleId, ({ amount, idempotencyKey }: PlaceBid) =>
-    api<BidPlaced>(`/vehicles/${vehicleId}/bids`, {
+    send<BidPlaced>(`/vehicles/${vehicleId}/bids`, {
       method: 'POST',
       body: { amount },
       idempotencyKey,
@@ -118,6 +121,6 @@ export function usePlaceBid(vehicleId: string) {
 
 export function useBuyNow(vehicleId: string) {
   return useAuctionMutation(vehicleId, ({ idempotencyKey }: { idempotencyKey: string }) =>
-    api<BidPlaced>(`/vehicles/${vehicleId}/buy-now`, { method: 'POST', idempotencyKey }),
+    send<BidPlaced>(`/vehicles/${vehicleId}/buy-now`, { method: 'POST', idempotencyKey }),
   )
 }

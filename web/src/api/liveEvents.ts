@@ -108,21 +108,20 @@ export function useAuctionEvents(): void {
       source.addEventListener('hello', (message) => {
         const { server_time, epoch, run, heartbeat_seconds } = JSON.parse(message.data) as {
           server_time: string
-          epoch: string
-          run: string
+          epoch?: string
+          run?: string
           heartbeat_seconds?: number
         }
-        expectMore()
-        // A hello that doesn't name its run and data says nothing usable: wait for one that does.
-        if (!run || epoch == null) return
         const [shortest, longest] = HEARTBEAT_LIMITS_MS
         if (typeof heartbeat_seconds === 'number' && heartbeat_seconds > 0) {
           heartbeatMs = Math.min(Math.max(heartbeat_seconds * 1000, shortest), longest)
         }
-        expectMore() // now sized from the announced heartbeat
+        expectMore()
         syncServerTime(server_time)
         // A run with different data resets the cache (see onReseed below), which also refetches.
-        const reseeded = noteHello(run, epoch)
+        // A hello naming no run (a server that doesn't track runs) is still a live stream; there
+        // is just no run to follow.
+        const reseeded = run && epoch != null ? noteHello(run, epoch) : false
         // Initial reads waited for this hello (streamGate), so they can't have missed a bid.
         const readBeforeSubscribing = streamLive()
         if (!reseeded && readBeforeSubscribing) {

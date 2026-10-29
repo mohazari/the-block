@@ -49,7 +49,7 @@ function supersedes(next: AuctionSnapshot, current: AuctionSnapshot): boolean {
 // so only the first of the two refreshes.
 const refreshedForBid = new Set<number>()
 
-/** Test hook. */
+/** After a reseed (bid ids restart), and between tests. */
 export const forgetOwnBidRefreshes = (): void => refreshedForBid.clear()
 
 function recordOwnBid(queryClient: QueryClient, vehicleId: string, bid: BidOut): void {

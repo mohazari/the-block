@@ -5,7 +5,7 @@ import { bidderId } from '../lib/bidder'
 import { formatMoney } from '../lib/format'
 import { syncServerTime } from '../lib/serverClock'
 import { forgetSeen } from './auctionLedger'
-import { applyAuction } from './bidding'
+import { applyAuction, forgetOwnBidRefreshes } from './bidding'
 import { noteDataEpoch, onReseed } from './dataEpoch'
 import { streamLive } from './streamGate'
 import type { AuctionEvent } from './types'
@@ -104,6 +104,7 @@ export function useAuctionEvents(): void {
     // and what live events showed would wrongly look newer than fresh data. Drop both.
     const stopWatchingReseeds = onReseed(() => {
       forgetSeen()
+      forgetOwnBidRefreshes() // bid ids restart too: an old id must not suppress a new refresh
       void queryClient.resetQueries()
     })
 

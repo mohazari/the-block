@@ -262,4 +262,26 @@ describe('live auction events', () => {
     act(() => void queryClient.invalidateQueries())
     expect(await bidding.findByText('3 bids')).toBeInTheDocument()
   })
+
+  it('refreshes My bids for a first bid after a reseed even if the bid id repeats', async () => {
+    serveDetail()
+    const { queryClient } = renderRoute('/vehicles/veh-1')
+    await panel()
+    const source = FakeEventSource.latest()
+    act(() => source.emit('hello', { server_time: new Date().toISOString(), epoch: 'epoch-1' }))
+    const mine = {
+      id: 5,
+      amount: 23300,
+      bidder: 'Bidder 1',
+      is_you: true,
+      placed_at: new Date().toISOString(),
+    }
+    act(() => source.emit('bid', rivalBid({ vehicle_id: 'car-a', bid: mine, outbid_you: false })))
+
+    act(() => source.emit('hello', { server_time: new Date().toISOString(), epoch: 'epoch-2' }))
+    await waitFor(() => expect(queryClient.getQueryState(['me', 'bids'])?.fetchStatus).toBe('idle'))
+    const spy = vi.spyOn(queryClient, 'cancelQueries')
+    act(() => source.emit('bid', rivalBid({ vehicle_id: 'car-b', bid: mine, outbid_you: false })))
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['me', 'bids'] })
+  })
 })

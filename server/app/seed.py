@@ -1,7 +1,7 @@
 """Load data/vehicles.json into SQLite.
 
-Run `python -m app.seed --reset` (or `npm run reset-db`) to start over with a fresh clock. If a
-server is using the database, it is asked to reseed itself, so open tabs resync.
+Run `python -m app.seed --reset` (or `npm run reset-db`) to start over with a fresh clock. It
+refuses while a server is using the database (see serverlock.py): stop the server first.
 """
 
 import argparse
@@ -9,8 +9,6 @@ import json
 import logging
 import random
 import re
-import urllib.error
-import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -25,7 +23,7 @@ from app.domain.auction import min_next_bid
 from app.domain.bidders import RIVAL_BIDDER_IDS
 from app.domain.schedule import AUCTION_DURATION, parse_dataset_time, schedule_shift
 from app.models import Base, Bid, Meta, Vehicle
-from app.serverlock import DatabaseLock, ServerInfo, lock_path, read_server_info
+from app.serverlock import DatabaseLock, lock_path
 
 logger = logging.getLogger(__name__)
 
@@ -195,38 +193,10 @@ def ensure_seeded(engine: Engine, data_path: Path, now: datetime) -> bool:
     return True
 
 
-def reset(engine: Engine, data_path: Path, now: datetime) -> str:
-    """Drop everything and reseed; returns the new data epoch."""
+def reset(engine: Engine, data_path: Path, now: datetime) -> None:
     with write_engine(engine).begin() as connection:
         count = _rebuild(connection, data_path, now)
     logger.info("Seeded %d vehicles from %s", count, data_path)
-    return now.isoformat()  # what _rebuild stored as seeded_at, i.e. data_epoch()
-
-
-def ask_server_to_reset(info: ServerInfo, database: str) -> None:
-    """Have the server using `database` reseed itself. Exits with a message on any failure —
-    never falls back to resetting the file under it (it wouldn't notice)."""
-    if info.port is None:
-        raise SystemExit(
-            f"A server is using {database}, but not through `python -m app.serve`, so it can't "
-            "be asked to reset. Stop it, then run this again."
-        )
-    url = f"http://{info.host}:{info.port}/api/dev/reset"
-    request = urllib.request.Request(url, method="POST", headers={"X-Reset-Token": info.token})
-    # Straight to loopback: an http_proxy or system proxy must not see this request.
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    try:
-        with opener.open(request, timeout=120) as response:
-            status = response.status
-    except urllib.error.HTTPError as error:
-        status = error.code
-    except OSError as error:  # refused, reset mid-request, timed out: state unknown
-        raise SystemExit(
-            f"Couldn't get an answer from the server using {database} at {url} ({error}). "
-            "If it's still running, run this again; otherwise start it or retry once it stops."
-        ) from None
-    if status != 204:
-        raise SystemExit(f"The server at {url} didn't reset the data (HTTP {status}).")
 
 
 def main() -> None:
@@ -239,18 +209,17 @@ def main() -> None:
     path = lock_path(settings.database_url)
     lock = DatabaseLock(path)
     if not lock.try_acquire():
-        # A server is using this file. It seeds itself at startup; a reset must go through it.
-        database = path.stem if path else settings.database_url
+        database = path.name.removesuffix(".server") if path else settings.database_url
         if not args.reset:
             logger.info("A server is using %s; it seeds the data itself.", database)
             return
-        info = read_server_info(path) if path else None
-        if info is None:
-            raise SystemExit(f"A server is using {database} but hasn't said where. Try again.")
-        ask_server_to_reset(info, database)
-        logger.info("The server reseeded %s; open tabs resync automatically.", database)
-        return
-    try:  # no server on this file, and none can start on it until we're done
+        # Resetting under a running server would leave it serving the old data's epoch and
+        # streams (see serverlock.py). A restart reads the new epoch; open tabs then resync.
+        raise SystemExit(
+            f"{database} is in use by a running server. Stop it (Ctrl-C in the `npm run dev` "
+            "terminal), run this again, then start it: open tabs resync by themselves."
+        )
+    try:  # no server can start on this file until we're done
         engine = create_db_engine(settings.database_url)
         now = SystemClock().now()
         if args.reset:

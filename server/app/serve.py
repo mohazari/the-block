@@ -6,7 +6,6 @@ Logging goes through uvicorn's own config, so it also applies to the worker proc
 
 import argparse
 import copy
-import os
 from typing import Any
 
 import uvicorn
@@ -26,10 +25,6 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--reload", action="store_true")
     args = parser.parse_args()
-    # Where `npm run reset-db` can reach this server (published in the database lock file;
-    # environment, so the --reload worker process inherits it).
-    os.environ["THE_BLOCK_HOST"] = "127.0.0.1" if args.host in {"0.0.0.0", "::"} else args.host
-    os.environ["THE_BLOCK_PORT"] = str(args.port)
 
     uvicorn.run(
         "app.main:app",

@@ -1,4 +1,4 @@
-import type { AuctionSnapshot, BidOut, VehicleDetail, VehicleSummary } from './types'
+import type { AuctionSnapshot, BidOut, MyBid, VehicleDetail, VehicleSummary } from './types'
 
 /**
  * The newest auction state seen for each vehicle — from bid responses, rejections and live
@@ -9,6 +9,8 @@ import type { AuctionSnapshot, BidOut, VehicleDetail, VehicleSummary } from './t
 interface Seen {
   auction: AuctionSnapshot
   bids: BidOut[]
+  /** Your own highest bid seen on this vehicle, for My bids rows. */
+  mine?: BidOut
 }
 
 const seen = new Map<string, Seen>()
@@ -20,7 +22,9 @@ export function noteSeen(vehicleId: string, auction: AuctionSnapshot, bid?: BidO
     previous && previous.auction.bid_count > auction.bid_count ? previous.auction : auction
   const bids = previous?.bids ?? []
   const withBid = bid && !bids.some((known) => known.id === bid.id) ? [...bids, bid] : bids
-  seen.set(vehicleId, { auction: newest, bids: withBid.slice(-BIDS_KEPT) })
+  const mine =
+    bid?.is_you && (!previous?.mine || bid.amount > previous.mine.amount) ? bid : previous?.mine
+  seen.set(vehicleId, { auction: newest, bids: withBid.slice(-BIDS_KEPT), mine })
 }
 
 /** `fresh`, brought up to the newest auction and bids seen for it (`fresh` itself if current). */
@@ -38,6 +42,12 @@ export function withNewestSeen<T extends VehicleSummary>(fresh: T): T {
       detail.recent_bids,
     )
     if (recentBids !== detail.recent_bids) result = { ...result, recent_bids: recentBids }
+  }
+  if (known.mine && 'my_top_bid' in result) {
+    const row = result as T & MyBid
+    if (known.mine.amount > row.my_top_bid) {
+      result = { ...result, my_top_bid: known.mine.amount, my_last_bid_at: known.mine.placed_at }
+    }
   }
   return result
 }

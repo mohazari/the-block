@@ -32,4 +32,18 @@ describe('auction ledger', () => {
       withNewestSeen(vehicle({ auction: auction({ bid_count: 1 }) })).auction.current_bid,
     ).toBe(24000)
   })
+
+  it('keeps your newest top bid on a My bids row read before it', () => {
+    const mine = { ...rival, id: 51, amount: 21000, is_you: true }
+    noteSeen('veh-1', auction({ bid_count: 17 }), mine)
+    const staleRow = {
+      ...vehicle({ auction: auction({ bid_count: 16 }) }),
+      my_top_bid: 20000,
+      my_last_bid_at: '2026-10-28T12:00:00Z',
+      standing: 'leading' as const,
+    }
+    const merged = withNewestSeen(staleRow)
+    expect(merged.my_top_bid).toBe(21000)
+    expect(merged.my_last_bid_at).toBe(mine.placed_at)
+  })
 })

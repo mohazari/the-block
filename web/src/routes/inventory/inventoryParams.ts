@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import type { AuctionStatus, InventoryQuery, SortOrder } from '../../api/types'
 
@@ -147,7 +147,10 @@ export function useInventoryParams() {
     [setParams],
   )
 
+  // Bumped by "Clear all", so inputs holding a draft that was never applied reset too.
+  const [clearCount, setClearCount] = useState(0)
   const clearAll = useCallback(() => {
+    setClearCount((count) => count + 1)
     setParams(
       (current) => {
         const next = new URLSearchParams()
@@ -159,7 +162,7 @@ export function useInventoryParams() {
     )
   }, [setParams])
 
-  return { query, update, clearAll }
+  return { query, update, clearAll, clearCount }
 }
 
 /** How many filters (not search, sort or paging) are active — for the mobile "Filters (3)". */

@@ -14,6 +14,8 @@ interface Props {
   query: InventoryQuery
   data: VehicleList | undefined
   update: (patch: FilterPatch) => void
+  /** Changes on "Clear all": range inputs drop drafts that were never applied. */
+  clearCount: number
 }
 
 const STATUS_ORDER = ['live', 'upcoming', 'ended']
@@ -21,7 +23,7 @@ const ODOMETER_PRESETS = [25_000, 50_000, 100_000, 150_000]
 const GRADE_PRESETS = [2, 3, 4]
 
 /** All inventory filters. Rendered in the desktop rail and inside the mobile sheet. */
-export function FilterPanel({ query, data, update }: Props) {
+export function FilterPanel({ query, data, update, clearCount }: Props) {
   const facets = data?.facets ?? {}
   const ranges = data?.ranges
 
@@ -45,6 +47,7 @@ export function FilterPanel({ query, data, update }: Props) {
       />
 
       <RangeInputs
+        clearCount={clearCount}
         legend="Price"
         prefix="$"
         min={query.price_min}
@@ -73,6 +76,7 @@ export function FilterPanel({ query, data, update }: Props) {
       />
 
       <RangeInputs
+        clearCount={clearCount}
         legend="Model year"
         min={query.year_min}
         max={query.year_max}
@@ -282,6 +286,7 @@ function RangeInputs({
   bounds,
   step = 1,
   rule,
+  clearCount,
   onChange,
 }: {
   legend: string
@@ -291,21 +296,23 @@ function RangeInputs({
   bounds?: { min: number; max: number }
   step?: number
   rule: NumberRule
+  clearCount: number
   onChange: (min: number | null, max: number | null) => void
 }) {
   const [low, setLow] = useState(min?.toString() ?? '')
   const [high, setHigh] = useState(max?.toString() ?? '')
   // Follow outside changes (a chip removed, "Clear all") by adjusting state while rendering. No
   // remount: remounting on commit would drop focus when tabbing from Min to Max.
-  const [applied, setApplied] = useState([min, max])
-  if (applied[0] !== min || applied[1] !== max) {
-    setApplied([min, max])
+  const [invalid, setInvalid] = useState(false)
+  const [applied, setApplied] = useState([min, max, clearCount])
+  if (applied[0] !== min || applied[1] !== max || applied[2] !== clearCount) {
+    setApplied([min, max, clearCount])
     setLow(min?.toString() ?? '')
     setHigh(max?.toString() ?? '')
+    setInvalid(false)
   }
   const parse = (text: string) => (text.trim() === '' ? null : Number(text))
 
-  const [invalid, setInvalid] = useState(false)
   const hintId = useId()
   const commit = () => {
     const values = [parse(low), parse(high)]

@@ -140,4 +140,19 @@ describe('InventoryPage', () => {
     expect(rail.getByLabelText('Min model year')).toHaveAttribute('aria-invalid', 'true')
     expect(router.state.location.search).toBe('')
   })
+
+  it('clears an invalid range and its hint on "Clear all"', async () => {
+    serve()
+    renderRoute('/?make=Ford')
+    const rail = within(await screen.findByRole('complementary', { name: 'Filters' }))
+    const year = rail.getByLabelText('Min model year')
+    await userEvent.type(year, '20')
+    await userEvent.tab()
+    expect(rail.getByText('Enter a year like 2020.')).toBeInTheDocument()
+
+    await userEvent.click(rail.getByRole('button', { name: 'Clear all' }))
+    expect(rail.queryByText('Enter a year like 2020.')).not.toBeInTheDocument()
+    expect(year).toHaveValue(null)
+    expect(year).not.toHaveAttribute('aria-invalid', 'true')
+  })
 })

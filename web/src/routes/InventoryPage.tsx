@@ -16,7 +16,7 @@ import {
 import { VehicleRow } from './inventory/VehicleRow'
 
 export function InventoryPage() {
-  const { query, update, clearAll } = useInventoryParams()
+  const { query, update, clearAll, clearCount } = useInventoryParams()
   const inventory = useInventory(query)
   const data = inventory.data
   const pages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1
@@ -45,7 +45,7 @@ export function InventoryPage() {
               </button>
             )}
           </div>
-          <FilterPanel query={query} data={data} update={update} />
+          <FilterPanel query={query} data={data} update={update} clearCount={clearCount} />
         </div>
       </aside>
 
@@ -65,7 +65,7 @@ export function InventoryPage() {
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <SearchBox value={query.q ?? ''} onSearch={(q) => update({ q }, { replace: true })} />
           <FilterSheet activeCount={filterCount} total={data?.total} onClear={clearAll}>
-            <FilterPanel query={query} data={data} update={update} />
+            <FilterPanel query={query} data={data} update={update} clearCount={clearCount} />
           </FilterSheet>
           <SortSelect value={query.sort ?? 'ending_soon'} onChange={(sort) => update({ sort })} />
         </div>

@@ -1,3 +1,4 @@
+import { Search } from 'lucide-react'
 import { useId, useState, type ReactNode } from 'react'
 import { cn } from '../../lib/cn'
 import type { FacetValue, InventoryQuery, VehicleList } from '../../api/types'
@@ -67,6 +68,7 @@ export function FilterPanel({ query, data, update, clearCount }: Props) {
         selected={query.make ?? []}
         onChange={(make) => update({ make })}
         collapseAfter={6}
+        searchNoun="makes"
       />
 
       <CheckboxGroup
@@ -118,6 +120,7 @@ export function FilterPanel({ query, data, update, clearCount }: Props) {
         selected={query.province ?? []}
         onChange={(province) => update({ province })}
         collapseAfter={4}
+        searchNoun="provinces"
       />
 
       <CheckboxGroup
@@ -159,6 +162,7 @@ function CheckboxGroup({
   collapseAfter,
   hint,
   order,
+  searchNoun,
 }: {
   legend: string
   name: ListFilter
@@ -170,16 +174,27 @@ function CheckboxGroup({
   hint?: string
   /** Explicit value order; otherwise alphabetical. Never by count: boxes mustn't move on click. */
   order?: string[]
+  /** Adds a search box over a long list ("makes" → "Search makes"). */
+  searchNoun?: string
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [search, setSearch] = useState('')
+  const searchId = useId()
   const sorted = [...values].sort((a, b) =>
     order
       ? order.indexOf(a.value) - order.indexOf(b.value)
       : format(a.value).localeCompare(format(b.value)),
   )
-  // Selected values always stay visible, even when the list is collapsed.
-  const visible =
-    collapseAfter && !expanded
+  // While searching, the list is the matches (plus anything already ticked); otherwise it may be
+  // collapsed. Selected values always stay visible either way.
+  const term = search.trim().toLocaleLowerCase()
+  const searchable = Boolean(searchNoun) && values.length > (collapseAfter ?? 0)
+  const visible = term
+    ? sorted.filter(
+        (facet) =>
+          format(facet.value).toLocaleLowerCase().includes(term) || selected.includes(facet.value),
+      )
+    : collapseAfter && !expanded
       ? sorted.filter((facet, index) => index < collapseAfter || selected.includes(facet.value))
       : sorted
   const hidden = sorted.length - visible.length
@@ -189,6 +204,31 @@ function CheckboxGroup({
 
   return (
     <Group legend={legend} hint={hint}>
+      {searchable && (
+        <div className="relative mb-1">
+          <label htmlFor={searchId} className="sr-only">
+            Search {searchNoun}
+          </label>
+          <Search
+            size={16}
+            aria-hidden
+            className="text-ink-faint pointer-events-none absolute top-1/2 left-3 -translate-y-1/2"
+          />
+          <input
+            id={searchId}
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={`Search ${searchNoun}`}
+            className="field pl-9"
+          />
+        </div>
+      )}
+      {term && visible.length === 0 && (
+        <p role="status" className="text-ink-muted py-2 text-sm">
+          No {searchNoun} match “{search.trim()}”.
+        </p>
+      )}
       <ul className="space-y-1">
         {visible.map((facet) => (
           <li key={facet.value}>
@@ -207,7 +247,7 @@ function CheckboxGroup({
           </li>
         ))}
       </ul>
-      {collapseAfter && values.length > collapseAfter && (
+      {!term && collapseAfter && values.length > collapseAfter && (
         <button
           type="button"
           onClick={() => setExpanded((open) => !open)}

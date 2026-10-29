@@ -128,6 +128,11 @@
 }
 
 @theme inline {
+  /* Two breakpoints past Tailwind's 2xl, for the run list's extra columns on wide monitors. In
+     rem like the built-in ones, so the cascade orders them after xl and 2xl. */
+  --breakpoint-3xl: 100rem; /* 1600px */
+  --breakpoint-4xl: 118.75rem; /* 1900px */
+
   --font-sans: 'Poppins', ui-sans-serif, system-ui, sans-serif;
   --font-figures: 'Block Figures', 'Poppins', ui-sans-serif, system-ui, sans-serif;
 

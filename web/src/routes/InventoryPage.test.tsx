@@ -130,6 +130,35 @@ describe('InventoryPage', () => {
     expect(screen.getByRole('button', { name: 'Go to the first page' })).toBeInTheDocument()
   })
 
+  it('searches a long make list, keeping ticked makes in view', async () => {
+    const makes = ['Audi', 'BMW', 'Chevrolet', 'Ford', 'GMC', 'Honda', 'Kia', 'Toyota']
+    serve(
+      vehicleList([vehicle()], {
+        facets: { make: makes.map((value) => ({ value, count: 3 })) },
+      }),
+    )
+    renderRoute('/?make=Toyota')
+    const rail = within(await screen.findByRole('complementary', { name: 'Filters' }))
+    expect(await rail.findByRole('button', { name: 'Show 1 more' })).toBeInTheDocument()
+
+    await userEvent.type(rail.getByRole('searchbox', { name: 'Search makes' }), 'for')
+    expect(rail.getByRole('checkbox', { name: /Ford/ })).toBeInTheDocument()
+    expect(rail.getByRole('checkbox', { name: /Toyota/ })).toBeChecked()
+    expect(rail.queryByRole('checkbox', { name: /BMW/ })).not.toBeInTheDocument()
+    expect(rail.queryByRole('button', { name: /Show/ })).not.toBeInTheDocument()
+
+    await userEvent.click(rail.getByRole('checkbox', { name: /Toyota/ }))
+    await userEvent.clear(rail.getByRole('searchbox', { name: 'Search makes' }))
+    await userEvent.type(rail.getByRole('searchbox', { name: 'Search makes' }), 'zzz')
+    expect(rail.getByRole('status')).toHaveTextContent('No makes match “zzz”.')
+  })
+
+  it('shows the range of the page it is on', async () => {
+    serve(vehicleList([vehicle()], { total: 30 }))
+    renderRoute('/?page=2')
+    expect(await screen.findByText(/25–30 of\s*30/)).toBeInTheDocument()
+  })
+
   it('explains an invalid range instead of applying it', async () => {
     serve()
     const { router } = renderRoute('/')

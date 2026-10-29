@@ -73,7 +73,8 @@ export function BidPanel({ vehicle }: { vehicle: VehicleDetail }) {
           <p className="text-ink-faint text-xs">
             {status === 'upcoming'
               ? 'Pre-bids are placed now and count when the auction opens.'
-              : 'A bid in the last 2 minutes extends the auction by 2 minutes, so everyone gets a chance to respond.'}
+              : // Matches the server's rule: the close moves to 2 minutes after the bid.
+                'A bid in the last 2 minutes resets the clock to 2 minutes, so everyone gets a chance to respond.'}
           </p>
         </div>
       )}

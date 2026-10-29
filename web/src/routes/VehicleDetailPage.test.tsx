@@ -262,4 +262,11 @@ describe('VehicleDetailPage', () => {
     ).toBeInTheDocument()
     expect(bidding.queryByText('Another buyer won this vehicle.')).not.toBeInTheDocument()
   })
+
+  it('describes soft close the way the server applies it', async () => {
+    serve(vehicleDetail())
+    renderRoute('/vehicles/veh-1')
+    const bidding = await panel()
+    expect(bidding.getByText(/resets the clock to 2 minutes/)).toBeInTheDocument()
+  })
 })

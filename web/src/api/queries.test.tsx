@@ -118,4 +118,40 @@ describe('useWatch', () => {
     await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1))
     vi.unstubAllGlobals()
   })
+
+  it('reverts a failed toggle even while a toggle on another car is queued', async () => {
+    const queryClient = createQueryClient()
+    queryClient.setQueryData(queryKeys.vehicle('a'), vehicleDetail({ id: 'a' }))
+    queryClient.setQueryData(queryKeys.vehicle('b'), vehicleDetail({ id: 'b' }))
+    const settle: ((ok: boolean) => void)[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve, reject) =>
+            settle.push((ok) =>
+              ok ? resolve(new Response(null, { status: 204 })) : reject(new TypeError('offline')),
+            ),
+          ),
+      ),
+    )
+    const { result } = renderHook(() => useWatch(), {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      ),
+    })
+
+    act(() => {
+      result.current.mutate({ vehicleId: 'a', watching: true })
+      result.current.mutate({ vehicleId: 'b', watching: true })
+    })
+    await waitFor(() => expect(settle).toHaveLength(1))
+    act(() => settle[0]!(false)) // starring car A fails while car B is queued
+
+    await waitFor(() =>
+      expect(queryClient.getQueryData<VehicleDetail>(queryKeys.vehicle('a'))?.watching).toBe(false),
+    )
+    expect(queryClient.getQueryData<VehicleDetail>(queryKeys.vehicle('b'))?.watching).toBe(true)
+    vi.unstubAllGlobals()
+  })
 })

@@ -115,8 +115,16 @@ const showsWatching = {
  */
 export function useWatch() {
   const queryClient = useQueryClient()
-  // Is a later toggle (another click) still queued behind this one? This one counts itself.
-  const supersededLater = () => queryClient.isMutating({ mutationKey: ['watchlist'] }) > 1
+  // Toggles still pending (this one included): for one car, or for any car.
+  const pendingToggles = (vehicleId?: string) =>
+    queryClient
+      .getMutationCache()
+      .findAll({ mutationKey: ['watchlist'], status: 'pending' })
+      .filter(
+        (mutation) =>
+          vehicleId === undefined ||
+          (mutation.state.variables as { vehicleId: string } | undefined)?.vehicleId === vehicleId,
+      ).length
   return useMutation({
     // Run toggles one after another, in click order: a quick watch-unwatch must not reach the
     // server as a PUT and DELETE racing each other.
@@ -131,8 +139,8 @@ export function useWatch() {
       updateCachedVehicle(queryClient, vehicleId, (vehicle) => ({ ...vehicle, watching }))
     },
     onError: (_error, { vehicleId, watching }) => {
-      // A later click already set the flag the buyer wants; don't revert over it.
-      if (supersededLater()) return
+      // A later click on this car already set the flag the buyer wants; don't revert over it.
+      if (pendingToggles(vehicleId) > 1) return
       updateCachedVehicle(queryClient, vehicleId, (vehicle) => ({
         ...vehicle,
         watching: !watching,
@@ -141,6 +149,7 @@ export function useWatch() {
     // The server is the source of truth; this also re-runs anything cancelled above and updates
     // what the "Watching" filter and My bids contain. Only the last queued toggle does it: a
     // refetch between two toggles would flip the star back while the second is pending.
-    onSettled: () => (supersededLater() ? undefined : queryClient.invalidateQueries(showsWatching)),
+    onSettled: () =>
+      pendingToggles() > 1 ? undefined : queryClient.invalidateQueries(showsWatching),
   })
 }

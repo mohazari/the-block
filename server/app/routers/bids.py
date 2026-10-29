@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Response, status
+from fastapi import APIRouter, Depends, Header, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.clock import Clock
@@ -67,7 +67,9 @@ def _fresh_snapshot(
     return snapshot(vehicle, now, bidder_id, has_bid=has_bid)
 
 
-def _placed(result: BidResult, bidder_id: str, response: Response) -> BidPlaced:
+def _placed(result: BidResult, bidder_id: str, request: Request, response: Response) -> BidPlaced:
+    # The service has committed by now, so subscribers never hear about a bid that rolled back.
+    request.app.state.broker.publish(result)
     response.status_code = status.HTTP_200_OK if result.replayed else status.HTTP_201_CREATED
     return BidPlaced(
         bid=bid_out(result.bid, bidder_id),
@@ -80,6 +82,7 @@ def _placed(result: BidResult, bidder_id: str, response: Response) -> BidPlaced:
 def create_bid(
     vehicle_id: str,
     body: PlaceBidRequest,
+    request: Request,
     response: Response,
     session: WriteSession,
     clock: ClockDep,
@@ -103,12 +106,13 @@ def create_bid(
             _message(rejected.rejection, rejected.vehicle, fresh.min_next_bid),
             auction=fresh.model_dump(mode="json"),
         ) from None
-    return _placed(result, bidder_id, response)
+    return _placed(result, bidder_id, request, response)
 
 
 @router.post("/buy-now", status_code=status.HTTP_201_CREATED, responses=_REJECTION_RESPONSES)
 def create_buy_now(
     vehicle_id: str,
+    request: Request,
     response: Response,
     session: WriteSession,
     clock: ClockDep,
@@ -131,4 +135,4 @@ def create_buy_now(
             "Buy Now is no longer available on this vehicle.",
             auction=fresh.model_dump(mode="json"),
         ) from None
-    return _placed(result, bidder_id, response)
+    return _placed(result, bidder_id, request, response)

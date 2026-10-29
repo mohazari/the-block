@@ -1,6 +1,5 @@
 import { useId, useState, type ReactNode } from 'react'
 import type { FacetValue, InventoryQuery, VehicleList } from '../../api/types'
-import { cn } from '../../lib/cn'
 import { formatKm, label } from '../../lib/format'
 import { STATUS_LABEL, type FilterPatch, type ListFilter } from './inventoryParams'
 
@@ -188,14 +187,7 @@ function CheckboxGroup({
                 className="size-4 accent-[var(--action)]"
               />
               <span className="flex-1">{format(facet.value)}</span>
-              <span
-                className={cn(
-                  'tabular text-xs',
-                  facet.count ? 'text-ink-faint' : 'text-ink-faint/60',
-                )}
-              >
-                {facet.count}
-              </span>
+              <span className="text-ink-faint tabular text-xs">{facet.count}</span>
             </label>
           </li>
         ))}

@@ -1,3 +1,5 @@
 dist
 coverage
 src/api/schema.ts
+test-results
+playwright-report

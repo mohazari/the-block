@@ -91,28 +91,35 @@ export function updateCachedVehicle(
   )
 }
 
-/** Watch / unwatch with an optimistic toggle; restores the exact previous cache on failure. */
+/** Every cached query that shows a vehicle's `watching` flag. */
+const showsWatching = {
+  predicate: ({ queryKey }: { queryKey: readonly unknown[] }) =>
+    queryKey[0] === 'vehicles' || queryKey[0] === 'me',
+}
+
+/**
+ * Watch / unwatch with an optimistic toggle. A failure reverts only the `watching` flag — never
+ * a whole snapshot, which would also roll back live prices that arrived meanwhile.
+ */
 export function useWatch() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ vehicleId, watching }: { vehicleId: string; watching: boolean }) =>
       api<void>(`/me/watchlist/${vehicleId}`, { method: watching ? 'PUT' : 'DELETE' }),
     onMutate: async ({ vehicleId, watching }) => {
-      // Every cache updateCachedVehicle writes to: a refetch landing after the optimistic toggle
-      // would otherwise undo it, and a failure must restore all of them.
-      const filters = {
-        predicate: ({ queryKey }: { queryKey: readonly unknown[] }) =>
-          queryKey[0] === 'vehicles' || queryKey[0] === 'me',
-      }
-      await queryClient.cancelQueries(filters)
-      const snapshot = queryClient.getQueriesData(filters)
+      // A refetch landing after the optimistic toggle would undo it. Whatever is cancelled here
+      // is refetched in onSettled.
+      await queryClient.cancelQueries(showsWatching)
       updateCachedVehicle(queryClient, vehicleId, (vehicle) => ({ ...vehicle, watching }))
-      return { snapshot }
     },
-    onError: (_error, _variables, context) => {
-      context?.snapshot.forEach(([key, data]) => queryClient.setQueryData(key, data))
+    onError: (_error, { vehicleId, watching }) => {
+      updateCachedVehicle(queryClient, vehicleId, (vehicle) => ({
+        ...vehicle,
+        watching: !watching,
+      }))
     },
-    // Watching or unwatching changes what the "Watching" filter contains.
-    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.inventoryAll }),
+    // The server is the source of truth; this also re-runs anything cancelled above and updates
+    // what the "Watching" filter and My bids contain.
+    onSettled: () => queryClient.invalidateQueries(showsWatching),
   })
 }

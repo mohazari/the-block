@@ -139,7 +139,9 @@ def test_stream_says_hello_then_relays_personalized_bids(
         broker = EventBroker()
         broker.bind(asyncio.get_running_loop())
         request = SimpleNamespace(
-            app=SimpleNamespace(state=SimpleNamespace(broker=broker, clock=clock))
+            app=SimpleNamespace(
+                state=SimpleNamespace(broker=broker, clock=clock, data_epoch="epoch-1")
+            )
         )
         stream = events_endpoint(request, bidder_id=ME)  # type: ignore[arg-type]
         hello = await anext(stream)
@@ -151,6 +153,7 @@ def test_stream_says_hello_then_relays_personalized_bids(
 
     hello, bid = asyncio.run(scenario())
     assert hello.event == "hello" and hello.retry == 2000
+    assert hello.data["epoch"] == "epoch-1"
     assert bid.event == "bid" and bid.id is None  # events aren't replayable; no ids
     assert bid.data.outbid_you and bid.data.vehicle_id == vehicle_id
 

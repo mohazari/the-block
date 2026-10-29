@@ -12,7 +12,7 @@ from app.domain.auction import AuctionStatus, auction_status, min_next_bid
 from app.domain.bidders import RIVAL_BIDDER_IDS
 from app.domain.schedule import FIRST_CLOSE_LEAD
 from app.models import Base, Bid, Meta, Vehicle
-from app.seed import ensure_seeded, needs_seed
+from app.seed import data_epoch, ensure_seeded, needs_seed
 from app.services.inventory import _ranges
 
 from .conftest import DATA_PATH
@@ -150,3 +150,12 @@ def test_ranges_tolerate_an_empty_inventory(engine: Engine) -> None:
     with Session(engine) as session:
         ranges = _ranges(session)
     assert ranges.price.min == ranges.price.max == 0
+
+
+def test_data_epoch_changes_when_the_data_is_reseeded(
+    seeded_engine: Engine, clock: FrozenClock
+) -> None:
+    first = data_epoch(seeded_engine)
+    clock.advance(timedelta(days=30))
+    ensure_seeded(seeded_engine, DATA_PATH, clock.now())
+    assert first and data_epoch(seeded_engine) != first

@@ -137,6 +137,13 @@ def seed(session: Session, data_path: Path, now: datetime) -> int:
     return len(records)
 
 
+def data_epoch(engine: Engine) -> str:
+    """Identifies this copy of the data: changes whenever the database is (re)seeded."""
+    with Session(engine) as session:
+        seeded_at = session.get(Meta, "seeded_at")
+        return seeded_at.value if seeded_at else ""
+
+
 def needs_seed(session: Session, now: datetime) -> bool:
     """Seed when empty, built by an older schema, or every auction has closed.
 

@@ -39,9 +39,10 @@ async def events(
     broker: EventBroker = request.app.state.broker
     async with broker.subscribe(bidder_id) as subscriber:
         clock = request.app.state.clock
-        yield ServerSentEvent(
-            event="hello", data={"server_time": clock.now().isoformat()}, retry=_RETRY_MS
-        )
+        # `epoch` changes when the data is reseeded: clients must then drop what they cached,
+        # since bid counts restart and can no longer order old against new.
+        hello = {"server_time": clock.now().isoformat(), "epoch": request.app.state.data_epoch}
+        yield ServerSentEvent(event="hello", data=hello, retry=_RETRY_MS)
         while True:
             event = await subscriber.queue.get()
             if event is None:  # dropped as a slow consumer: end the stream so it reconnects

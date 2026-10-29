@@ -13,6 +13,8 @@ export type Connection = 'connecting' | 'live' | 'reconnecting'
 const RECONNECT_MS = 3_000
 
 let connection: Connection = 'connecting'
+// Which copy of the data our cache came from (see the server's `epoch` in hello).
+let knownEpoch: string | undefined
 const listeners = new Set<() => void>()
 function setConnection(next: Connection) {
   if (next === connection) return
@@ -21,7 +23,10 @@ function setConnection(next: Connection) {
 }
 
 /** Test hook. */
-export const resetConnection = (): void => setConnection('connecting')
+export const resetConnection = (): void => {
+  setConnection('connecting')
+  knownEpoch = undefined
+}
 
 export const useConnection = (): Connection =>
   useSyncExternalStore(
@@ -71,9 +76,19 @@ export function useAuctionEvents(): void {
     const connect = () => {
       source = new EventSource(`/api/events?bidder_id=${encodeURIComponent(bidderId())}`)
       source.addEventListener('hello', (message) => {
-        const { server_time } = JSON.parse(message.data) as { server_time: string }
+        const { server_time, epoch } = JSON.parse(message.data) as {
+          server_time: string
+          epoch: string
+        }
         syncServerTime(server_time)
-        if (connectedBefore) void queryClient.invalidateQueries()
+        if (knownEpoch !== undefined && epoch !== knownEpoch) {
+          // The server reseeded: bid counts restarted, so cached snapshots would wrongly look
+          // newer than fresh ones. Drop the cache instead of comparing across datasets.
+          void queryClient.resetQueries()
+        } else if (connectedBefore) {
+          void queryClient.invalidateQueries()
+        }
+        knownEpoch = epoch
         connectedBefore = true
         setConnection('live')
       })

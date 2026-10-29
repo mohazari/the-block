@@ -13,7 +13,7 @@ from app.db import create_db_engine, write_engine
 from app.errors import install_error_handlers
 from app.events import EventBroker
 from app.routers import bids, events, me, vehicles
-from app.seed import ensure_seeded
+from app.seed import data_epoch, ensure_seeded
 from app.simulator import RivalSimulator
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,7 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine = create_db_engine(settings.database_url)
         ensure_seeded(engine, settings.data_path, clock.now())
+        app.state.data_epoch = data_epoch(engine)
         app.state.clock = clock
         app.state.sessions = sessionmaker(engine, expire_on_commit=False)
         app.state.write_sessions = sessionmaker(write_engine(engine), expire_on_commit=False)

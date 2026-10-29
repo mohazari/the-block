@@ -9,7 +9,9 @@ import { cn } from '../../lib/cn'
  */
 export function AnimatedPrice({ value, className }: { value: number; className?: string }) {
   const reduced = useReducedMotion()
-  const spring = useSpring(value, { stiffness: 140, damping: 22, mass: 0.6 })
+  // Critically damped and allowed to rest within half a dollar: the display is rounded, and a
+  // long creep through "$13,997" reads like a real (wrong) price. Found in live QA.
+  const spring = useSpring(value, { stiffness: 170, damping: 26, mass: 0.6, restDelta: 0.5 })
   const text = useTransform(spring, (latest) => formatMoney(Math.round(latest)))
 
   useEffect(() => {

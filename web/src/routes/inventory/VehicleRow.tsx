@@ -20,7 +20,8 @@ const EDGE = {
 } as const
 
 /** One line of the run list: everything a buyer scans before deciding to open a car. */
-export function VehicleRow({ vehicle }: { vehicle: VehicleSummary }) {
+/** `note` adds a line under the condition light, e.g. "Your top bid $23,300" on My bids. */
+export function VehicleRow({ vehicle, note }: { vehicle: VehicleSummary; note?: string }) {
   const now = useServerNow()
   const { auction } = vehicle
   const status = statusAt(auction, now)
@@ -77,6 +78,7 @@ export function VehicleRow({ vehicle }: { vehicle: VehicleSummary }) {
           condition_grade={vehicle.condition_grade}
           className="mt-2"
         />
+        {note && <p className="text-ink-muted tabular mt-1 text-sm font-semibold">{note}</p>}
       </div>
 
       <div className="col-span-2 flex flex-wrap items-baseline justify-between gap-x-3 sm:col-span-1 sm:col-start-2 lg:col-start-auto lg:block lg:text-right">

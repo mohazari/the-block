@@ -1,7 +1,15 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
-import { afterEach } from 'vitest'
+import { afterEach, beforeEach, vi } from 'vitest'
+import { resetConnection } from '../api/liveEvents'
+import { clearToasts } from '../components/toasts/toastStore'
 import { resetServerClock } from '../lib/serverClock'
+import { FakeEventSource } from './fakeEventSource'
+
+beforeEach(() => {
+  FakeEventSource.instances = []
+  vi.stubGlobal('EventSource', FakeEventSource)
+})
 
 // Vitest globals are off, so Testing Library can't register its own cleanup. Reset every piece
 // of global state a test can touch so tests never depend on order.
@@ -10,4 +18,6 @@ afterEach(() => {
   localStorage.clear()
   document.documentElement.dataset.theme = 'light'
   resetServerClock()
+  resetConnection()
+  clearToasts()
 })

@@ -27,13 +27,19 @@ const notify = () => {
 export function syncServerTime(serverTimeIso: string, sentAt?: number, receivedAt?: number): void {
   const serverMs = Date.parse(serverTimeIso)
   if (Number.isNaN(serverMs)) return
-  const local = Date.now()
-  const roundTrip = sentAt !== undefined && receivedAt !== undefined ? receivedAt - sentAt : 0
+  if (sentAt === undefined || receivedAt === undefined) {
+    // A pushed timestamp has unknown latency: use it only until a measured sample exists, and
+    // never let it outrank one.
+    if (bestRoundTripMs === Number.POSITIVE_INFINITY) {
+      offsetMs = serverMs - Date.now()
+      notify()
+    }
+    return
+  }
+  const roundTrip = receivedAt - sentAt
   if (roundTrip > bestRoundTripMs + SLACK_MS) return
   bestRoundTripMs = Math.min(bestRoundTripMs, roundTrip)
-  const midpoint =
-    sentAt !== undefined && receivedAt !== undefined ? (sentAt + receivedAt) / 2 : local
-  offsetMs = serverMs - midpoint
+  offsetMs = serverMs - (sentAt + receivedAt) / 2
   notify()
 }
 

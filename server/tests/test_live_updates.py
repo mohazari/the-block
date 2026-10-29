@@ -83,6 +83,7 @@ def test_events_are_personalized_per_subscriber(seeded_engine: Engine, clock: Fr
     assert not received[OTHER].outbid_you
     assert not any((received[None].outbid_you, received[None].bid.is_you))
     assert received[None].auction.current_bid == outbid.bid.amount
+    assert received[ME].vehicle_title == outbid.vehicle.title
 
 
 def test_replayed_requests_are_not_republished(seeded_engine: Engine, clock: FrozenClock) -> None:

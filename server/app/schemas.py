@@ -182,6 +182,7 @@ class AuctionEvent(BaseModel):
 
     type: Literal["bid", "sold"]
     vehicle_id: str
+    vehicle_title: str = Field(description='e.g. "2023 Ford Bronco", for notifications.')
     auction: AuctionSnapshot
     bid: BidOut
     outbid_you: bool = Field(description="You led until this bid.")

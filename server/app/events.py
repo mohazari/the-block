@@ -33,6 +33,7 @@ class BidEvent:
 
     kind: Literal["bid", "sold"]
     vehicle_id: str
+    vehicle_title: str
     auction: AuctionSnapshot  # computed for nobody: is_high_bidder / has_bid are False
     bid: BidOut  # is_you is False
     bidder_id: str
@@ -45,6 +46,7 @@ class BidEvent:
         return cls(
             kind="sold" if result.bid.kind == "buy_now" else "bid",
             vehicle_id=result.vehicle.id,
+            vehicle_title=result.vehicle.title,
             auction=snapshot(result.vehicle, result.now, bidder_id=None, has_bid=False),
             bid=bid_out(result.bid, bidder_id=None),
             bidder_id=result.bid.bidder_id,
@@ -61,6 +63,7 @@ class BidEvent:
         return AuctionEvent(
             type=self.kind,
             vehicle_id=self.vehicle_id,
+            vehicle_title=self.vehicle_title,
             auction=self.auction.model_copy(
                 update={"is_high_bidder": is_bidder, "has_bid": bidder_id in self.bidders}
             ),

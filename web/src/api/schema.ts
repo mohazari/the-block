@@ -100,7 +100,7 @@ export interface AuctionSnapshot {
 export interface BidOut {
   amount: number
   /**
-   * Anonymous alias, e.g. "Bidder 4821".
+   * Per-lot label in order of first bid, e.g. "Bidder 3". Anonymous, and the same bidder may have a different number on another vehicle.
    */
   bidder: string
   id: number
@@ -273,6 +273,10 @@ export interface VehicleDetail {
   odometer_km: number
   province: string
   recent_bids: BidOut[]
+  /**
+   * How many recent bids the history keeps.
+   */
+  recent_bids_limit: number
   selling_dealership: string
   server_time: string
   title_status: string

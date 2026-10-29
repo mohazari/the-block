@@ -1,12 +1,21 @@
 import { useId, useState, type ReactNode } from 'react'
 import type { FacetValue, InventoryQuery, VehicleList } from '../../api/types'
 import { formatKm, label } from '../../lib/format'
-import { STATUS_LABEL, type FilterPatch, type ListFilter } from './inventoryParams'
+import {
+  PRICE_RULE,
+  STATUS_LABEL,
+  YEAR_RULE,
+  type FilterPatch,
+  type ListFilter,
+  type NumberRule,
+} from './inventoryParams'
 
 interface Props {
   query: InventoryQuery
   data: VehicleList | undefined
   update: (patch: FilterPatch) => void
+  /** Changes on "Clear all": range inputs drop drafts that were never applied. */
+  clearCount: number
 }
 
 const STATUS_ORDER = ['live', 'upcoming', 'ended']
@@ -14,7 +23,7 @@ const ODOMETER_PRESETS = [25_000, 50_000, 100_000, 150_000]
 const GRADE_PRESETS = [2, 3, 4]
 
 /** All inventory filters. Rendered in the desktop rail and inside the mobile sheet. */
-export function FilterPanel({ query, data, update }: Props) {
+export function FilterPanel({ query, data, update, clearCount }: Props) {
   const facets = data?.facets ?? {}
   const ranges = data?.ranges
 
@@ -38,12 +47,14 @@ export function FilterPanel({ query, data, update }: Props) {
       />
 
       <RangeInputs
+        clearCount={clearCount}
         legend="Price"
         prefix="$"
         min={query.price_min}
         max={query.price_max}
         bounds={ranges?.price}
         step={500}
+        rule={PRICE_RULE}
         onChange={(price_min, price_max) => update({ price_min, price_max })}
       />
 
@@ -65,10 +76,12 @@ export function FilterPanel({ query, data, update }: Props) {
       />
 
       <RangeInputs
+        clearCount={clearCount}
         legend="Model year"
         min={query.year_min}
         max={query.year_max}
         bounds={ranges?.year}
+        rule={YEAR_RULE}
         onChange={(year_min, year_max) => update({ year_min, year_max })}
       />
 
@@ -272,6 +285,8 @@ function RangeInputs({
   max,
   bounds,
   step = 1,
+  rule,
+  clearCount,
   onChange,
 }: {
   legend: string
@@ -280,22 +295,34 @@ function RangeInputs({
   max: number | null | undefined
   bounds?: { min: number; max: number }
   step?: number
+  rule: NumberRule
+  clearCount: number
   onChange: (min: number | null, max: number | null) => void
 }) {
   const [low, setLow] = useState(min?.toString() ?? '')
   const [high, setHigh] = useState(max?.toString() ?? '')
   // Follow outside changes (a chip removed, "Clear all") by adjusting state while rendering. No
   // remount: remounting on commit would drop focus when tabbing from Min to Max.
-  const [applied, setApplied] = useState([min, max])
-  if (applied[0] !== min || applied[1] !== max) {
-    setApplied([min, max])
+  const [invalid, setInvalid] = useState(false)
+  const [applied, setApplied] = useState([min, max, clearCount])
+  if (applied[0] !== min || applied[1] !== max || applied[2] !== clearCount) {
+    setApplied([min, max, clearCount])
     setLow(min?.toString() ?? '')
     setHigh(max?.toString() ?? '')
+    setInvalid(false)
   }
   const parse = (text: string) => (text.trim() === '' ? null : Number(text))
 
+  const hintId = useId()
   const commit = () => {
-    let next = [parse(low), parse(high)] as const
+    const values = [parse(low), parse(high)]
+    // Don't apply what the API would reject (e.g. a half-typed year "20"); say why instead.
+    if (values.some((value) => value !== null && (Number.isNaN(value) || !rule.valid(value)))) {
+      setInvalid(true)
+      return
+    }
+    setInvalid(false)
+    let next = values as [number | null, number | null]
     if (next[0] !== null && next[1] !== null && next[0] > next[1]) next = [next[1], next[0]]
     if (next[0] !== (min ?? null) || next[1] !== (max ?? null)) onChange(next[0], next[1])
   }
@@ -319,14 +346,24 @@ function RangeInputs({
                 bounds ? String(which === 'Min' ? bounds.min : bounds.max) : which.toLowerCase()
               }
               value={which === 'Min' ? low : high}
-              onChange={(event) => (which === 'Min' ? setLow : setHigh)(event.target.value)}
+              onChange={(event) => {
+                setInvalid(false)
+                ;(which === 'Min' ? setLow : setHigh)(event.target.value)
+              }}
               onBlur={commit}
               onKeyDown={(event) => event.key === 'Enter' && commit()}
+              aria-invalid={invalid}
+              aria-describedby={invalid ? hintId : undefined}
               className={field}
             />
           </label>
         ))}
       </div>
+      {invalid && (
+        <p id={hintId} className="text-outbid mt-1 text-xs">
+          {rule.hint}
+        </p>
+      )}
     </Group>
   )
 }

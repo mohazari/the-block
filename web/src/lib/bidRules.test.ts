@@ -14,7 +14,9 @@ describe('amountProblem', () => {
     expect(amountProblem(null, open)).toBe('Enter a bid amount.')
     expect(amountProblem(23300.5, open)).toBe('Bids are in whole dollars.')
     expect(amountProblem(23299, open)).toBe('The minimum bid is $23,300.')
-    expect(amountProblem(69901, open)).toMatch(/more than 3× the minimum/)
+    expect(amountProblem(69901, open)).toBe(
+      "That's above the largest single bid allowed ($69,900). Check the amount.",
+    )
   })
 
   it('points to Buy Now when a bid would reach it', () => {

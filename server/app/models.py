@@ -79,11 +79,15 @@ class Bid(Base):
         # Retrying a request with the same key returns the original bid instead of bidding twice.
         UniqueConstraint("bidder_id", "idempotency_key"),
         Index("ix_bids_vehicle_placed", "vehicle_id", "placed_at"),
+        Index("ix_bids_vehicle_bidder", "vehicle_id", "bidder_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     vehicle_id: Mapped[str] = mapped_column(ForeignKey("vehicles.id"))
     bidder_id: Mapped[str] = mapped_column(index=True)
+    # Paddle number on this vehicle, in order of first bid ("Bidder 3"): stored when the bid is
+    # written, so reads never have to work it out from the whole history.
+    bidder_number: Mapped[int]
     amount: Mapped[int]
     kind: Mapped[str] = mapped_column(String(8), default="bid")  # "bid" | "buy_now"
     placed_at: Mapped[datetime] = mapped_column(UTCDateTime)

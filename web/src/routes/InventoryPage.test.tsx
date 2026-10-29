@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { auction, stubApi, vehicle, vehicleList } from '../test/fixtures'
@@ -128,5 +128,60 @@ describe('InventoryPage', () => {
     renderRoute('/?page=5')
     expect(await screen.findByText('Page 5 is past the end of the list')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Go to the first page' })).toBeInTheDocument()
+  })
+
+  it('explains an invalid range instead of applying it', async () => {
+    serve()
+    const { router } = renderRoute('/')
+    const rail = within(await screen.findByRole('complementary', { name: 'Filters' }))
+    await userEvent.type(rail.getByLabelText('Min model year'), '20')
+    await userEvent.tab()
+    expect(rail.getByText('Enter a year like 2020.')).toBeInTheDocument()
+    expect(rail.getByLabelText('Min model year')).toHaveAttribute('aria-invalid', 'true')
+    expect(router.state.location.search).toBe('')
+  })
+
+  it('clears an invalid range and its hint on "Clear all"', async () => {
+    serve()
+    renderRoute('/?make=Ford')
+    const rail = within(await screen.findByRole('complementary', { name: 'Filters' }))
+    const year = rail.getByLabelText('Min model year')
+    await userEvent.type(year, '20')
+    await userEvent.tab()
+    expect(rail.getByText('Enter a year like 2020.')).toBeInTheDocument()
+
+    await userEvent.click(rail.getByRole('button', { name: 'Clear all' }))
+    expect(rail.queryByText('Enter a year like 2020.')).not.toBeInTheDocument()
+    expect(year).toHaveValue(null)
+    expect(year).not.toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it('cuts an over-long paste at a whole character and keeps what was typed', async () => {
+    serve()
+    renderRoute('/')
+    const box = screen.getByRole('searchbox', { name: 'Search inventory' })
+    await userEvent.type(box, 'ford')
+    await userEvent.click(box)
+    await userEvent.paste('🚗'.repeat(60)) // 120 UTF-16 units: only 48 cars fit after "ford"
+    expect(box).toHaveValue(`ford${'🚗'.repeat(48)}`)
+  })
+
+  it('measures pasted line breaks as the spaces the box turns them into', async () => {
+    serve()
+    renderRoute('/')
+    const box = screen.getByRole('searchbox', { name: 'Search inventory' })
+    await userEvent.click(box)
+    await userEvent.paste('🚗\r\n'.repeat(40)) // 120 units as the box holds it: "🚗 " x 40
+    expect(box).toHaveValue('🚗 '.repeat(33)) // 99 units: one more car (2) would pass 100
+  })
+
+  it('measures a paste without its trailing line break, as Firefox inserts it', async () => {
+    serve()
+    renderRoute('/')
+    const box = screen.getByRole('searchbox', { name: 'Search inventory' })
+    await userEvent.type(box, 'x'.repeat(98))
+    // "ab" fits the 2 units left: the browser should do this paste itself, not the handler.
+    const browserDoesIt = fireEvent.paste(box, { clipboardData: { getData: () => 'ab\n' } })
+    expect(browserDoesIt).toBe(true) // not cancelled
   })
 })

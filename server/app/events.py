@@ -118,6 +118,12 @@ class EventBroker:
         except Exception:
             logger.exception("Failed to publish bid event")
 
+    def _end(self, subscriber: Subscriber) -> None:
+        self._subscribers.discard(subscriber)
+        if subscriber.queue.full():
+            subscriber.queue.get_nowait()
+        subscriber.queue.put_nowait(None)
+
     def _fan_out(self, event: BidEvent) -> None:
         for subscriber in list(self._subscribers):
             try:
@@ -126,6 +132,4 @@ class EventBroker:
                 # A stalled client: end its stream so it reconnects and refetches, rather than
                 # letting its backlog grow without bound.
                 logger.warning("Dropping slow event subscriber")
-                self._subscribers.discard(subscriber)
-                subscriber.queue.get_nowait()
-                subscriber.queue.put_nowait(None)
+                self._end(subscriber)

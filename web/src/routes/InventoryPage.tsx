@@ -1,5 +1,5 @@
 import { Search } from 'lucide-react'
-import { useEffect, useEffectEvent, useId, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useId, useRef, useState, type ClipboardEvent } from 'react'
 import { useInventory } from '../api/queries'
 import { LightsLegend } from '../components/auction/ConditionLight'
 import { plural } from '../lib/format'
@@ -7,11 +7,17 @@ import { ActiveFilterChips, ChipButton } from './inventory/ActiveFilterChips'
 import { activeChips } from './inventory/activeChips'
 import { FilterPanel } from './inventory/FilterPanel'
 import { FilterSheet } from './inventory/FilterSheet'
-import { activeFilterCount, SORTS, useInventoryParams } from './inventory/inventoryParams'
+import {
+  activeFilterCount,
+  limitSearch,
+  SEARCH_MAX_LENGTH,
+  SORTS,
+  useInventoryParams,
+} from './inventory/inventoryParams'
 import { VehicleRow } from './inventory/VehicleRow'
 
 export function InventoryPage() {
-  const { query, update, clearAll } = useInventoryParams()
+  const { query, update, clearAll, clearCount } = useInventoryParams()
   const inventory = useInventory(query)
   const data = inventory.data
   const pages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1
@@ -40,7 +46,7 @@ export function InventoryPage() {
               </button>
             )}
           </div>
-          <FilterPanel query={query} data={data} update={update} />
+          <FilterPanel query={query} data={data} update={update} clearCount={clearCount} />
         </div>
       </aside>
 
@@ -60,7 +66,7 @@ export function InventoryPage() {
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <SearchBox value={query.q ?? ''} onSearch={(q) => update({ q }, { replace: true })} />
           <FilterSheet activeCount={filterCount} total={data?.total} onClear={clearAll}>
-            <FilterPanel query={query} data={data} update={update} />
+            <FilterPanel query={query} data={data} update={update} clearCount={clearCount} />
           </FilterSheet>
           <SortSelect value={query.sort ?? 'ending_soon'} onChange={(sort) => update({ sort })} />
         </div>
@@ -141,6 +147,39 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
     return () => clearTimeout(timer)
   }, [draft, value])
 
+  // The browser's own maxLength cut keeps surrogate pairs whole but can split a multi-part
+  // emoji (checked in Chromium: a family at the limit becomes two people). For pastes, insert
+  // only the whole characters that fit instead, keeping what's typed. Drops stay native: taking
+  // one over means second-guessing move vs copy, and getting that wrong loses or duplicates
+  // text, which is worse than a shortened emoji at the 100th character.
+  const pasteWithinLimit = (event: ClipboardEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const text = event.clipboardData.getData('text')
+    // Measure what the field will hold: a one-line input turns line breaks into spaces (checked
+    // in Chromium; Firefox too, after dropping trailing ones). Dropping trailing ones here as
+    // well costs Chromium only a trailing space, which search ignores.
+    const inserted = text.replace(/[\r\n]+$/, '').replace(/\r\n|[\r\n]/g, ' ')
+    const start = input.selectionStart ?? input.value.length
+    const end = input.selectionEnd ?? start
+    const room = SEARCH_MAX_LENGTH - (input.value.length - (end - start))
+    if (inserted.length <= room) return // fits: the browser does it
+    event.preventDefault()
+    const fitting = limitSearch(inserted, Math.max(0, room))
+    input.focus()
+    input.setSelectionRange(start, end)
+    // insertText goes through the browser's editing, so Cmd/Ctrl+Z undoes it as usual.
+    if (
+      typeof document.execCommand === 'function' &&
+      document.execCommand('insertText', false, fitting)
+    ) {
+      return
+    }
+    setDraft(input.value.slice(0, start) + fitting + input.value.slice(end))
+    requestAnimationFrame(() =>
+      input.setSelectionRange(start + fitting.length, start + fitting.length),
+    )
+  }
+
   return (
     <div className="relative min-w-0 flex-1 basis-full sm:basis-64">
       <label htmlFor={id} className="sr-only">
@@ -156,7 +195,10 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
         type="search"
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
+        onPaste={pasteWithinLimit}
         placeholder="Make, model, VIN, lot or city"
+        // Typing past the limit is refused in place; pastes are cut at a whole character.
+        maxLength={SEARCH_MAX_LENGTH}
         className="border-line-strong bg-surface placeholder:text-ink-faint h-10 w-full rounded-[var(--radius-control)] border pr-3 pl-10 text-sm"
       />
     </div>

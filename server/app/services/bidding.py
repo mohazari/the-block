@@ -9,17 +9,19 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.clock import Clock
 from app.domain.auction import (
     AuctionStatus,
     BidRejection,
+    ReserveStatus,
     auction_status,
     buy_now_available,
     extended_close,
     min_next_bid,
+    reserve_status,
     validate_bid,
 )
 from app.errors import ApiError
@@ -105,19 +107,29 @@ def _replay(
     )
 
 
-def _bidders(session: Session, vehicle_id: str) -> frozenset[str]:
-    return frozenset(
-        session.scalars(select(Bid.bidder_id).where(Bid.vehicle_id == vehicle_id).distinct())
+def _paddles(session: Session, vehicle_id: str) -> dict[str, int]:
+    """Every bidder on this vehicle → their paddle number: one query (inside the write lock)
+    answers both "what number does this bidder get" and "who has bid here"."""
+    return dict(
+        session.execute(
+            select(Bid.bidder_id, func.min(Bid.bidder_number))
+            .where(Bid.vehicle_id == vehicle_id)
+            .group_by(Bid.bidder_id)
+        ).all()
     )
 
 
-def _record(session: Session, vehicle: Vehicle, bid: Bid) -> str | None:
+def _record(session: Session, vehicle: Vehicle, bid: Bid) -> tuple[str | None, frozenset[str]]:
+    """Write the bid. Returns the previous leader and everyone who has now bid on the vehicle."""
     previous = vehicle.high_bidder_id
+    paddles = _paddles(session, vehicle.id)
+    # Keep the bidder's number from their first bid here, else the next one.
+    bid.bidder_number = paddles.get(bid.bidder_id, max(paddles.values(), default=0) + 1)
     session.add(bid)
     vehicle.current_bid = bid.amount
     vehicle.bid_count += 1
     vehicle.high_bidder_id = bid.bidder_id
-    return previous
+    return previous, frozenset({*paddles, bid.bidder_id})
 
 
 def place_bid(
@@ -156,6 +168,10 @@ def place_bid(
             if buy_now_available(status, vehicle.buy_now_price, vehicle.current_bid)
             else None
         ),
+        reserve_met=reserve_status(
+            vehicle.reserve_price, vehicle.current_bid, vehicle.buy_now_price
+        )
+        is not ReserveStatus.NOT_MET,
     )
     if rejection is not None:
         raise BidRejectedError(rejection, vehicle, now)
@@ -167,7 +183,7 @@ def place_bid(
         placed_at=now,
         idempotency_key=idempotency_key,
     )
-    previous = _record(session, vehicle, bid)
+    previous, bidders = _record(session, vehicle, bid)
 
     # Pre-bids on upcoming auctions never move the close; only live bids can trigger soft close.
     new_end = extended_close(vehicle.ends_at, now) if status is AuctionStatus.LIVE else None
@@ -175,7 +191,6 @@ def place_bid(
     if new_end is not None:
         vehicle.ends_at = new_end
 
-    bidders = _bidders(session, vehicle.id)
     session.commit()
     return BidResult(bid, vehicle, now, previous, bidders, extended=extended, replayed=False)
 
@@ -217,12 +232,11 @@ def buy_now(
         placed_at=now,
         idempotency_key=idempotency_key,
     )
-    previous = _record(session, vehicle, bid)
+    previous, bidders = _record(session, vehicle, bid)
     # Close the auction now. An upcoming auction also "starts" now, otherwise its status would
     # still read upcoming (now < starts_at) after the sale.
     vehicle.starts_at = min(vehicle.starts_at, now)
     vehicle.ends_at = now
 
-    bidders = _bidders(session, vehicle.id)
     session.commit()
     return BidResult(bid, vehicle, now, previous, bidders, extended=False, replayed=False)

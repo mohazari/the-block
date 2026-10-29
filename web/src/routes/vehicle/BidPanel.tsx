@@ -5,7 +5,7 @@ import { ApiError } from '../../api/client'
 import type { AuctionSnapshot, Standing, VehicleDetail } from '../../api/types'
 import { AnimatedPrice } from '../../components/auction/AnimatedPrice'
 import { AuctionClock } from '../../components/auction/AuctionClock'
-import { RESERVE_TEXT, standingAt, statusAt } from '../../lib/auction'
+import { RESERVE_TEXT, standingAt, statusAt, wasSold } from '../../lib/auction'
 import { cn } from '../../lib/cn'
 import { formatMoney, plural } from '../../lib/format'
 import { useServerNow } from '../../lib/serverClock'
@@ -51,13 +51,21 @@ export function BidPanel({ vehicle }: { vehicle: VehicleDetail }) {
 
       {status !== 'ended' && (
         <div className="space-y-5 p-5">
-          {standing === 'leading' ? (
+          {standing === 'leading' && auction.reserve_status !== 'not_met' ? (
             <p className="text-ink-muted text-sm">
               You lead at {formatMoney(auction.current_bid!)}. We'll show you right away if someone
               outbids you.
             </p>
           ) : (
-            <BidForm vehicleId={vehicle.id} auction={auction} status={status} />
+            <>
+              {standing === 'leading' && (
+                <p className="text-ink-muted text-sm">
+                  You lead, but the reserve isn't met yet. If no one bids higher, raising your bid
+                  is the only way this car sells.
+                </p>
+              )}
+              <BidForm vehicleId={vehicle.id} auction={auction} status={status} />
+            </>
           )}
           {auction.buy_now_available && auction.buy_now_price !== null && (
             <BuyNow vehicleId={vehicle.id} price={auction.buy_now_price} />
@@ -65,7 +73,8 @@ export function BidPanel({ vehicle }: { vehicle: VehicleDetail }) {
           <p className="text-ink-faint text-xs">
             {status === 'upcoming'
               ? 'Pre-bids are placed now and count when the auction opens.'
-              : 'A bid in the last 2 minutes extends the auction by 2 minutes, so everyone gets a chance to respond.'}
+              : // Matches the server's rule: the close moves to 2 minutes after the bid.
+                'A bid in the last 2 minutes resets the clock to 2 minutes, so everyone gets a chance to respond.'}
           </p>
         </div>
       )}
@@ -109,11 +118,11 @@ function StandingBanner({
     },
     won: { text: 'You won this vehicle.', tone: 'bg-win-soft text-win' },
     lost: {
-      text:
-        // The high bidder can only lose on the reserve (the outcome may not have arrived yet).
-        auction.is_high_bidder
-          ? "You were the high bidder, but the reserve wasn't met."
-          : 'Another buyer won this vehicle.',
+      text: auction.is_high_bidder
+        ? "You were the high bidder, but the reserve wasn't met."
+        : wasSold(auction)
+          ? 'Another buyer won this vehicle.'
+          : "The reserve wasn't met, so this vehicle didn't sell.",
       tone: 'bg-surface-sunk text-ink-muted',
     },
   }

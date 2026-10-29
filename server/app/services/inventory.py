@@ -17,7 +17,6 @@ from app.domain.auction import (
     min_next_bid,
     reserve_status,
 )
-from app.domain.bidders import bidder_alias
 from app.domain.damage import classify_damage, worst_severity
 from app.errors import ApiError
 from app.models import Bid, Vehicle, WatchlistEntry
@@ -264,14 +263,32 @@ def summarize(
     )
 
 
+# VehicleSummary fields the server works out; every other field is copied from the Vehicle row
+# as-is, so adding a column to both is all a new field needs.
+COMPUTED_SUMMARY_FIELDS = frozenset(
+    {"image_count", "damage_count", "worst_damage", "watching", "auction"}
+)
+COPIED_SUMMARY_FIELDS = tuple(
+    name for name in VehicleSummary.model_fields if name not in COMPUTED_SUMMARY_FIELDS
+)
+
+
+def check_copied_fields(fields: tuple[str, ...]) -> None:
+    """Fail at import, not on every request, if the schema and the model disagree."""
+    unknown = sorted(set(fields) - set(Vehicle.__table__.columns.keys()))
+    if unknown:
+        raise RuntimeError(
+            f"VehicleSummary fields {unknown} are not Vehicle columns: add them to the model, or "
+            "to COMPUTED_SUMMARY_FIELDS if the server works them out."
+        )
+
+
+check_copied_fields(COPIED_SUMMARY_FIELDS)
+
+
 def _summary_fields(vehicle: Vehicle) -> dict[str, Any]:
-    names = (
-        "id", "lot", "vin", "year", "make", "model", "trim", "body_style", "exterior_color",
-        "transmission", "drivetrain", "fuel_type", "odometer_km", "condition_grade",
-        "title_status", "city", "province", "selling_dealership",
-    )  # fmt: skip
     return {
-        **{name: getattr(vehicle, name) for name in names},
+        **{name: getattr(vehicle, name) for name in COPIED_SUMMARY_FIELDS},
         "image_count": len(vehicle.images),
         "damage_count": len(vehicle.damage_notes),
         "worst_damage": worst_severity(vehicle.damage_notes),
@@ -298,10 +315,12 @@ def open_first_key(auction: AuctionSnapshot) -> tuple[int, float]:
 
 
 def bid_out(bid: Bid, bidder_id: str | None) -> BidOut:
+    """Other buyers see the per-lot paddle number ("Bidder 3"), never the bidder id: unique
+    within the lot by construction, and says nothing about who the bidder is."""
     return BidOut(
         id=bid.id,
         amount=bid.amount,
-        bidder=bidder_alias(bid.bidder_id),
+        bidder=f"Bidder {bid.bidder_number}",
         is_you=bidder_id is not None and bid.bidder_id == bidder_id,
         placed_at=bid.placed_at,
     )
@@ -356,5 +375,6 @@ def vehicle_detail(
         damage=[DamageNote(note=n, severity=classify_damage(n)) for n in vehicle.damage_notes],
         images=vehicle.images,
         recent_bids=[bid_out(bid, bidder_id) for bid in recent_bids],
+        recent_bids_limit=RECENT_BIDS_LIMIT,
         server_time=now,
     )

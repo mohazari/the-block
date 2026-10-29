@@ -4,13 +4,25 @@ import { showToast } from '../components/toasts/toastStore'
 import { bidderId } from '../lib/bidder'
 import { formatMoney } from '../lib/format'
 import { syncServerTime } from '../lib/serverClock'
-import { applyAuction } from './bidding'
-import { queryKeys } from './queries'
+import { forgetSeen } from './auctionLedger'
+import { applyAuction, forgetOwnBidRefreshes } from './bidding'
+import { noteHello, noteStreamDown, onReseed, onStaleStream } from './dataEpoch'
+import { streamLive } from './streamGate'
 import type { AuctionEvent } from './types'
 
 export type Connection = 'connecting' | 'live' | 'reconnecting'
 
 const RECONNECT_MS = 3_000
+// The hello says how often the server pings a quiet stream; three missed in a row means the
+// connection died without telling us (e.g. a proxy holding it open after the server went away).
+const MISSED_PINGS = 3
+const DEFAULT_HEARTBEAT_MS = 10_000
+// An announced heartbeat that isn't a positive number is ignored; extremes are clamped.
+const HEARTBEAT_LIMITS_MS = [1_000, 600_000] as const
+// A timer that fires far too late means the tab was asleep or frozen, not the stream dead:
+// buffered events may still be on their way, so give them a moment first.
+const WOKE_UP_LATE_MS = 5_000
+const AFTER_WAKING_MS = 5_000
 
 let connection: Connection = 'connecting'
 const listeners = new Set<() => void>()
@@ -35,8 +47,8 @@ export const useConnection = (): Connection =>
 /**
  * One app-wide subscription to /api/events. Each bid is written straight into every cached copy
  * of that vehicle (run list, detail page, My bids), so prices move everywhere without refetching.
- * The server sends `hello` on every (re)connect; after the first it means "you may have missed
- * events", so everything is refetched.
+ * The server sends `hello` on every (re)connect. Initial reads wait for the first one
+ * (subscribe, then read); after a reconnect, everything on screen is refetched.
  */
 export function useAuctionEvents(): void {
   const queryClient = useQueryClient()
@@ -44,14 +56,35 @@ export function useAuctionEvents(): void {
   useEffect(() => {
     let source: EventSource | undefined
     let retry: ReturnType<typeof setTimeout> | undefined
+    let silence: ReturnType<typeof setTimeout> | undefined
     let connectedBefore = false
+    let heartbeatMs = DEFAULT_HEARTBEAT_MS
+
+    const reconnect = () => {
+      clearTimeout(silence)
+      source?.close()
+      noteStreamDown()
+      setConnection(connectedBefore ? 'reconnecting' : 'connecting')
+      connect()
+    }
+
+    // Every event (and the server's ping) proves the stream is alive; silence restarts it.
+    // One grace period per silent stretch: a throttled background tab's timers always fire
+    // late, and must still replace a dead stream eventually.
+    const expectMore = (within = heartbeatMs * MISSED_PINGS, graced = false) => {
+      clearTimeout(silence)
+      const due = Date.now() + within
+      silence = setTimeout(() => {
+        if (!graced && Date.now() - due > WOKE_UP_LATE_MS) expectMore(AFTER_WAKING_MS, true)
+        else reconnect()
+      }, within)
+    }
 
     const onAuctionEvent = (message: MessageEvent<string>) => {
+      expectMore()
       const event = JSON.parse(message.data) as AuctionEvent
-      // Patches every cached copy, My bids included; only a bid of yours from elsewhere (another
-      // tab) can add a vehicle My bids doesn't have yet.
+      // Patches every cached copy, My bids included (see recordOwnBid for your own bids).
       applyAuction(queryClient, event.vehicle_id, event.auction, event.bid)
-      if (event.bid.is_you) void queryClient.invalidateQueries({ queryKey: queryKeys.myBids })
       if (event.outbid_you) {
         showToast({
           tone: 'outbid',
@@ -70,30 +103,69 @@ export function useAuctionEvents(): void {
 
     const connect = () => {
       source = new EventSource(`/api/events?bidder_id=${encodeURIComponent(bidderId())}`)
+      expectMore()
+      source.addEventListener('ping', () => expectMore())
       source.addEventListener('hello', (message) => {
-        const { server_time } = JSON.parse(message.data) as { server_time: string }
+        const { server_time, epoch, run, heartbeat_seconds } = JSON.parse(message.data) as {
+          server_time: string
+          epoch?: string
+          run?: string
+          heartbeat_seconds?: number
+        }
+        const [shortest, longest] = HEARTBEAT_LIMITS_MS
+        if (typeof heartbeat_seconds === 'number' && heartbeat_seconds > 0) {
+          heartbeatMs = Math.min(Math.max(heartbeat_seconds * 1000, shortest), longest)
+        }
+        expectMore()
         syncServerTime(server_time)
-        if (connectedBefore) void queryClient.invalidateQueries()
+        // A run with different data resets the cache (see onReseed below), which also refetches.
+        // A hello naming no run (a server that doesn't track runs) is still a live stream; there
+        // is just no run to follow.
+        const reseeded = run && epoch != null ? noteHello(run, epoch) : false
+        // Initial reads waited for this hello (streamGate), so they can't have missed a bid.
+        const readBeforeSubscribing = streamLive()
+        if (!reseeded && readBeforeSubscribing) {
+          // A reconnect, or the initial wait was capped: refetch what may have missed bids.
+          void queryClient.invalidateQueries()
+        }
         connectedBefore = true
         setConnection('live')
       })
       source.addEventListener('bid', onAuctionEvent)
       source.addEventListener('sold', onAuctionEvent)
       source.onerror = () => {
+        noteStreamDown()
         setConnection(connectedBefore ? 'reconnecting' : 'connecting')
         // The browser retries dropped connections itself, but gives up for good on a bad
         // response (e.g. a 502 from a proxy). Then it's on us, or the page goes quietly stale.
         if (source?.readyState === EventSource.CLOSED) {
           source.close()
+          clearTimeout(silence)
           retry = setTimeout(connect, RECONNECT_MS)
         }
       }
     }
 
+    // Reseeded (a new server run with different data, from a hello or a response): bid counts
+    // restarted, so cached snapshots and what live events showed would wrongly look newer than
+    // fresh data. Drop both.
+    const stopWatchingReseeds = onReseed(() => {
+      forgetSeen()
+      forgetOwnBidRefreshes() // bid ids restart too: an old id must not suppress a new refresh
+      void queryClient.resetQueries()
+    })
+
+    // A response came from a server this stream isn't connected to: the stream is stale.
+    const stopWatchingStaleStream = onStaleStream(reconnect)
+
     connect()
     return () => {
+      stopWatchingReseeds()
+      stopWatchingStaleStream()
       clearTimeout(retry)
+      clearTimeout(silence)
       source?.close()
+      noteStreamDown()
     }
   }, [queryClient])
 }

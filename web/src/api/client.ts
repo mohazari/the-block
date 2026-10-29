@@ -1,5 +1,7 @@
 import { bidderId } from '../lib/bidder'
 import { syncServerTime } from '../lib/serverClock'
+import { noteResponse, sentWith } from './dataEpoch'
+import { waitForStream } from './streamGate'
 import type { AuctionSnapshot } from './types'
 
 /** The server's error envelope: `{"error": {"code", "message", ...details}}`. */
@@ -9,6 +11,8 @@ export class ApiError extends Error {
   /** Fresh auction state sent with bid rejections, so the UI can recover in place. */
   readonly auction?: AuctionSnapshot
   readonly retryAfterSeconds?: number
+  /** Answered from other data than the cache's (see dataEpoch): don't apply `auction`. */
+  readonly fromOtherData: boolean
 
   constructor(
     status: number,
@@ -16,6 +20,7 @@ export class ApiError extends Error {
     message: string,
     auction?: AuctionSnapshot,
     retryAfterSeconds?: number,
+    fromOtherData = false,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -23,6 +28,7 @@ export class ApiError extends Error {
     this.code = code
     this.auction = auction
     this.retryAfterSeconds = retryAfterSeconds
+    this.fromOtherData = fromOtherData
   }
 }
 
@@ -39,22 +45,46 @@ export function toSearchParams(query: Record<string, QueryValue>): URLSearchPara
   return params
 }
 
-interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
+interface ReadOptions {
   query?: Record<string, QueryValue>
-  body?: unknown
-  idempotencyKey?: string
   signal?: AbortSignal
 }
 
-export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
+interface RequestOptions extends ReadOptions {
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
+  body?: unknown
+  idempotencyKey?: string
+}
+
+/** A response, and whether it was answered from the same data as the cache (see dataEpoch). */
+export interface Answer<T> {
+  data: T
+  sameData: boolean
+}
+
+/**
+ * Reads only (writes go through send(), which reports the verdict): a read answered from other
+ * data, or by a run the tab has moved past, is never returned — it's read again instead.
+ */
+export async function api<T>(path: string, options: ReadOptions = {}): Promise<T> {
+  return (await send<T>(path, options)).data
+}
+
+/**
+ * For writes, whose outcome stands whatever data answered them (the bid was placed): the caller
+ * decides what to apply.
+ */
+export async function send<T>(path: string, options: RequestOptions = {}): Promise<Answer<T>> {
   const { method = 'GET', query, body, idempotencyKey, signal } = options
   const search = query ? `?${toSearchParams(query)}` : ''
   const headers: Record<string, string> = { 'X-Bidder-Id': bidderId() }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey
 
+  // Reads wait for the live stream (see streamGate); writes never do.
+  if (method === 'GET') await waitForStream()
   const sentAt = Date.now()
+  const sent = sentWith()
   let response: Response
   try {
     response = await fetch(`/api${path}${search}`, {
@@ -69,7 +99,9 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   }
 
   const receivedAt = Date.now()
-  if (response.status === 204) return undefined as T
+  const run = response.headers.get('X-Server-Run')
+  const { sameData, current } = noteResponse(run, response.headers.get('X-Data-Epoch'), sent)
+  if (response.status === 204) return { data: undefined as T, sameData }
   const payload: unknown = await response.json().catch(() => undefined)
 
   if (!response.ok) {
@@ -81,6 +113,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
       typeof error?.message === 'string' ? error.message : `Request failed (${response.status}).`,
       error?.auction as AuctionSnapshot | undefined,
       Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
+      !sameData,
     )
   }
 
@@ -88,7 +121,13 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     // e.g. an HTML page from a proxy or captive portal: fail loudly rather than return garbage.
     throw new ApiError(response.status, 'bad_response', 'The server sent an unexpected response.')
   }
+  if (method === 'GET' && !current) {
+    // Other data than the cache's, or a late answer from a run the tab has moved past (it may
+    // predate bids missed while reconnecting): it must not refill the cache. Checked after
+    // HTTP errors, so those are reported as what they are. Queries retry status 0.
+    throw new ApiError(0, 'data_reset', 'The auction data was just reset. Please try again.')
+  }
   const serverTime = (payload as { server_time?: unknown } | null)?.server_time
   if (typeof serverTime === 'string') syncServerTime(serverTime, sentAt, receivedAt)
-  return payload as T
+  return { data: payload as T, sameData }
 }

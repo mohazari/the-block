@@ -2,9 +2,11 @@ import json
 from datetime import datetime, timedelta
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.clock import FrozenClock
+from app.services.inventory import COPIED_SUMMARY_FIELDS, check_copied_fields
 
 from .conftest import DATA_PATH
 
@@ -145,7 +147,7 @@ def test_detail_has_severity_tagged_damage_and_recent_bids(client: TestClient) -
     assert {d["severity"] for d in body["damage"]} <= {"cosmetic", "mechanical", "major"}
     assert body["images"] == record["images"]
     bids = body["recent_bids"]
-    assert len(bids) <= 10
+    assert len(bids) <= body["recent_bids_limit"] == 10
     assert [b["amount"] for b in bids] == sorted((b["amount"] for b in bids), reverse=True)
     assert all(b["bidder"].startswith("Bidder ") and not b["is_you"] for b in bids)
     datetime.fromisoformat(body["server_time"])
@@ -213,3 +215,13 @@ def test_framework_errors_use_the_envelope(client: TestClient) -> None:
     wrong_method = client.delete("/api/vehicles")
     assert wrong_method.status_code == 405
     assert wrong_method.json()["error"]["code"] == "method_not_allowed"
+
+
+def test_reserve_price_is_never_copied_into_a_summary() -> None:
+    # (That copied fields exist on the model is checked when the module loads.)
+    assert "reserve_price" not in COPIED_SUMMARY_FIELDS
+
+
+def test_a_schema_field_missing_from_the_model_fails_loudly() -> None:
+    with pytest.raises(RuntimeError, match=r"\['mpg'\] are not Vehicle columns"):
+        check_copied_fields((*COPIED_SUMMARY_FIELDS, "mpg"))

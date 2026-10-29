@@ -137,7 +137,11 @@ describe('VehicleDetailPage', () => {
   })
 
   it('shows a calm leading state instead of the form when you are winning', async () => {
-    serve(vehicleDetail({ auction: auction({ is_high_bidder: true, has_bid: true }) }))
+    serve(
+      vehicleDetail({
+        auction: auction({ is_high_bidder: true, has_bid: true, reserve_status: 'met' }),
+      }),
+    )
     renderRoute('/vehicles/veh-1')
     const bidding = await panel()
     expect(bidding.getByText(/You lead at \$22,800/)).toBeInTheDocument()
@@ -230,5 +234,39 @@ describe('VehicleDetailPage', () => {
     await panel()
     expect(screen.getAllByRole('complementary', { name: 'Bidding' })).toHaveLength(1)
     expect(screen.queryByRole('link', { name: 'Bid' })).not.toBeInTheDocument()
+  })
+
+  it('lets a leader below the reserve raise their bid', async () => {
+    serve(
+      vehicleDetail({
+        auction: auction({ is_high_bidder: true, has_bid: true, reserve_status: 'not_met' }),
+      }),
+    )
+    renderRoute('/vehicles/veh-1')
+    const bidding = await panel()
+    expect(bidding.getByText(/the reserve isn't met yet/)).toBeInTheDocument()
+    expect(bidding.getByRole('button', { name: 'Place bid $23,300' })).toBeEnabled()
+  })
+
+  it('does not claim another buyer won when the reserve was missed', async () => {
+    const past = new Date(Date.now() - 1000).toISOString()
+    serve(
+      vehicleDetail({
+        auction: auction({ ends_at: past, outcome: 'reserve_not_met', has_bid: true }),
+      }),
+    )
+    renderRoute('/vehicles/veh-1')
+    const bidding = await panel()
+    expect(
+      bidding.getByText("The reserve wasn't met, so this vehicle didn't sell."),
+    ).toBeInTheDocument()
+    expect(bidding.queryByText('Another buyer won this vehicle.')).not.toBeInTheDocument()
+  })
+
+  it('describes soft close the way the server applies it', async () => {
+    serve(vehicleDetail())
+    renderRoute('/vehicles/veh-1')
+    const bidding = await panel()
+    expect(bidding.getByText(/resets the clock to 2 minutes/)).toBeInTheDocument()
   })
 })

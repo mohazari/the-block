@@ -4,6 +4,7 @@ SSE rather than WebSockets: updates only flow server → client (bids are ordina
 plain HTTP through the Vite proxy, and the browser's EventSource reconnects on its own.
 """
 
+import asyncio
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
@@ -17,6 +18,11 @@ router = APIRouter(prefix="/api", tags=["events"])
 
 # Tell the browser to retry quickly if the connection drops.
 _RETRY_MS = 2_000
+# A quiet stream sends a `ping` event this often, so the client can tell "nothing happening"
+# from "connection silently dead" (a proxy holding it open after the server went away) and
+# reconnect. FastAPI's own keep-alive comment doesn't reach JavaScript; it is sent after 15s
+# without data, so pinging more often than that replaces it instead of doubling it.
+HEARTBEAT_SECONDS = 10.0
 
 
 def _stream_bidder_id(
@@ -39,11 +45,22 @@ async def events(
     broker: EventBroker = request.app.state.broker
     async with broker.subscribe(bidder_id) as subscriber:
         clock = request.app.state.clock
-        yield ServerSentEvent(
-            event="hello", data={"server_time": clock.now().isoformat()}, retry=_RETRY_MS
-        )
+        # `epoch` changes when the data is reseeded: clients must then drop what they cached,
+        # since bid counts restart and can no longer order old against new. `run` names this
+        # server process, so clients can ignore late responses from a previous one (epoch.py).
+        hello = {
+            "server_time": clock.now().isoformat(),
+            "epoch": request.app.state.data_epoch,
+            "run": request.app.state.run_id,
+            "heartbeat_seconds": HEARTBEAT_SECONDS,  # clients size their watchdog from it
+        }
+        yield ServerSentEvent(event="hello", data=hello, retry=_RETRY_MS)
         while True:
-            event = await subscriber.queue.get()
+            try:
+                event = await asyncio.wait_for(subscriber.queue.get(), HEARTBEAT_SECONDS)
+            except TimeoutError:
+                yield ServerSentEvent(event="ping", data={})
+                continue
             if event is None:  # dropped as a slow consumer: end the stream so it reconnects
                 return
             # No event ids: events aren't replayable, so we don't pretend they are. Instead the

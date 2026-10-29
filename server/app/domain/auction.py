@@ -121,19 +121,21 @@ def validate_bid(
     bidder_id: str,
     high_bidder_id: str | None,
     available_buy_now: int | None = None,
+    reserve_met: bool = True,
 ) -> BidRejection | None:
     """Return why a bid must be rejected, or None if it is acceptable.
 
     `available_buy_now` is the Buy Now price while Buy Now is still offered, else None.
+    `reserve_met` is False only while a reserve exists and the current bid is below it.
 
     Upcoming auctions accept pre-bids: the dataset already has bids on auctions that have not
     opened, which is how wholesale lanes work (proxy bids placed before the car runs).
     """
     if status is AuctionStatus.ENDED:
         return BidRejection.AUCTION_ENDED
-    # Raising your own winning bid only costs you money, so it is blocked rather than silently
-    # accepted.
-    if high_bidder_id is not None and high_bidder_id == bidder_id:
+    # Once the reserve is met, raising your own winning bid only costs you money, so it is
+    # blocked. Below the reserve it is the only way the car can sell, so the leader may raise.
+    if high_bidder_id is not None and high_bidder_id == bidder_id and reserve_met:
         return BidRejection.ALREADY_HIGH_BIDDER
     if amount < minimum:
         return BidRejection.BID_TOO_LOW

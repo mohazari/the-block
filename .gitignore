@@ -15,6 +15,7 @@ __pycache__/
 # App data (SQLite DB is generated from data/vehicles.json)
 server/*.db
 server/*.db-*
+server/*.db.server
 
 # Web
 dist/

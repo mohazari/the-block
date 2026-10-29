@@ -2,6 +2,7 @@ import sqlite3
 import threading
 from collections.abc import Callable
 from datetime import datetime, timedelta
+from itertools import pairwise
 from typing import Any
 
 import pytest
@@ -91,8 +92,24 @@ def test_rejections_carry_a_fresh_snapshot(
     assert error["message"]
 
 
-def test_you_cannot_outbid_yourself(client: TestClient) -> None:
+def test_too_high_message_follows_the_configured_multiplier(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.routers.bids.MAX_JUMP_MULTIPLIER", 5)
     vehicle = _live_without_buy_now(client)
+    response = _bid(client, vehicle["id"], vehicle["auction"]["max_bid"] + 1)
+    assert "more than 5x the minimum" in response.json()["error"]["message"]
+
+
+def test_you_cannot_outbid_yourself_once_the_reserve_is_met(client: TestClient) -> None:
+    vehicle = _find(
+        client,
+        lambda v: (
+            v["auction"]["status"] == "live"
+            and not v["auction"]["buy_now_available"]
+            and v["auction"]["reserve_status"] == "no_reserve"
+        ),
+    )
     first = _bid(client, vehicle["id"], vehicle["auction"]["min_next_bid"]).json()
     again = _bid(client, vehicle["id"], first["auction"]["min_next_bid"])
     assert again.status_code == 409
@@ -337,3 +354,64 @@ def test_lock_timeout_is_a_retryable_503(
     assert response.status_code == 503
     assert response.headers["Retry-After"] == "1"
     assert response.json()["error"]["code"] == "busy"
+
+
+def test_leader_can_raise_toward_an_unmet_reserve(client: TestClient) -> None:
+    vehicle = _find(
+        client,
+        lambda v: (
+            v["auction"]["status"] == "live"
+            and not v["auction"]["buy_now_available"]
+            and v["auction"]["reserve_status"] == "not_met"
+        ),
+    )
+    first = _bid(client, vehicle["id"], vehicle["auction"]["min_next_bid"]).json()
+    assert first["auction"]["reserve_status"] == "not_met"
+
+    raise_ = _bid(client, vehicle["id"], first["auction"]["min_next_bid"])
+    assert raise_.status_code == 201, raise_.text
+    assert raise_.json()["auction"]["is_high_bidder"]
+
+
+def test_watchlist_endpoint_lists_every_watched_vehicle(
+    client: TestClient, clock: FrozenClock
+) -> None:
+    vehicles = _vehicles(client, page_size=3)
+    for vehicle in vehicles:
+        client.put(f"/api/me/watchlist/{vehicle['id']}", headers=ME)
+    clock.advance(timedelta(hours=1))  # the first one has now ended: it still belongs here
+
+    watched = client.get("/api/me/watchlist", headers=ME).json()
+    assert {item["id"] for item in watched} == {v["id"] for v in vehicles}
+    assert all(item["watching"] for item in watched)
+    assert watched[-1]["auction"]["status"] == "ended"  # open auctions first
+    assert client.get("/api/me/watchlist", headers=RIVAL).json() == []
+
+
+def test_bidders_are_numbered_per_lot_in_order_of_first_bid(client: TestClient) -> None:
+    vehicle = _find(
+        client,
+        lambda v: (
+            v["auction"]["current_bid"] is None
+            and not v["auction"]["buy_now_available"]
+            and v["auction"]["reserve_status"] == "not_met"
+        ),
+        status="live",
+    )
+    mine = _bid(client, vehicle["id"], vehicle["auction"]["min_next_bid"]).json()
+    theirs = _bid(client, vehicle["id"], mine["auction"]["min_next_bid"], headers=RIVAL).json()
+    again = _bid(client, vehicle["id"], theirs["auction"]["min_next_bid"]).json()
+
+    assert (mine["bid"]["bidder"], theirs["bid"]["bidder"], again["bid"]["bidder"]) == (
+        "Bidder 1",
+        "Bidder 2",
+        "Bidder 1",
+    )
+
+
+def test_distinct_bidders_never_share_a_label(client: TestClient) -> None:
+    for item in _vehicles(client, sort="most_bids", page_size=20):
+        detail = client.get(f"/api/vehicles/{item['id']}").json()
+        labels = [bid["bidder"] for bid in detail["recent_bids"]]
+        # Consecutive bids always come from different bidders, so they must read differently.
+        assert all(a != b for a, b in pairwise(labels)), labels

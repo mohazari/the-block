@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import type { AuctionStatus, InventoryQuery, SortOrder } from '../../api/types'
 
@@ -38,20 +38,96 @@ export const SORTS: { value: SortOrder; label: string }[] = [
 ]
 
 export const PAGE_SIZE = 24
+/**
+ * Search text limit, in UTF-16 units: what the input's maxLength counts. The API's limit (100) is
+ * in code points, and a string never has more code points than UTF-16 units, so text within this
+ * limit is always accepted — and the box and the URL parser agree.
+ */
+export const SEARCH_MAX_LENGTH = 100
+
+let segmenter: Intl.Segmenter | undefined
+
+/** Whole characters, lazily: graphemes where supported, else code points (older browsers). */
+function* characters(text: string): Generator<string> {
+  if (typeof Intl.Segmenter !== 'function') {
+    yield* text
+    return
+  }
+  segmenter ??= new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+  for (const { segment } of segmenter.segment(text)) yield segment
+}
+
+/**
+ * Cut text to at most `limit` UTF-16 units at the last whole character that fits — never inside
+ * a surrogate pair or a multi-part emoji (flags, skin tones, families).
+ */
+export function limitSearch(text: string, limit = SEARCH_MAX_LENGTH): string {
+  if (text.length <= limit) return text
+  let kept = ''
+  for (const character of characters(text)) {
+    if (kept.length + character.length > limit) break
+    kept += character
+  }
+  return kept
+}
+
+const STATUSES: readonly AuctionStatus[] = ['live', 'upcoming', 'ended']
+
+/**
+ * What the API accepts for each number filter (mirrors InventoryQuery on the server). Anything
+ * else is dropped from the query: one bad value must not turn the whole run list into a 422.
+ */
+export interface NumberRule {
+  valid: (n: number) => boolean
+  hint: string
+}
+
+const wholeNumber = (n: number) => Number.isSafeInteger(n) && n >= 0
+export const YEAR_RULE: NumberRule = {
+  valid: (n) => Number.isSafeInteger(n) && n >= 1900 && n <= 2100,
+  hint: 'Enter a year like 2020.',
+}
+export const PRICE_RULE: NumberRule = { valid: wholeNumber, hint: 'Enter whole dollars.' }
+const ODOMETER_RULE: NumberRule = { valid: wholeNumber, hint: 'Enter whole kilometres.' }
+const GRADE_RULE: NumberRule = { valid: (n) => n >= 1 && n <= 5, hint: 'Grades run from 1 to 5.' }
+
+export const NUMBER_RULES: Record<NumberFilter, NumberRule> = {
+  year_min: YEAR_RULE,
+  year_max: YEAR_RULE,
+  price_min: PRICE_RULE,
+  price_max: PRICE_RULE,
+  odometer_max: ODOMETER_RULE,
+  grade_min: GRADE_RULE,
+}
+
+/** Inverted ranges are swapped rather than sent (the API rejects min > max). */
+function orderRange(query: InventoryQuery, low: NumberFilter, high: NumberFilter): void {
+  const min = query[low]
+  const max = query[high]
+  if (min != null && max != null && min > max) {
+    query[low] = max
+    query[high] = min
+  }
+}
 
 export function parseInventoryQuery(params: URLSearchParams): InventoryQuery {
   const query: InventoryQuery = { page_size: PAGE_SIZE }
-  const q = params.get('q')?.trim()
+  // Trim first, so surrounding whitespace doesn't use up the limit.
+  const q = limitSearch((params.get('q') ?? '').trim()).trim()
   if (q) query.q = q
   for (const key of LIST_FILTERS) {
-    const values = params.getAll(key).filter(Boolean)
+    let values = params.getAll(key).filter(Boolean)
+    if (key === 'status')
+      values = values.filter((value) => STATUSES.includes(value as AuctionStatus))
     if (values.length) (query[key] as string[]) = values
   }
   for (const key of NUMBER_FILTERS) {
     const raw = params.get(key)?.trim()
     const value = Number(raw)
-    if (raw && Number.isFinite(value)) query[key] = value
+    if (raw && Number.isFinite(value) && NUMBER_RULES[key].valid(value)) query[key] = value
   }
+  orderRange(query, 'year_min', 'year_max')
+  orderRange(query, 'price_min', 'price_max')
   if (params.get('buy_now') === 'true') query.buy_now = true
   if (params.get('watching') === 'true') query.watching = true
   const sort = params.get('sort') as SortOrder | null
@@ -102,7 +178,10 @@ export function useInventoryParams() {
     [setParams],
   )
 
+  // Bumped by "Clear all", so inputs holding a draft that was never applied reset too.
+  const [clearCount, setClearCount] = useState(0)
   const clearAll = useCallback(() => {
+    setClearCount((count) => count + 1)
     setParams(
       (current) => {
         const next = new URLSearchParams()
@@ -114,7 +193,7 @@ export function useInventoryParams() {
     )
   }, [setParams])
 
-  return { query, update, clearAll }
+  return { query, update, clearAll, clearCount }
 }
 
 /** How many filters (not search, sort or paging) are active — for the mobile "Filters (3)". */

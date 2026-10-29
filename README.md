@@ -23,14 +23,14 @@ npm run dev     # API on :8000, web app on :5173
 Open **http://localhost:5173**. The database is created and seeded from `data/vehicles.json` on
 first start. Rival dealers start bidding a few seconds later.
 
-| Command                            | What it does                                                                                   |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `npm test`                         | API tests (pytest) and web tests (Vitest)                                                      |
-| `npm --workspace web run test:e2e` | Playwright end-to-end tests (run `npx --workspace web playwright install chromium` once first) |
-| `npm run lint`                     | ruff + strict mypy, oxlint + tsc + prettier                                                    |
-| `npm run build`                    | Production build of the web app                                                                |
-| `npm run reset-db`                 | Start over: fresh data and a fresh auction clock                                               |
-| `SIMULATOR_ENABLED=0 npm run dev`  | Turn the rival bidders off                                                                     |
+| Command                            | What it does                                                                                                 |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `npm test`                         | API tests (pytest) and web tests (Vitest)                                                                    |
+| `npm --workspace web run test:e2e` | Playwright end-to-end tests (run `npx --workspace web playwright install chromium` once first)               |
+| `npm run lint`                     | ruff + strict mypy, oxlint + tsc + prettier                                                                  |
+| `npm run build`                    | Production build of the web app                                                                              |
+| `npm run reset-db`                 | Start over: fresh data and a fresh auction clock (stop `npm run dev` first; open tabs resync when it's back) |
+| `SIMULATOR_ENABLED=0 npm run dev`  | Turn the rival bidders off                                                                                   |
 
 The API's interactive docs are at **http://localhost:8000/docs**.
 
@@ -107,10 +107,10 @@ that shaped the product:
 
 ## Testing
 
-- **API: 107 pytest tests.** Auction rules, schedule normalization, seeding invariants, search
+- **API: 126 pytest tests.** Auction rules, schedule normalization, seeding invariants, search
   and facets, every bid rejection, idempotency, soft close, Buy Now, the concurrency race, SSE
   personalization and backpressure, and simulator behaviour. Warnings are errors.
-- **Web: 70 Vitest tests.** Formatting and rules, the API client, the clock sync, URL filter
+- **Web: 133 Vitest tests.** Formatting and rules, the API client, the clock sync, URL filter
   state, the run list, the bid flow (two-step confirm, outbid recovery, amount pinning), live
   events through a fake `EventSource`, toasts, and My bids.
 - **End to end: 4 Playwright tests** on desktop and a phone viewport. They find a car, bid,

@@ -115,6 +115,7 @@ export function vehicleDetail(overrides: Partial<VehicleDetail> = {}): VehicleDe
         placed_at: new Date().toISOString(),
       },
     ],
+    recent_bids_limit: 10,
     server_time: new Date().toISOString(),
     ...overrides,
   }

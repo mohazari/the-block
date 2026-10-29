@@ -139,7 +139,14 @@ def test_stream_says_hello_then_relays_personalized_bids(
         broker = EventBroker()
         broker.bind(asyncio.get_running_loop())
         request = SimpleNamespace(
-            app=SimpleNamespace(state=SimpleNamespace(broker=broker, clock=clock))
+            app=SimpleNamespace(
+                state=SimpleNamespace(
+                    broker=broker,
+                    clock=clock,
+                    data_epoch="epoch-1",
+                    run_id="run-1",
+                )
+            )
         )
         stream = events_endpoint(request, bidder_id=ME)  # type: ignore[arg-type]
         hello = await anext(stream)
@@ -151,6 +158,8 @@ def test_stream_says_hello_then_relays_personalized_bids(
 
     hello, bid = asyncio.run(scenario())
     assert hello.event == "hello" and hello.retry == 2000
+    assert hello.data["epoch"] == "epoch-1" and hello.data["run"] == "run-1"
+    assert hello.data["heartbeat_seconds"] == 10.0
     assert bid.event == "bid" and bid.id is None  # events aren't replayable; no ids
     assert bid.data.outbid_you and bid.data.vehicle_id == vehicle_id
 
@@ -289,3 +298,22 @@ def test_publish_failures_never_fail_the_bid(
         headers={"X-Bidder-Id": ME},
     )
     assert response.status_code == 201
+
+
+def test_a_quiet_stream_sends_heartbeats(
+    clock: FrozenClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """So a client can tell "no bids lately" from a connection that silently died."""
+    monkeypatch.setattr("app.routers.events.HEARTBEAT_SECONDS", 0.05)
+
+    async def scenario() -> Any:
+        broker = EventBroker()
+        broker.bind(asyncio.get_running_loop())
+        state = SimpleNamespace(broker=broker, clock=clock, data_epoch="e", run_id="r")
+        stream = events_endpoint(SimpleNamespace(app=SimpleNamespace(state=state)), bidder_id=ME)  # type: ignore[arg-type]
+        await anext(stream)  # hello
+        ping = await asyncio.wait_for(anext(stream), timeout=1)
+        await stream.aclose()
+        return ping
+
+    assert asyncio.run(scenario()).event == "ping"

@@ -133,3 +133,8 @@ def test_reaching_the_buy_now_price_meets_the_reserve() -> None:
     assert reserve_status(30_000, 28_000, buy_now_price=28_000) is ReserveStatus.MET
     assert auction_outcome(30_000, 28_000, buy_now_price=28_000) is AuctionOutcome.SOLD
     assert reserve_status(30_000, 27_000, buy_now_price=28_000) is ReserveStatus.NOT_MET
+
+
+def test_a_leader_below_the_reserve_may_raise() -> None:
+    assert _validate(high_bidder_id="me", reserve_met=False) is None
+    assert _validate(high_bidder_id="me", reserve_met=True) is BidRejection.ALREADY_HIGH_BIDDER

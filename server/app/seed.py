@@ -1,6 +1,7 @@
 """Load data/vehicles.json into SQLite.
 
-Run `python -m app.seed --reset` (or `npm run reset-db`) to start over with a fresh clock.
+Run `python -m app.seed --reset` (or `npm run reset-db`) to start over with a fresh clock. It
+refuses while a server is using the database (see serverlock.py): stop the server first.
 """
 
 import argparse
@@ -22,11 +23,12 @@ from app.domain.auction import min_next_bid
 from app.domain.bidders import RIVAL_BIDDER_IDS
 from app.domain.schedule import AUCTION_DURATION, parse_dataset_time, schedule_shift
 from app.models import Base, Bid, Meta, Vehicle
+from app.serverlock import DatabaseLock, lock_path
 
 logger = logging.getLogger(__name__)
 
 # Bump whenever the models change: an existing dev database is then rebuilt automatically.
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 
 # Fixed seed: the synthesized bid history is identical on every run.
 _HISTORY_SEED = 42
@@ -121,8 +123,14 @@ def seed(session: Session, data_path: Path, now: datetime) -> int:
             high_bidder_id=history[-1][0] if history else None,
             search_text=search_text(record),
         )
+        numbers: dict[str, int] = {}  # paddle numbers in order of first bid
         vehicle.bids = [
-            Bid(bidder_id=bidder, amount=amount, placed_at=placed_at)
+            Bid(
+                bidder_id=bidder,
+                bidder_number=numbers.setdefault(bidder, len(numbers) + 1),
+                amount=amount,
+                placed_at=placed_at,
+            )
             for bidder, amount, placed_at in history
         ]
         session.add(vehicle)
@@ -135,6 +143,13 @@ def seed(session: Session, data_path: Path, now: datetime) -> int:
         ]
     )
     return len(records)
+
+
+def data_epoch(engine: Engine) -> str:
+    """Identifies this copy of the data: changes whenever the database is (re)seeded."""
+    with Session(engine) as session:
+        seeded_at = session.get(Meta, "seeded_at")
+        return seeded_at.value if seeded_at else ""
 
 
 def needs_seed(session: Session, now: datetime) -> bool:
@@ -191,12 +206,29 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     settings = Settings.from_env()
-    engine = create_db_engine(settings.database_url)
-    now = SystemClock().now()
-    if args.reset:
-        reset(engine, settings.data_path, now)
-    else:
-        ensure_seeded(engine, settings.data_path, now)
+    lock = DatabaseLock(lock_path(settings.database_url))
+    if not lock.try_acquire():
+        # Held by a running server, or another seed/reset in progress. Resetting under a server
+        # would leave it serving the old data's epoch (see serverlock.py); a restart reads the
+        # new one, and open tabs resync.
+        if not args.reset:
+            logger.info("%s is in use (a running server seeds it itself).", lock.database_name)
+            return
+        raise SystemExit(
+            f"{lock.database_name} is in use by a running server (or another reset). Stop the "
+            "server (Ctrl-C in the `npm run dev` terminal), run this again, then start it: "
+            "open tabs resync by themselves."
+        )
+    try:  # no server can start on this file until we're done
+        engine = create_db_engine(settings.database_url)
+        now = SystemClock().now()
+        if args.reset:
+            reset(engine, settings.data_path, now)
+        else:
+            ensure_seeded(engine, settings.data_path, now)
+        engine.dispose()
+    finally:
+        lock.release()
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import { bidderId } from '../lib/bidder'
 import { formatMoney } from '../lib/format'
 import { syncServerTime } from '../lib/serverClock'
 import { applyAuction } from './bidding'
+import { noteDataEpoch, onDataEpochChange } from './dataEpoch'
 import type { AuctionEvent } from './types'
 
 export type Connection = 'connecting' | 'live' | 'reconnecting'
@@ -12,8 +13,6 @@ export type Connection = 'connecting' | 'live' | 'reconnecting'
 const RECONNECT_MS = 3_000
 
 let connection: Connection = 'connecting'
-// Which copy of the data our cache came from (see the server's `epoch` in hello).
-let knownEpoch: string | undefined
 const listeners = new Set<() => void>()
 function setConnection(next: Connection) {
   if (next === connection) return
@@ -22,10 +21,7 @@ function setConnection(next: Connection) {
 }
 
 /** Test hook. */
-export const resetConnection = (): void => {
-  setConnection('connecting')
-  knownEpoch = undefined
-}
+export const resetConnection = (): void => setConnection('connecting')
 
 export const useConnection = (): Connection =>
   useSyncExternalStore(
@@ -78,16 +74,10 @@ export function useAuctionEvents(): void {
           epoch: string
         }
         syncServerTime(server_time)
-        if (knownEpoch !== undefined && epoch !== knownEpoch) {
-          // The server reseeded: bid counts restarted, so cached snapshots would wrongly look
-          // newer than fresh ones. Drop the cache instead of comparing across datasets.
-          void queryClient.resetQueries()
-        } else {
-          // Every hello, the first included: data fetched before the stream connected may have
-          // missed bids committed in between (on a reconnect, while it was down).
-          void queryClient.invalidateQueries()
-        }
-        knownEpoch = epoch
+        noteDataEpoch(epoch) // a reseed resets the cache (see the subscription below)
+        // Every hello, the first included: data fetched before the stream connected may have
+        // missed bids committed in between (on a reconnect, while it was down).
+        void queryClient.invalidateQueries()
         connectedBefore = true
         setConnection('live')
       })
@@ -104,8 +94,12 @@ export function useAuctionEvents(): void {
       }
     }
 
+    // The server reseeded: cached snapshots would wrongly look newer than fresh ones.
+    const stopWatchingEpoch = onDataEpochChange(() => void queryClient.resetQueries())
+
     connect()
     return () => {
+      stopWatchingEpoch()
       clearTimeout(retry)
       source?.close()
     }

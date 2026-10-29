@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
+import { resetDataEpoch } from '../api/dataEpoch'
 import { resetConnection } from '../api/liveEvents'
 import { clearToasts } from '../components/toasts/toastStore'
 import { resetServerClock } from '../lib/serverClock'
@@ -19,5 +20,6 @@ afterEach(() => {
   document.documentElement.dataset.theme = 'light'
   resetServerClock()
   resetConnection()
+  resetDataEpoch()
   clearToasts()
 })

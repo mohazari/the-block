@@ -18,6 +18,7 @@ from app.domain.bidders import RIVAL_BIDDER_IDS
 from app.events import BidEvent, EventBroker
 from app.models import Vehicle
 from app.routers.events import events as events_endpoint
+from app.seed import data_epoch
 from app.services.bidding import BidResult, place_bid
 from app.simulator import HUMAN_LEAD_GRACE, RivalSimulator
 
@@ -140,7 +141,7 @@ def test_stream_says_hello_then_relays_personalized_bids(
         broker.bind(asyncio.get_running_loop())
         request = SimpleNamespace(
             app=SimpleNamespace(
-                state=SimpleNamespace(broker=broker, clock=clock, data_epoch="epoch-1")
+                state=SimpleNamespace(broker=broker, clock=clock, engine=seeded_engine)
             )
         )
         stream = events_endpoint(request, bidder_id=ME)  # type: ignore[arg-type]
@@ -153,7 +154,7 @@ def test_stream_says_hello_then_relays_personalized_bids(
 
     hello, bid = asyncio.run(scenario())
     assert hello.event == "hello" and hello.retry == 2000
-    assert hello.data["epoch"] == "epoch-1"
+    assert hello.data["epoch"] == data_epoch(seeded_engine)
     assert bid.event == "bid" and bid.id is None  # events aren't replayable; no ids
     assert bid.data.outbid_you and bid.data.vehicle_id == vehicle_id
 

@@ -3,8 +3,9 @@ import contextlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from sqlalchemy.orm import sessionmaker
 
 from app.clock import Clock, SystemClock
@@ -28,7 +29,7 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine = create_db_engine(settings.database_url)
         ensure_seeded(engine, settings.data_path, clock.now())
-        app.state.data_epoch = data_epoch(engine)
+        app.state.engine = engine
         app.state.clock = clock
         app.state.sessions = sessionmaker(engine, expire_on_commit=False)
         app.state.write_sessions = sessionmaker(write_engine(engine), expire_on_commit=False)
@@ -51,6 +52,16 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
 
     app = FastAPI(title="The Block API", version="0.1.0", lifespan=lifespan)
     install_error_handlers(app)
+
+    @app.middleware("http")
+    async def stamp_data_epoch(request: Request, call_next: Any) -> Response:
+        # Read per request, not once at startup: `npm run reset-db` can reseed under a running
+        # server, and clients must learn that their cached bid counts no longer apply.
+        response: Response = await call_next(request)
+        if request.url.path.startswith("/api/") and hasattr(request.app.state, "engine"):
+            response.headers["X-Data-Epoch"] = data_epoch(request.app.state.engine)
+        return response
+
     app.include_router(vehicles.router)
     app.include_router(bids.router)
     app.include_router(me.router)

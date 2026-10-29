@@ -1,0 +1,28 @@
+{
+  "name": "the-block",
+  "private": true,
+  "description": "Buyer-side vehicle auction prototype — FastAPI + React",
+  "workspaces": [
+    "web"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "setup": "npm install && uv --directory server sync",
+    "dev": "concurrently --kill-others-on-fail --names api,web --prefix-colors blue,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "uv --directory server run uvicorn app.main:app --reload --port 8000",
+    "dev:web": "npm --workspace web run dev",
+    "test": "npm run test:api && npm run test:web",
+    "test:api": "uv --directory server run pytest",
+    "test:web": "npm --workspace web run test",
+    "lint": "npm run lint:api && npm run lint:web",
+    "lint:api": "uv --directory server run ruff check . && uv --directory server run ruff format --check . && uv --directory server run mypy",
+    "lint:web": "npm --workspace web run lint && npm --workspace web run typecheck && npm --workspace web run format:check",
+    "build": "npm --workspace web run build",
+    "reset-db": "uv --directory server run python -m app.seed --reset"
+  },
+  "devDependencies": {
+    "concurrently": "10.0.6"
+  }
+}

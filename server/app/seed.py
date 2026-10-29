@@ -1,16 +1,15 @@
 """Load data/vehicles.json into SQLite.
 
-Run `python -m app.seed --reset` (or `npm run reset-db`) to start over with a fresh clock.
+Run `python -m app.seed --reset` (or `npm run reset-db`) to start over with a fresh clock. If a
+server is using the database, it is asked to reseed itself, so open tabs resync.
 """
 
 import argparse
 import json
 import logging
-import os
 import random
 import re
 import urllib.error
-import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -26,6 +25,7 @@ from app.domain.auction import min_next_bid
 from app.domain.bidders import RIVAL_BIDDER_IDS
 from app.domain.schedule import AUCTION_DURATION, parse_dataset_time, schedule_shift
 from app.models import Base, Bid, Meta, Vehicle
+from app.serverlock import DatabaseLock, ServerInfo, lock_path, read_server_info
 
 logger = logging.getLogger(__name__)
 
@@ -195,62 +195,71 @@ def ensure_seeded(engine: Engine, data_path: Path, now: datetime) -> bool:
     return True
 
 
-def reset(engine: Engine, data_path: Path, now: datetime) -> None:
+def reset(engine: Engine, data_path: Path, now: datetime) -> str:
+    """Drop everything and reseed; returns the new data epoch."""
     with write_engine(engine).begin() as connection:
         count = _rebuild(connection, data_path, now)
     logger.info("Seeded %d vehicles from %s", count, data_path)
+    return now.isoformat()  # what _rebuild stored as seeded_at, i.e. data_epoch()
 
 
-def reset_running_server(url: str, database_url: str) -> bool:
-    """Ask a running dev server to reseed itself, if it uses `database_url`.
-
-    Returns False when no server is listening or it uses another database: the caller then
-    resets the file directly.
-    """
-    query = urllib.parse.urlencode({"database_url": database_url})
-    request = urllib.request.Request(f"{url}?{query}", method="POST")
-    try:
-        with urllib.request.urlopen(request, timeout=30):
-            return True
-    except urllib.error.HTTPError as error:
-        if error.code == 409:  # a server on another database: this one isn't in use
-            return False
-        if error.code == 404:
-            raise SystemExit(
-                "A server is running without dev reset enabled. Stop it first, or start it "
-                "with `npm run dev`."
-            ) from None
+def ask_server_to_reset(info: ServerInfo, database: str) -> None:
+    """Have the server using `database` reseed itself. Exits with a message on any failure —
+    never falls back to resetting the file under it (it wouldn't notice)."""
+    if info.port is None:
         raise SystemExit(
-            f"Couldn't ask the server at {url} to reset (HTTP {error.code})."
+            f"A server is using {database}, but not through `python -m app.serve`, so it can't "
+            "be asked to reset. Stop it, then run this again."
+        )
+    url = f"http://{info.host}:{info.port}/api/dev/reset"
+    request = urllib.request.Request(url, method="POST", headers={"X-Reset-Token": info.token})
+    # Straight to loopback: an http_proxy or system proxy must not see this request.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=120) as response:
+            status = response.status
+    except urllib.error.HTTPError as error:
+        status = error.code
+    except OSError as error:  # refused, reset mid-request, timed out: state unknown
+        raise SystemExit(
+            f"Couldn't get an answer from the server using {database} at {url} ({error}). "
+            "If it's still running, run this again; otherwise start it or retry once it stops."
         ) from None
-    except (urllib.error.URLError, ConnectionError):
-        return False
+    if status != 204:
+        raise SystemExit(f"The server at {url} didn't reset the data (HTTP {status}).")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reset", action="store_true", help="drop all data and reseed")
-    parser.add_argument(
-        "--live",
-        action="store_true",
-        help="with --reset: if the dev server is running, have it reseed itself so open tabs "
-        "resync (otherwise reset the database file directly)",
-    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     settings = Settings.from_env()
-    if args.reset and args.live:
-        port = os.environ.get("API_PORT", "8000")
-        if reset_running_server(f"http://127.0.0.1:{port}/api/dev/reset", settings.database_url):
-            logger.info("The running server reseeded its data; open tabs resync automatically.")
+    path = lock_path(settings.database_url)
+    lock = DatabaseLock(path)
+    if not lock.try_acquire():
+        # A server is using this file. It seeds itself at startup; a reset must go through it.
+        database = path.stem if path else settings.database_url
+        if not args.reset:
+            logger.info("A server is using %s; it seeds the data itself.", database)
             return
-    engine = create_db_engine(settings.database_url)
-    now = SystemClock().now()
-    if args.reset:
-        reset(engine, settings.data_path, now)
-    else:
-        ensure_seeded(engine, settings.data_path, now)
+        info = read_server_info(path) if path else None
+        if info is None:
+            raise SystemExit(f"A server is using {database} but hasn't said where. Try again.")
+        ask_server_to_reset(info, database)
+        logger.info("The server reseeded %s; open tabs resync automatically.", database)
+        return
+    try:  # no server on this file, and none can start on it until we're done
+        engine = create_db_engine(settings.database_url)
+        now = SystemClock().now()
+        if args.reset:
+            reset(engine, settings.data_path, now)
+        else:
+            ensure_seeded(engine, settings.data_path, now)
+        engine.dispose()
+    finally:
+        lock.release()
 
 
 if __name__ == "__main__":

@@ -18,8 +18,6 @@ class Settings:
     database_url: str
     data_path: Path
     simulator_enabled: bool
-    # POST /api/dev/reset (`npm run reset-db` against a running dev server). Off unless asked.
-    dev_reset_enabled: bool = False
 
     def __post_init__(self) -> None:
         # The engine setup (BEGIN IMMEDIATE, WAL, pragmas) is SQLite-specific by design.
@@ -32,5 +30,4 @@ class Settings:
             database_url=os.environ.get("DATABASE_URL", f"sqlite:///{SERVER_DIR / 'the_block.db'}"),
             data_path=Path(os.environ.get("DATA_PATH", REPO_DIR / "data" / "vehicles.json")),
             simulator_enabled=_env_flag("SIMULATOR_ENABLED", default=True),
-            dev_reset_enabled=_env_flag("ALLOW_DEV_RESET", default=False),
         )

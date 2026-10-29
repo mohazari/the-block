@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { auction, stubApi, vehicle, vehicleList } from '../test/fixtures'
@@ -175,12 +175,13 @@ describe('InventoryPage', () => {
     expect(box).toHaveValue('🚗 '.repeat(33)) // 99 units: one more car (2) would pass 100
   })
 
-  it('drops a trailing line break from a paste, as Firefox does', async () => {
+  it('measures a paste without its trailing line break, as Firefox inserts it', async () => {
     serve()
     renderRoute('/')
     const box = screen.getByRole('searchbox', { name: 'Search inventory' })
     await userEvent.type(box, 'x'.repeat(98))
-    await userEvent.paste('ab\n') // fits once the trailing break is gone
-    expect(box).toHaveValue(`${'x'.repeat(98)}ab`)
+    // "ab" fits the 2 units left: the browser should do this paste itself, not the handler.
+    const browserDoesIt = fireEvent.paste(box, { clipboardData: { getData: () => 'ab\n' } })
+    expect(browserDoesIt).toBe(true) // not cancelled
   })
 })

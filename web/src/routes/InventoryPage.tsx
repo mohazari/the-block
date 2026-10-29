@@ -147,9 +147,11 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
     return () => clearTimeout(timer)
   }, [draft, value])
 
-  // The browser would cut an over-long paste mid-emoji. Insert only the whole characters that
-  // fit instead, keeping what's typed. (Drops are left to the browser: taking over a drop means
-  // second-guessing move vs copy, and getting that wrong loses or duplicates text.)
+  // The browser's own maxLength cut keeps surrogate pairs whole but can split a multi-part
+  // emoji (checked in Chromium: a family at the limit becomes two people). For pastes, insert
+  // only the whole characters that fit instead, keeping what's typed. Drops stay native: taking
+  // one over means second-guessing move vs copy, and getting that wrong loses or duplicates
+  // text, which is worse than a shortened emoji at the 100th character.
   const pasteWithinLimit = (event: ClipboardEvent<HTMLInputElement>) => {
     const input = event.currentTarget
     const text = event.clipboardData.getData('text')

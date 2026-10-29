@@ -86,4 +86,36 @@ describe('useWatch', () => {
     await waitFor(() => expect(started).toEqual(['PUT', 'DELETE']))
     vi.unstubAllGlobals()
   })
+
+  it('revalidates once, after the last of several quick toggles', async () => {
+    const queryClient = createQueryClient()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const finish: (() => void)[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) =>
+            finish.push(() => resolve(new Response(null, { status: 204 }))),
+          ),
+      ),
+    )
+    const { result } = renderHook(() => useWatch(), {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      ),
+    })
+
+    act(() => {
+      result.current.mutate({ vehicleId: 'veh-1', watching: true })
+      result.current.mutate({ vehicleId: 'veh-1', watching: false })
+    })
+    await waitFor(() => expect(finish).toHaveLength(1))
+    act(() => finish[0]!())
+    await waitFor(() => expect(finish).toHaveLength(2))
+    expect(invalidate).not.toHaveBeenCalled() // the second toggle is still pending
+    act(() => finish[1]!())
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1))
+    vi.unstubAllGlobals()
+  })
 })

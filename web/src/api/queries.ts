@@ -115,10 +115,13 @@ const showsWatching = {
  */
 export function useWatch() {
   const queryClient = useQueryClient()
+  // Is a later toggle (another click) still queued behind this one? This one counts itself.
+  const supersededLater = () => queryClient.isMutating({ mutationKey: ['watchlist'] }) > 1
   return useMutation({
     // Run toggles one after another, in click order: a quick watch-unwatch must not reach the
     // server as a PUT and DELETE racing each other.
     scope: { id: 'watchlist' },
+    mutationKey: ['watchlist'],
     mutationFn: ({ vehicleId, watching }: { vehicleId: string; watching: boolean }) =>
       api<void>(`/me/watchlist/${vehicleId}`, { method: watching ? 'PUT' : 'DELETE' }),
     onMutate: async ({ vehicleId, watching }) => {
@@ -128,13 +131,16 @@ export function useWatch() {
       updateCachedVehicle(queryClient, vehicleId, (vehicle) => ({ ...vehicle, watching }))
     },
     onError: (_error, { vehicleId, watching }) => {
+      // A later click already set the flag the buyer wants; don't revert over it.
+      if (supersededLater()) return
       updateCachedVehicle(queryClient, vehicleId, (vehicle) => ({
         ...vehicle,
         watching: !watching,
       }))
     },
     // The server is the source of truth; this also re-runs anything cancelled above and updates
-    // what the "Watching" filter and My bids contain.
-    onSettled: () => queryClient.invalidateQueries(showsWatching),
+    // what the "Watching" filter and My bids contain. Only the last queued toggle does it: a
+    // refetch between two toggles would flip the star back while the second is pending.
+    onSettled: () => (supersededLater() ? undefined : queryClient.invalidateQueries(showsWatching)),
   })
 }

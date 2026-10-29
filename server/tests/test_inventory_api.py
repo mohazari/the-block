@@ -59,6 +59,25 @@ def test_keyword_search_requires_every_token(client: TestClient) -> None:
     assert all(item["model"] == "Bronco" for item in items)
 
 
+def test_words_match_at_word_starts_only(client: TestClient) -> None:
+    """ "ford" finds Fords (and dealers named Ford), not "Oxford White" paint — found in QA."""
+    items = _all_items(client, q="ford", status=["live", "upcoming", "ended"])
+    assert any(item["make"] == "Ford" for item in items)
+    for item in items:
+        assert item["make"] == "Ford" or "Ford" in item["selling_dealership"]
+
+
+def test_short_tokens_with_digits_match_models_not_random_vins(client: TestClient) -> None:
+    items = _all_items(client, q="x5", status=["live", "upcoming", "ended"])
+    assert items and all(item["model"] == "X5" for item in items)
+
+
+def test_digits_match_anywhere_for_partial_vins(client: TestClient) -> None:
+    target = DATASET[3]
+    items = _all_items(client, q=target["vin"][-6:].lower())
+    assert target["id"] in {item["id"] for item in items}
+
+
 def test_search_by_vin_and_lot(client: TestClient) -> None:
     target = DATASET[17]
     for query in (target["vin"].lower(), target["lot"]):

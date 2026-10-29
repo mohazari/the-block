@@ -38,6 +38,8 @@ export const SORTS: { value: SortOrder; label: string }[] = [
 ]
 
 export const PAGE_SIZE = 24
+/** The API's limit on `q` (InventoryQuery.q max_length). */
+export const SEARCH_MAX_LENGTH = 100
 
 const STATUSES: readonly AuctionStatus[] = ['live', 'upcoming', 'ended']
 
@@ -72,7 +74,7 @@ function orderRange(query: InventoryQuery, low: NumberFilter, high: NumberFilter
 
 export function parseInventoryQuery(params: URLSearchParams): InventoryQuery {
   const query: InventoryQuery = { page_size: PAGE_SIZE }
-  const q = params.get('q')?.trim()
+  const q = params.get('q')?.trim().slice(0, SEARCH_MAX_LENGTH).trim()
   if (q) query.q = q
   for (const key of LIST_FILTERS) {
     let values = params.getAll(key).filter(Boolean)

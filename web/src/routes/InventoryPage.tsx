@@ -7,7 +7,12 @@ import { ActiveFilterChips, ChipButton } from './inventory/ActiveFilterChips'
 import { activeChips } from './inventory/activeChips'
 import { FilterPanel } from './inventory/FilterPanel'
 import { FilterSheet } from './inventory/FilterSheet'
-import { activeFilterCount, SORTS, useInventoryParams } from './inventory/inventoryParams'
+import {
+  activeFilterCount,
+  SEARCH_MAX_LENGTH,
+  SORTS,
+  useInventoryParams,
+} from './inventory/inventoryParams'
 import { VehicleRow } from './inventory/VehicleRow'
 
 export function InventoryPage() {
@@ -157,6 +162,7 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         placeholder="Make, model, VIN, lot or city"
+        maxLength={SEARCH_MAX_LENGTH}
         className="border-line-strong bg-surface placeholder:text-ink-faint h-10 w-full rounded-[var(--radius-control)] border pr-3 pl-10 text-sm"
       />
     </div>

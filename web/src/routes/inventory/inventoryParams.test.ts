@@ -62,4 +62,9 @@ describe('URL values the API would reject', () => {
     const query = parseInventoryQuery(new URLSearchParams('year_min=2024&year_max=2018'))
     expect(query).toMatchObject({ year_min: 2018, year_max: 2024 })
   })
+
+  it("trims search text to the API's 100-character limit", () => {
+    const query = parseInventoryQuery(new URLSearchParams({ q: 'x'.repeat(150) }))
+    expect(query.q).toHaveLength(100)
+  })
 })

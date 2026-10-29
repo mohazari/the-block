@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.clock import Clock
 from app.deps import RequiredBidderId, WriteSession, get_clock
-from app.domain.auction import BidRejection, max_allowed_bid
+from app.domain.auction import MAX_JUMP_MULTIPLIER, BidRejection, max_allowed_bid
 from app.errors import ApiError
 from app.models import Bid, Vehicle
 from app.schemas import AuctionSnapshot, BidPlaced, PlaceBidRequest
@@ -50,7 +50,8 @@ def _message(rejection: BidRejection, vehicle: Vehicle, minimum: int) -> str:
             return f"The minimum bid is now ${minimum:,}."
         case BidRejection.BID_TOO_HIGH:
             return (
-                f"That's more than 3x the minimum bid (max ${max_allowed_bid(minimum):,}). "
+                f"That's more than {MAX_JUMP_MULTIPLIER}x the minimum bid "
+                f"(max ${max_allowed_bid(minimum):,}). "
                 "Check the amount."
             )
         case BidRejection.USE_BUY_NOW:

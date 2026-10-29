@@ -91,6 +91,15 @@ def test_rejections_carry_a_fresh_snapshot(
     assert error["message"]
 
 
+def test_too_high_message_follows_the_configured_multiplier(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.routers.bids.MAX_JUMP_MULTIPLIER", 5)
+    vehicle = _live_without_buy_now(client)
+    response = _bid(client, vehicle["id"], vehicle["auction"]["max_bid"] + 1)
+    assert "more than 5x the minimum" in response.json()["error"]["message"]
+
+
 def test_you_cannot_outbid_yourself_once_the_reserve_is_met(client: TestClient) -> None:
     vehicle = _find(
         client,

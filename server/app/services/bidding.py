@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.clock import Clock
@@ -26,7 +26,7 @@ from app.domain.auction import (
 )
 from app.errors import ApiError
 from app.models import Bid, Vehicle
-from app.services.inventory import bidder_labels, get_vehicle_or_404
+from app.services.inventory import get_vehicle_or_404
 
 BidKind = Literal["bid", "buy_now"]
 
@@ -39,9 +39,8 @@ class BidResult:
     # Who led before this bid — the live-updates stream tells them they were outbid. None on
     # replays, which publish nothing.
     previous_high_bidder: str | None
-    # Everyone who has bid on this vehicle → their per-lot label ("Bidder 3"). The keys let live
-    # events say "you have bid" exactly; the values label bids for other buyers.
-    labels: dict[str, str]
+    # Everyone who has bid on this vehicle, so live events can say "you have bid" exactly.
+    bidders: frozenset[str]
     extended: bool
     replayed: bool  # an idempotent retry of an earlier request; nothing new was written
 
@@ -102,14 +101,36 @@ def _replay(
         vehicle=vehicle,
         now=now,
         previous_high_bidder=None,
-        labels=bidder_labels(session, vehicle.id),
+        bidders=frozenset(),
         extended=False,
         replayed=True,
     )
 
 
+def _bidders(session: Session, vehicle_id: str) -> frozenset[str]:
+    return frozenset(
+        session.scalars(select(Bid.bidder_id).where(Bid.vehicle_id == vehicle_id).distinct())
+    )
+
+
+def _bidder_number(session: Session, vehicle_id: str, bidder_id: str) -> int:
+    """The bidder's paddle number on this vehicle: kept from their first bid, else the next."""
+    existing = session.scalar(
+        select(Bid.bidder_number)
+        .where(Bid.vehicle_id == vehicle_id, Bid.bidder_id == bidder_id)
+        .limit(1)
+    )
+    if existing is not None:
+        return existing
+    highest = session.scalar(
+        select(func.max(Bid.bidder_number)).where(Bid.vehicle_id == vehicle_id)
+    )
+    return (highest or 0) + 1
+
+
 def _record(session: Session, vehicle: Vehicle, bid: Bid) -> str | None:
     previous = vehicle.high_bidder_id
+    bid.bidder_number = _bidder_number(session, vehicle.id, bid.bidder_id)
     session.add(bid)
     vehicle.current_bid = bid.amount
     vehicle.bid_count += 1
@@ -176,9 +197,9 @@ def place_bid(
     if new_end is not None:
         vehicle.ends_at = new_end
 
-    labels = bidder_labels(session, vehicle.id)
+    bidders = _bidders(session, vehicle.id)
     session.commit()
-    return BidResult(bid, vehicle, now, previous, labels, extended=extended, replayed=False)
+    return BidResult(bid, vehicle, now, previous, bidders, extended=extended, replayed=False)
 
 
 def buy_now(
@@ -224,6 +245,6 @@ def buy_now(
     vehicle.starts_at = min(vehicle.starts_at, now)
     vehicle.ends_at = now
 
-    labels = bidder_labels(session, vehicle.id)
+    bidders = _bidders(session, vehicle.id)
     session.commit()
-    return BidResult(bid, vehicle, now, previous, labels, extended=False, replayed=False)
+    return BidResult(bid, vehicle, now, previous, bidders, extended=False, replayed=False)

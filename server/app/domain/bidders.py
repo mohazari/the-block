@@ -1,7 +1,7 @@
 """Bidder identity without accounts.
 
 The browser generates an anonymous bidder id. Other buyers never see it: bids are labelled per
-vehicle ("Bidder 3", see services.inventory.bidder_labels).
+vehicle by paddle number in order of first bid ("Bidder 3", see Bid.bidder_number).
 """
 
 # The competing dealers: used for the seeded bid history and by the live rival-bid simulator.

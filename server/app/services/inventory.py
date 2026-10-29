@@ -314,26 +314,13 @@ def open_first_key(auction: AuctionSnapshot) -> tuple[int, float]:
             return (2, -auction.ends_at.timestamp())
 
 
-def bidder_labels(session: Session, vehicle_id: str) -> dict[str, str]:
-    """ "Bidder 1", "Bidder 2"… numbered per vehicle in order of first bid.
-
-    Like an auction paddle number: unique within the lot by construction (hashed aliases could
-    collide and make two bidders look like one), and says nothing about who the bidder is.
-    """
-    first_bids = session.execute(
-        select(Bid.bidder_id)
-        .where(Bid.vehicle_id == vehicle_id)
-        .group_by(Bid.bidder_id)
-        .order_by(func.min(Bid.placed_at), func.min(Bid.id))
-    ).scalars()
-    return {bidder: f"Bidder {number}" for number, bidder in enumerate(first_bids, start=1)}
-
-
-def bid_out(bid: Bid, bidder_id: str | None, labels: dict[str, str]) -> BidOut:
+def bid_out(bid: Bid, bidder_id: str | None) -> BidOut:
+    """Other buyers see the per-lot paddle number ("Bidder 3"), never the bidder id: unique
+    within the lot by construction, and says nothing about who the bidder is."""
     return BidOut(
         id=bid.id,
         amount=bid.amount,
-        bidder=labels[bid.bidder_id],
+        bidder=f"Bidder {bid.bidder_number}",
         is_you=bidder_id is not None and bid.bidder_id == bidder_id,
         placed_at=bid.placed_at,
     )
@@ -372,7 +359,6 @@ def vehicle_detail(
 ) -> VehicleDetail:
     watching = bool(ids_for_bidder(session, bidder_id, WatchlistEntry, [vehicle.id]))
     has_bid = bool(ids_for_bidder(session, bidder_id, Bid, [vehicle.id]))
-    labels = bidder_labels(session, vehicle.id)
     recent_bids = session.scalars(
         select(Bid)
         .where(Bid.vehicle_id == vehicle.id)
@@ -388,7 +374,7 @@ def vehicle_detail(
         condition_report=vehicle.condition_report,
         damage=[DamageNote(note=n, severity=classify_damage(n)) for n in vehicle.damage_notes],
         images=vehicle.images,
-        recent_bids=[bid_out(bid, bidder_id, labels) for bid in recent_bids],
+        recent_bids=[bid_out(bid, bidder_id) for bid in recent_bids],
         recent_bids_limit=RECENT_BIDS_LIMIT,
         server_time=now,
     )

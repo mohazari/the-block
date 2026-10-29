@@ -168,3 +168,12 @@ def test_every_api_response_carries_the_current_data_epoch(client: TestClient) -
     reset(engine, DATA_PATH, datetime(2026, 11, 1, tzinfo=UTC))  # e.g. npm run reset-db
     second = client.get("/api/vehicles", params={"page_size": 1}).headers["X-Data-Epoch"]
     assert first and second != first
+
+
+def test_paddle_numbers_follow_first_bid_order(seeded_engine: Engine) -> None:
+    with Session(seeded_engine) as session:
+        for vehicle in session.scalars(select(Vehicle).where(Vehicle.bid_count > 0)):
+            first_number: dict[str, int] = {}
+            for bid in reversed(vehicle.bids):  # oldest first
+                number = first_number.setdefault(bid.bidder_id, len(first_number) + 1)
+                assert bid.bidder_number == number

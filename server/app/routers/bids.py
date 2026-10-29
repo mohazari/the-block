@@ -73,7 +73,7 @@ def _placed(result: BidResult, bidder_id: str, request: Request, response: Respo
     request.app.state.broker.publish(result)
     response.status_code = status.HTTP_200_OK if result.replayed else status.HTTP_201_CREATED
     return BidPlaced(
-        bid=bid_out(result.bid, bidder_id, result.labels),
+        bid=bid_out(result.bid, bidder_id),
         auction=snapshot(result.vehicle, result.now, bidder_id, has_bid=True),
         extended=result.extended,
     )

@@ -26,7 +26,7 @@ from app.models import Base, Bid, Meta, Vehicle
 logger = logging.getLogger(__name__)
 
 # Bump whenever the models change: an existing dev database is then rebuilt automatically.
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 
 # Fixed seed: the synthesized bid history is identical on every run.
 _HISTORY_SEED = 42
@@ -121,8 +121,14 @@ def seed(session: Session, data_path: Path, now: datetime) -> int:
             high_bidder_id=history[-1][0] if history else None,
             search_text=search_text(record),
         )
+        numbers: dict[str, int] = {}  # paddle numbers in order of first bid
         vehicle.bids = [
-            Bid(bidder_id=bidder, amount=amount, placed_at=placed_at)
+            Bid(
+                bidder_id=bidder,
+                bidder_number=numbers.setdefault(bidder, len(numbers) + 1),
+                amount=amount,
+                placed_at=placed_at,
+            )
             for bidder, amount, placed_at in history
         ]
         session.add(vehicle)

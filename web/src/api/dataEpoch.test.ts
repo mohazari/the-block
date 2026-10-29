@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { noteServerRun, noteStreamDown, onReseed } from './dataEpoch'
+import { noteServerRun, noteStreamDown, noteStreamUp, onReseed, onStaleStream } from './dataEpoch'
 
 describe('data epoch', () => {
   it('drops the cache for a new run with different data, even an older backup', () => {
@@ -23,12 +23,15 @@ describe('data epoch', () => {
     expect(noteServerRun('run-1', 'old', 'response')).toBe(false) // a straggler: no flip back
   })
 
-  it('leaves new runs to the stream while it is connected', () => {
-    noteServerRun('run-3', 'c', 'hello')
-    // A late response from a run this tab never saw (it lived and died while the stream
-    // reconnected) must not unseat the run the stream is connected to.
-    expect(noteServerRun('run-2', 'b', 'response')).toBe(false)
-    expect(noteServerRun('run-3', 'c', 'response')).toBe(false)
+  it('adopts a new run from a response even while the stream looks connected', () => {
+    const stale = vi.fn()
+    const stop = onStaleStream(stale)
+    noteStreamUp()
+    noteServerRun('run-1', 'a', 'hello')
+    // The stream says run-1, but run-2 answered: run-1 is gone and the stream died silently.
+    expect(noteServerRun('run-2', 'b', 'response')).toBe(true) // no mixing a's and b's data
+    expect(stale).toHaveBeenCalledTimes(1) // and the stream is told to reconnect
+    stop()
   })
 
   it('always believes a hello, even for a run it had retired', () => {

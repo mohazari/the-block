@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { auction, stubApi, vehicleDetail } from '../test/fixtures'
 import { FakeEventSource } from '../test/fakeEventSource'
 import { renderRoute } from '../test/render'
+import { api as api_get } from './client'
 import { resetStreamGate } from './streamGate'
 import type { AuctionEvent } from './types'
 
@@ -210,6 +211,52 @@ describe('live auction events', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('replaces a stream that stays silent after the tab wakes up', async () => {
+    serveDetail()
+    renderRoute('/vehicles/veh-1')
+    await panel()
+    vi.useFakeTimers()
+    try {
+      const hello = { server_time: new Date().toISOString(), epoch: 'e', run: 'run-1' }
+      act(() => FakeEventSource.latest().emit('hello', hello))
+      vi.setSystemTime(Date.now() + 600_000) // asleep
+      act(() => vi.advanceTimersByTime(30_000)) // overdue timer: grace, not teardown
+      expect(FakeEventSource.instances).toHaveLength(1)
+      act(() => vi.advanceTimersByTime(5_000)) // nothing arrived during the grace
+      expect(FakeEventSource.instances).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reconnects when a response shows its stream is connected to a server that is gone', async () => {
+    const api = stubApi((url) =>
+      url.pathname === '/api/vehicles/veh-1'
+        ? vehicleDetail()
+        : url.pathname === '/api/me/bids'
+          ? []
+          : undefined,
+    )
+    vi.stubGlobal('fetch', api.fetch)
+    renderRoute('/vehicles/veh-1')
+    await panel()
+    const hello = { server_time: new Date().toISOString(), epoch: 'e', run: 'run-1' }
+    act(() => FakeEventSource.latest().emit('hello', hello))
+    // From here on another server (run-2) answers, a fresh response per request.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response('{"items": []}', {
+            headers: { 'X-Server-Run': 'run-2', 'X-Data-Epoch': 'e' },
+          }),
+      ),
+    )
+    await act(() => api_get('/vehicles'))
+    expect(FakeEventSource.instances).toHaveLength(2)
+    expect(FakeEventSource.instances[0]!.closed).toBe(true)
   })
 
   it('sizes its watchdog from the heartbeat the server announces', async () => {

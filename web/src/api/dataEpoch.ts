@@ -5,10 +5,12 @@
  * every hello and API response names the run (a random id per server process) and its epoch.
  *
  * Runs, not clocks, tell old from new. A hello is authoritative: its stream is connected to
- * that run right now, so it is adopted, whatever came before. A response may be a late one
- * from an earlier run, so it only counts while the stream is down (otherwise the stream will
- * say), and never for a run this tab has moved on from. Adopting a run drops the cache only if
- * its epoch differs: a restart that kept the data keeps it, a restored backup doesn't.
+ * that run right now, so it is adopted, whatever came before. A response from a run this tab
+ * has moved on from is a late straggler and ignored. A response from a run it has never seen
+ * is adopted at once — even while the stream looks connected, since it proves that stream is
+ * stale (it died without telling us), so the stream is also told to reconnect; its hello then
+ * settles it. Adopting a run drops the cache only if its epoch differs: a restart that kept the
+ * data keeps it, a restored backup doesn't.
  */
 let currentRun: string | undefined
 let knownEpoch: string | undefined
@@ -16,6 +18,7 @@ let streamConnected = false
 const retiredRuns = new Set<string>()
 let reseeds = 0
 const listeners = new Set<() => void>()
+const staleStreamListeners = new Set<() => void>()
 
 /** Records a run and its epoch; returns whether the data was reseeded since the last one. */
 export function noteServerRun(
@@ -23,10 +26,15 @@ export function noteServerRun(
   epoch: string | null | undefined,
   from: 'hello' | 'response',
 ): boolean {
-  if (!run || epoch == null) return false
-  if (from === 'hello') streamConnected = true
-  if (run === currentRun) return false
-  if (from === 'response' && (streamConnected || retiredRuns.has(run))) return false
+  if (!run || epoch == null || run === currentRun) return false
+  if (from === 'response') {
+    if (retiredRuns.has(run)) return false
+    if (streamConnected) {
+      // Another server is answering, yet the stream says it's connected: it isn't any more.
+      streamConnected = false
+      staleStreamListeners.forEach((listener) => listener())
+    }
+  }
   retiredRuns.delete(run)
   if (currentRun !== undefined) retiredRuns.add(currentRun)
   currentRun = run
@@ -39,9 +47,20 @@ export function noteServerRun(
   return reseeded
 }
 
-/** The live stream dropped: until the next hello, responses may report a new run. */
+/** A hello arrived: the stream is connected (to the run it names). */
+export function noteStreamUp(): void {
+  streamConnected = true
+}
+
+/** The live stream dropped, or was closed. */
 export function noteStreamDown(): void {
   streamConnected = false
+}
+
+/** Called when a response shows the stream is connected to a server that's gone. */
+export function onStaleStream(listener: () => void): () => void {
+  staleStreamListeners.add(listener)
+  return () => staleStreamListeners.delete(listener)
 }
 
 /**

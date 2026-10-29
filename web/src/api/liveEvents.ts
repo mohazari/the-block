@@ -6,7 +6,7 @@ import { formatMoney } from '../lib/format'
 import { syncServerTime } from '../lib/serverClock'
 import { forgetSeen } from './auctionLedger'
 import { applyAuction, forgetOwnBidRefreshes } from './bidding'
-import { noteServerRun, noteStreamDown, onReseed } from './dataEpoch'
+import { noteServerRun, noteStreamDown, noteStreamUp, onReseed, onStaleStream } from './dataEpoch'
 import { streamLive } from './streamGate'
 import type { AuctionEvent } from './types'
 
@@ -17,6 +17,7 @@ const RECONNECT_MS = 3_000
 // connection died without telling us (e.g. a proxy holding it open after the server went away).
 const MISSED_PINGS = 3
 const DEFAULT_HEARTBEAT_MS = 10_000
+const HEARTBEAT_LIMITS_MS = [1_000, 600_000] as const // ignore nonsense from a misbehaving proxy
 // A timer that fires far too late means the tab was asleep or frozen, not the stream dead:
 // buffered events may still be on their way, so give them a moment first.
 const WOKE_UP_LATE_MS = 5_000
@@ -58,19 +59,23 @@ export function useAuctionEvents(): void {
     let connectedBefore = false
     let heartbeatMs = DEFAULT_HEARTBEAT_MS
 
+    const reconnect = () => {
+      clearTimeout(silence)
+      source?.close()
+      noteStreamDown()
+      setConnection(connectedBefore ? 'reconnecting' : 'connecting')
+      connect()
+    }
+
     // Every event (and the server's ping) proves the stream is alive; silence restarts it.
-    const expectMore = (within = heartbeatMs * MISSED_PINGS) => {
+    // One grace period per silent stretch: a throttled background tab's timers always fire
+    // late, and must still replace a dead stream eventually.
+    const expectMore = (within = heartbeatMs * MISSED_PINGS, graced = false) => {
       clearTimeout(silence)
       const due = Date.now() + within
       silence = setTimeout(() => {
-        if (Date.now() - due > WOKE_UP_LATE_MS) {
-          expectMore(AFTER_WAKING_MS)
-          return
-        }
-        source?.close()
-        noteStreamDown()
-        setConnection(connectedBefore ? 'reconnecting' : 'connecting')
-        connect()
+        if (!graced && Date.now() - due > WOKE_UP_LATE_MS) expectMore(AFTER_WAKING_MS, true)
+        else reconnect()
       }, within)
     }
 
@@ -106,7 +111,11 @@ export function useAuctionEvents(): void {
           run: string
           heartbeat_seconds?: number
         }
-        if (heartbeat_seconds && heartbeat_seconds > 0) heartbeatMs = heartbeat_seconds * 1000
+        noteStreamUp()
+        const [shortest, longest] = HEARTBEAT_LIMITS_MS
+        if (heartbeat_seconds) {
+          heartbeatMs = Math.min(Math.max(heartbeat_seconds * 1000, shortest), longest)
+        }
         expectMore()
         syncServerTime(server_time)
         // A run with different data resets the cache (see onReseed below), which also refetches.
@@ -135,20 +144,26 @@ export function useAuctionEvents(): void {
       }
     }
 
-    // Reseeded (a new server run with different data, from a hello or a response): bid counts restarted, so cached snapshots
-    // and what live events showed would wrongly look newer than fresh data. Drop both.
+    // Reseeded (a new server run with different data, from a hello or a response): bid counts
+    // restarted, so cached snapshots and what live events showed would wrongly look newer than
+    // fresh data. Drop both.
     const stopWatchingReseeds = onReseed(() => {
       forgetSeen()
       forgetOwnBidRefreshes() // bid ids restart too: an old id must not suppress a new refresh
       void queryClient.resetQueries()
     })
 
+    // A response came from a server this stream isn't connected to: the stream is stale.
+    const stopWatchingStaleStream = onStaleStream(reconnect)
+
     connect()
     return () => {
       stopWatchingReseeds()
+      stopWatchingStaleStream()
       clearTimeout(retry)
       clearTimeout(silence)
       source?.close()
+      noteStreamDown()
     }
   }, [queryClient])
 }

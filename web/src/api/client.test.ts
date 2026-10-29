@@ -31,7 +31,7 @@ describe('api', () => {
   it('sends the bidder id and idempotency key', async () => {
     const fetchMock = respond(201, { ok: true })
     vi.stubGlobal('fetch', fetchMock)
-    await api('/vehicles/1/bids', { method: 'POST', body: { amount: 100 }, idempotencyKey: 'k1' })
+    await send('/vehicles/1/bids', { method: 'POST', body: { amount: 100 }, idempotencyKey: 'k1' })
 
     const [url, init] = fetchMock.mock.calls[0]!
     expect(url).toBe('/api/vehicles/1/bids')
@@ -50,7 +50,10 @@ describe('api', () => {
         { 'Retry-After': '1' },
       ),
     )
-    const error = await api<never>('/vehicles/1/bids', { method: 'POST', body: {} }).catch(
+    const error = await send<never>('/vehicles/1/bids', { method: 'POST', body: {} }).then(
+      () => {
+        throw new Error('expected a rejection')
+      },
       (caught: unknown) => caught as ApiError,
     )
     expect(error).toBeInstanceOf(ApiError)
@@ -90,11 +93,12 @@ describe('api', () => {
     noteHello('run-1', 'old')
     let answer!: (response: Response) => void
     vi.stubGlobal('fetch', () => new Promise<Response>((resolve) => (answer = resolve)))
-    const bid = api('/vehicles/veh-1/bids', { method: 'POST', body: { amount: 1 } })
+    const bid = send('/vehicles/veh-1/bids', { method: 'POST', body: { amount: 1 } })
     await vi.waitFor(() => expect(answer).toBeDefined())
     noteHello('run-2', 'new')
     answer(new Response('{"ok": true}', { status: 201 }))
-    await expect(bid).resolves.toEqual({ ok: true }) // the outcome is shown, not thrown away
+    // The outcome is shown, not thrown away; it's just flagged as answered from other data.
+    await expect(bid).resolves.toEqual({ data: { ok: true }, sameData: false })
   })
 
   it('learns of a reseed from any response, whose data is the new data', async () => {
@@ -127,5 +131,29 @@ describe('api', () => {
     )
     const placed = await send('/vehicles/veh-1/bids', { method: 'POST', body: { amount: 1 } })
     expect(placed).toEqual({ data: { ok: 1 }, sameData: false }) // the outcome stands, flagged
+  })
+
+  it('rereads a late answer from the previous run even when the data is the same', async () => {
+    noteHello('run-1', 'e')
+    let answer!: (response: Response) => void
+    vi.stubGlobal('fetch', () => new Promise<Response>((resolve) => (answer = resolve)))
+    const read = api('/vehicles')
+    await vi.waitFor(() => expect(answer).toBeDefined())
+    noteHello('run-2', 'e') // restarted without a reset: bids may have been missed meanwhile
+    answer(
+      new Response('{"items": []}', { headers: { 'X-Server-Run': 'run-1', 'X-Data-Epoch': 'e' } }),
+    )
+    await expect(read).rejects.toMatchObject({ code: 'data_reset', status: 0 })
+  })
+
+  it('reports an HTTP error as itself, even when a reseed happened meanwhile', async () => {
+    noteHello('run-1', 'old')
+    let answer!: (response: Response) => void
+    vi.stubGlobal('fetch', () => new Promise<Response>((resolve) => (answer = resolve)))
+    const read = api('/vehicles')
+    await vi.waitFor(() => expect(answer).toBeDefined())
+    noteHello('run-2', 'new')
+    answer(new Response('<html>Bad gateway</html>', { status: 502 })) // a proxy page, no headers
+    await expect(read).rejects.toMatchObject({ status: 502 })
   })
 })

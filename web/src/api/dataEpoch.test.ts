@@ -27,8 +27,8 @@ describe('data epoch', () => {
   it('treats a response from a run it has moved on from as other data, if the data differs', () => {
     noteHello('run-1', 'old')
     noteStreamDown()
-    expect(noteResponse('run-2', 'new', sentWith())).toBe(true) // adopted: newer
-    expect(noteResponse('run-1', 'old', sentWith())).toBe(false) // a straggler: no flip back
+    expect(noteResponse('run-2', 'new', sentWith()).current).toBe(true) // adopted: newer
+    expect(noteResponse('run-1', 'old', sentWith()).sameData).toBe(false) // straggler: no flip back
     expect(currentRunId()).toBe('run-2')
   })
 
@@ -37,7 +37,7 @@ describe('data epoch', () => {
     const stop = onStaleStream(stale)
     noteHello('run-1', 'a')
     // The stream says run-1, but run-2 answered: run-1 is gone and the stream died silently.
-    expect(noteResponse('run-2', 'b', sentWith())).toBe(true)
+    expect(noteResponse('run-2', 'b', sentWith()).sameData).toBe(true)
     expect(currentRunId()).toBe('run-2')
     expect(stale).toHaveBeenCalledTimes(1) // and the stream is told to reconnect
     stop()
@@ -50,7 +50,7 @@ describe('data epoch', () => {
     const sent = sentWith() // a request goes out...
     noteHello('run-3', 'c') // ...the stream reconnects to run-3 meanwhile...
     // ...and run-2 answers, which lived and died in between (or not: it can't be ordered).
-    expect(noteResponse('run-2', 'b', sent)).toBe(false)
+    expect(noteResponse('run-2', 'b', sent)).toEqual({ sameData: false, current: false })
     expect(currentRunId()).toBe('run-3')
     expect(stale).not.toHaveBeenCalled() // the healthy stream stays
     stop()
@@ -60,7 +60,7 @@ describe('data epoch', () => {
     noteHello('run-1', 'a')
     const sent = sentWith()
     noteHello('run-1', 'a') // the stream blipped and came back to run-1
-    expect(noteResponse('run-2', 'b', sent)).toBe(true) // still the newest news
+    expect(noteResponse('run-2', 'b', sent).current).toBe(true) // still the newest news: adopted
   })
 
   it('always believes a hello, even for a run it had retired', () => {
@@ -79,7 +79,7 @@ describe('data epoch', () => {
     })
     const quiet = vi.spyOn(console, 'error').mockImplementation(() => {})
     noteHello('run-1', 'a')
-    expect(noteResponse('run-2', 'b', sentWith())).toBe(true)
+    expect(noteResponse('run-2', 'b', sentWith()).sameData).toBe(true)
     expect(currentRunId()).toBe('run-2')
     expect(quiet).toHaveBeenCalledTimes(2) // both failures reported, neither escaped
     quiet.mockRestore()
@@ -96,16 +96,17 @@ describe('data epoch', () => {
     noteHello('run-1', 'e')
     const sent = sentWith()
     noteHello('run-2', 'e') // restarted, same data
-    expect(noteResponse('run-1', 'e', sent)).toBe(true) // e.g. a bid's rejection: still valid
+    // Same data, so a bid's outcome is valid; but a read is read again (it may predate bids).
+    expect(noteResponse('run-1', 'e', sent)).toEqual({ sameData: true, current: false })
     expect(currentRunId()).toBe('run-2') // without moving the tab back
   })
 
   it('falls back to "was there a reseed meanwhile?" for a response missing a header', () => {
     noteHello('run-1', 'old')
     const sent = sentWith()
-    expect(noteResponse('run-1', null, sent)).toBe(true) // no epoch, no reseed: fine
+    expect(noteResponse('run-1', null, sent).current).toBe(true) // no epoch, no reseed: fine
     noteHello('run-2', 'new') // reseeded while it was in flight
-    expect(noteResponse('run-1', null, sent)).toBe(false)
-    expect(noteResponse('', 'old', sent)).toBe(false) // an empty run header is no run
+    expect(noteResponse('run-1', null, sent).sameData).toBe(false)
+    expect(noteResponse('', 'old', sent).sameData).toBe(false) // an empty run header is no run
   })
 })

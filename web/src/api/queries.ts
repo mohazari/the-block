@@ -7,7 +7,7 @@ import {
   type QueryClient,
 } from '@tanstack/react-query'
 import { withNewestSeen } from './auctionLedger'
-import { api } from './client'
+import { api, send } from './client'
 import type { InventoryQuery, MyBid, VehicleDetail, VehicleList, VehicleSummary } from './types'
 
 export const queryKeys = {
@@ -142,7 +142,7 @@ export function useWatch() {
     scope: { id: 'watchlist' },
     mutationKey: ['watchlist'],
     mutationFn: ({ vehicleId, watching }: { vehicleId: string; watching: boolean }) =>
-      api<void>(`/me/watchlist/${vehicleId}`, { method: watching ? 'PUT' : 'DELETE' }),
+      send<void>(`/me/watchlist/${vehicleId}`, { method: watching ? 'PUT' : 'DELETE' }),
     onMutate: async ({ vehicleId, watching }) => {
       // A refetch landing after the optimistic toggle would undo it. Whatever is cancelled here
       // is refetched in onSettled.

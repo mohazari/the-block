@@ -45,12 +45,15 @@ export function toSearchParams(query: Record<string, QueryValue>): URLSearchPara
   return params
 }
 
-interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
+interface ReadOptions {
   query?: Record<string, QueryValue>
+  signal?: AbortSignal
+}
+
+interface RequestOptions extends ReadOptions {
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   body?: unknown
   idempotencyKey?: string
-  signal?: AbortSignal
 }
 
 /** A response, and whether it was answered from the same data as the cache (see dataEpoch). */
@@ -59,8 +62,11 @@ export interface Answer<T> {
   sameData: boolean
 }
 
-/** For reads: data from other data than the cache's is never returned (it's retried instead). */
-export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
+/**
+ * Reads only (writes go through send(), which reports the verdict): a read answered from other
+ * data, or by a run the tab has moved past, is never returned — it's read again instead.
+ */
+export async function api<T>(path: string, options: ReadOptions = {}): Promise<T> {
   return (await send<T>(path, options)).data
 }
 
@@ -94,12 +100,7 @@ export async function send<T>(path: string, options: RequestOptions = {}): Promi
 
   const receivedAt = Date.now()
   const run = response.headers.get('X-Server-Run')
-  const sameData = noteResponse(run, response.headers.get('X-Data-Epoch'), sent)
-  if (method === 'GET' && !sameData) {
-    // Answered from other data than the cache's (a run the tab moved away from, or one it can't
-    // order): it must not refill the cache. Queries retry status 0, so it is simply read again.
-    throw new ApiError(0, 'data_reset', 'The auction data was just reset. Please try again.')
-  }
+  const { sameData, current } = noteResponse(run, response.headers.get('X-Data-Epoch'), sent)
   if (response.status === 204) return { data: undefined as T, sameData }
   const payload: unknown = await response.json().catch(() => undefined)
 
@@ -119,6 +120,12 @@ export async function send<T>(path: string, options: RequestOptions = {}): Promi
   if (payload === undefined) {
     // e.g. an HTML page from a proxy or captive portal: fail loudly rather than return garbage.
     throw new ApiError(response.status, 'bad_response', 'The server sent an unexpected response.')
+  }
+  if (method === 'GET' && !current) {
+    // Other data than the cache's, or a late answer from a run the tab has moved past (it may
+    // predate bids missed while reconnecting): it must not refill the cache. Checked after
+    // HTTP errors, so those are reported as what they are. Queries retry status 0.
+    throw new ApiError(0, 'data_reset', 'The auction data was just reset. Please try again.')
   }
   const serverTime = (payload as { server_time?: unknown } | null)?.server_time
   if (typeof serverTime === 'string') syncServerTime(serverTime, sentAt, receivedAt)

@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { auction, stubApi, vehicle, vehicleList } from '../test/fixtures'
@@ -175,14 +175,12 @@ describe('InventoryPage', () => {
     expect(box).toHaveValue('🚗 '.repeat(33)) // 99 units: one more car (2) would pass 100
   })
 
-  it('cuts an over-long drop at a whole character, after what was typed', async () => {
+  it('drops a trailing line break from a paste, as Firefox does', async () => {
     serve()
     renderRoute('/')
     const box = screen.getByRole('searchbox', { name: 'Search inventory' })
-    await userEvent.type(box, 'ford')
-    const dataTransfer = { getData: () => '🚗'.repeat(60), dropEffect: 'move' }
-    fireEvent.drop(box, { dataTransfer })
-    expect(box).toHaveValue(`ford${'🚗'.repeat(48)}`)
-    expect(dataTransfer.dropEffect).toBe('copy') // the field it came from keeps its text
+    await userEvent.type(box, 'x'.repeat(98))
+    await userEvent.paste('ab\n') // fits once the trailing break is gone
+    expect(box).toHaveValue(`${'x'.repeat(98)}ab`)
   })
 })

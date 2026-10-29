@@ -1,13 +1,5 @@
 import { Search } from 'lucide-react'
-import {
-  useEffect,
-  useEffectEvent,
-  useId,
-  useRef,
-  useState,
-  type ClipboardEvent,
-  type DragEvent,
-} from 'react'
+import { useEffect, useEffectEvent, useId, useRef, useState, type ClipboardEvent } from 'react'
 import { useInventory } from '../api/queries'
 import { LightsLegend } from '../components/auction/ConditionLight'
 import { plural } from '../lib/format'
@@ -155,20 +147,18 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
     return () => clearTimeout(timer)
   }, [draft, value])
 
-  // The browser would cut over-long pasted or dropped text mid-emoji. Insert only the whole
-  // characters that fit instead, keeping what's typed.
-  const draggingFromBox = useRef(false)
-  const insertWithinLimit = (
-    event: ClipboardEvent<HTMLInputElement> | DragEvent<HTMLInputElement>,
-    text: string,
-    at: 'selection' | 'end',
-  ) => {
+  // The browser would cut an over-long paste mid-emoji. Insert only the whole characters that
+  // fit instead, keeping what's typed. (Drops are left to the browser: taking over a drop means
+  // second-guessing move vs copy, and getting that wrong loses or duplicates text.)
+  const pasteWithinLimit = (event: ClipboardEvent<HTMLInputElement>) => {
     const input = event.currentTarget
-    // Measure what the field will actually hold: a one-line input turns each line break into a
-    // space (checked in Chromium; Firefox does the same by default).
-    const inserted = text.replace(/\r\n|[\r\n]/g, ' ')
-    const start = at === 'end' ? input.value.length : (input.selectionStart ?? input.value.length)
-    const end = at === 'end' ? start : (input.selectionEnd ?? start)
+    const text = event.clipboardData.getData('text')
+    // Measure what the field will hold: a one-line input turns line breaks into spaces (checked
+    // in Chromium; Firefox too, after dropping trailing ones). Dropping trailing ones here as
+    // well costs Chromium only a trailing space, which search ignores.
+    const inserted = text.replace(/[\r\n]+$/, '').replace(/\r\n|[\r\n]/g, ' ')
+    const start = input.selectionStart ?? input.value.length
+    const end = input.selectionEnd ?? start
     const room = SEARCH_MAX_LENGTH - (input.value.length - (end - start))
     if (inserted.length <= room) return // fits: the browser does it
     event.preventDefault()
@@ -203,25 +193,9 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
         type="search"
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
-        onPaste={(event) =>
-          insertWithinLimit(event, event.clipboardData.getData('text'), 'selection')
-        }
-        onDragStart={() => (draggingFromBox.current = true)}
-        onDragEnd={() => (draggingFromBox.current = false)}
-        onDrop={(event) => {
-          const fromBox = draggingFromBox.current
-          draggingFromBox.current = false
-          // Moving text within the box can't make it longer; copying it (Option/Ctrl-drag) can.
-          if (fromBox && event.dataTransfer.dropEffect === 'move') return
-          // A text field can't tell where in it the text was dropped, so an over-long drop goes
-          // at the end (one that fits lands where it was dropped, as usual).
-          insertWithinLimit(event, event.dataTransfer.getData('text'), 'end')
-          // Only part of it was inserted: make it a copy, so a field it was dragged out of
-          // keeps the text rather than losing what didn't fit.
-          if (event.defaultPrevented) event.dataTransfer.dropEffect = 'copy'
-        }}
+        onPaste={pasteWithinLimit}
         placeholder="Make, model, VIN, lot or city"
-        // Typing past the limit is refused in place; pastes and drops are cut at a whole character.
+        // Typing past the limit is refused in place; pastes are cut at a whole character.
         maxLength={SEARCH_MAX_LENGTH}
         className="border-line-strong bg-surface placeholder:text-ink-faint h-10 w-full rounded-[var(--radius-control)] border pr-3 pl-10 text-sm"
       />

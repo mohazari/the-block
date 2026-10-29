@@ -93,9 +93,10 @@ export function useInventoryParams() {
           if (next.get('page') === '1') next.delete('page')
           return next
         },
-        // flushSync: these inputs are controlled by the URL, and a transition would let a
-        // clicked checkbox snap back for a moment (caught by the e2e tests).
-        { replace, flushSync: true },
+        // Discrete inputs (checkboxes, selects) are controlled by the URL: flushSync stops a
+        // clicked box snapping back for a moment (caught by the e2e tests). Replacing updates
+        // (the debounced search) keep the default, interruptible transition.
+        { replace, flushSync: !replace },
       )
     },
     [setParams],

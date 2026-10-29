@@ -11,9 +11,13 @@ test('a buyer finds a vehicle, bids on it, and tracks it in My bids', async ({ p
   const rows = page.getByRole('article')
   await expect(rows.first()).toContainText('Bronco')
 
-  // Open a live auction without Buy Now.
+  // Open a live auction without Buy Now. Wait for each change to land (the search clears after
+  // its debounce) and for the list to settle before picking a row.
   await page.getByRole('searchbox', { name: 'Search inventory' }).fill('')
+  await expect(page).not.toHaveURL(/q=/)
   await page.getByRole('checkbox', { name: /Live now/ }).check()
+  await expect(page).toHaveURL(/status=live/)
+  await expect(page.locator('[aria-busy="true"]')).toHaveCount(0)
   const row = rows.filter({ hasText: 'Ends in' }).filter({ hasNotText: 'Buy Now' }).first()
   const title = (await row.getByRole('heading').textContent())!.trim()
   await row.getByRole('link', { name: title }).click()

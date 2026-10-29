@@ -120,7 +120,7 @@ that shaped the product:
   over-matching ("ford" matched "Oxford White"), filter checkboxes reordering under the cursor, a
   cropped illustration, and the animated price lingering on "$13,997". It also confirmed a real
   outbid by a simulated rival end to end.
-- **Accessibility:** every text colour meets WCAG AA (4.5:1) on every surface in both themes,
+- **Accessibility:** every text colour meets WCAG AA (4.5:1) on the backgrounds it's used on, in both themes,
   checked by script. Keyboard focus is visible, there's a skip link, live regions announce
   standing changes, toasts pause while hovered or focused, and reduced motion is respected.
 - CI runs lint, types, unit and e2e tests on every PR, and fails if the generated API types

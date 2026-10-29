@@ -9,7 +9,7 @@ export default defineConfig({
     // Same-origin API in dev: no CORS config, and EventSource works unchanged.
     proxy: {
       // The e2e run points this at its own isolated API instance.
-      '/api': process.env.API_URL ?? 'http://127.0.0.1:8000',
+      '/api': process.env.THE_BLOCK_API_URL ?? 'http://127.0.0.1:8000',
     },
   },
   test: {

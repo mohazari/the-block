@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { serverNow } from '../lib/serverClock'
 import { ApiError, api, toSearchParams } from './client'
-import { noteServerRun } from './dataEpoch'
+import { noteServerRun, noteStreamDown } from './dataEpoch'
 
 function respond(status: number, body: unknown, headers: Record<string, string> = {}) {
   return vi
@@ -76,29 +76,30 @@ describe('api', () => {
   })
 
   it('rejects a read that was in flight when the data was reset, so it is read again', async () => {
-    noteServerRun('run-1', 'old')
+    noteServerRun('run-1', 'old', 'hello')
     let answer!: (response: Response) => void
     vi.stubGlobal('fetch', () => new Promise<Response>((resolve) => (answer = resolve)))
     const read = api('/vehicles')
     await vi.waitFor(() => expect(answer).toBeDefined())
-    noteServerRun('run-2', 'new') // a hello reports the reset while the read is in flight
+    noteServerRun('run-2', 'new', 'hello') // a hello reports the reset while the read is in flight
     answer(new Response('{"items": []}'))
     await expect(read).rejects.toMatchObject({ code: 'data_reset', status: 0 })
   })
 
   it('still returns a bid response that was in flight across a reset', async () => {
-    noteServerRun('run-1', 'old')
+    noteServerRun('run-1', 'old', 'hello')
     let answer!: (response: Response) => void
     vi.stubGlobal('fetch', () => new Promise<Response>((resolve) => (answer = resolve)))
     const bid = api('/vehicles/veh-1/bids', { method: 'POST', body: { amount: 1 } })
     await vi.waitFor(() => expect(answer).toBeDefined())
-    noteServerRun('run-2', 'new')
+    noteServerRun('run-2', 'new', 'hello')
     answer(new Response('{"ok": true}', { status: 201 }))
     await expect(bid).resolves.toEqual({ ok: true }) // the outcome is shown, not thrown away
   })
 
   it('learns of a reseed from any response, and rereads what that response held', async () => {
-    noteServerRun('run-1', 'old')
+    noteServerRun('run-1', 'old', 'hello')
+    noteStreamDown() // a tab whose stream is down: responses are its only news
     const headers = { 'X-Server-Run': 'run-2', 'X-Data-Epoch': 'new' } // reseeded since
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"items": []}', { headers })))
     await expect(api('/vehicles')).rejects.toMatchObject({ code: 'data_reset', status: 0 })

@@ -200,13 +200,50 @@ describe('live auction events', () => {
     try {
       const hello = { server_time: new Date().toISOString(), epoch: 'epoch-1', run: 'run-1' }
       act(() => FakeEventSource.latest().emit('hello', hello))
-      act(() => vi.advanceTimersByTime(40_000))
+      act(() => vi.advanceTimersByTime(25_000))
       act(() => FakeEventSource.latest().emit('ping', {})) // quiet, but alive
-      act(() => vi.advanceTimersByTime(40_000))
+      act(() => vi.advanceTimersByTime(25_000))
       expect(FakeEventSource.instances).toHaveLength(1)
-      act(() => vi.advanceTimersByTime(6_000)) // 46s without even a ping: a dead connection
+      act(() => vi.advanceTimersByTime(6_000)) // 31s without even a ping: a dead connection
       expect(FakeEventSource.instances).toHaveLength(2)
       expect(FakeEventSource.instances[0]!.closed).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('sizes its watchdog from the heartbeat the server announces', async () => {
+    serveDetail()
+    renderRoute('/vehicles/veh-1')
+    await panel()
+    vi.useFakeTimers()
+    try {
+      const hello = { server_time: new Date().toISOString(), epoch: 'e', run: 'run-1' }
+      act(() => FakeEventSource.latest().emit('hello', { ...hello, heartbeat_seconds: 30 }))
+      act(() => vi.advanceTimersByTime(80_000)) // under 3 x 30s: still trusted
+      expect(FakeEventSource.instances).toHaveLength(1)
+      act(() => vi.advanceTimersByTime(11_000))
+      expect(FakeEventSource.instances).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('gives a stream a moment after the tab wakes up instead of reconnecting at once', async () => {
+    serveDetail()
+    renderRoute('/vehicles/veh-1')
+    await panel()
+    vi.useFakeTimers()
+    try {
+      const hello = { server_time: new Date().toISOString(), epoch: 'e', run: 'run-1' }
+      act(() => FakeEventSource.latest().emit('hello', hello))
+      // Asleep for 10 minutes: the clock jumps, then the overdue timer fires.
+      vi.setSystemTime(Date.now() + 600_000)
+      act(() => vi.advanceTimersByTime(30_000))
+      expect(FakeEventSource.instances).toHaveLength(1) // not torn down on waking
+      act(() => FakeEventSource.latest().emit('ping', {})) // buffered ping arrives: alive
+      act(() => vi.advanceTimersByTime(10_000))
+      expect(FakeEventSource.instances).toHaveLength(1)
     } finally {
       vi.useRealTimers()
     }

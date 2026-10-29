@@ -4,13 +4,15 @@
  * "compare". The data only changes between server runs (reset-db refuses while a server is up);
  * every hello and API response names the run (a random id per server process) and its epoch.
  *
- * Runs, not clocks, tell old from new: a run this tab has moved on from is a late response from
- * a previous process, so it's ignored; any other new run is adopted, and drops the cache only if
- * its epoch differs (a restart without a reset keeps it). A restored backup is a new run with a
- * different epoch, so it counts, whatever the timestamps say.
+ * Runs, not clocks, tell old from new. A hello is authoritative: its stream is connected to
+ * that run right now, so it is adopted, whatever came before. A response may be a late one
+ * from an earlier run, so it only counts while the stream is down (otherwise the stream will
+ * say), and never for a run this tab has moved on from. Adopting a run drops the cache only if
+ * its epoch differs: a restart that kept the data keeps it, a restored backup doesn't.
  */
 let currentRun: string | undefined
 let knownEpoch: string | undefined
+let streamConnected = false
 const retiredRuns = new Set<string>()
 let reseeds = 0
 const listeners = new Set<() => void>()
@@ -19,8 +21,13 @@ const listeners = new Set<() => void>()
 export function noteServerRun(
   run: string | null | undefined,
   epoch: string | null | undefined,
+  from: 'hello' | 'response',
 ): boolean {
-  if (!run || !epoch || run === currentRun || retiredRuns.has(run)) return false
+  if (!run || epoch == null) return false
+  if (from === 'hello') streamConnected = true
+  if (run === currentRun) return false
+  if (from === 'response' && (streamConnected || retiredRuns.has(run))) return false
+  retiredRuns.delete(run)
   if (currentRun !== undefined) retiredRuns.add(currentRun)
   currentRun = run
   const reseeded = knownEpoch !== undefined && epoch !== knownEpoch
@@ -30,6 +37,11 @@ export function noteServerRun(
     listeners.forEach((listener) => listener())
   }
   return reseeded
+}
+
+/** The live stream dropped: until the next hello, responses may report a new run. */
+export function noteStreamDown(): void {
+  streamConnected = false
 }
 
 /**
@@ -47,6 +59,7 @@ export function onReseed(listener: () => void): () => void {
 /** Test hook. */
 export function resetDataEpoch(): void {
   currentRun = undefined
+  streamConnected = false
   knownEpoch = undefined
   retiredRuns.clear()
   reseeds = 0

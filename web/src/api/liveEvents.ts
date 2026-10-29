@@ -6,16 +6,21 @@ import { formatMoney } from '../lib/format'
 import { syncServerTime } from '../lib/serverClock'
 import { forgetSeen } from './auctionLedger'
 import { applyAuction, forgetOwnBidRefreshes } from './bidding'
-import { noteServerRun, onReseed } from './dataEpoch'
+import { noteServerRun, noteStreamDown, onReseed } from './dataEpoch'
 import { streamLive } from './streamGate'
 import type { AuctionEvent } from './types'
 
 export type Connection = 'connecting' | 'live' | 'reconnecting'
 
 const RECONNECT_MS = 3_000
-// The server sends at least a `ping` every 15s. Three missed in a row means the connection died
-// without telling us (e.g. a proxy holding it open after the server went away): start over.
-const SILENT_STREAM_MS = 45_000
+// The hello says how often the server pings a quiet stream; three missed in a row means the
+// connection died without telling us (e.g. a proxy holding it open after the server went away).
+const MISSED_PINGS = 3
+const DEFAULT_HEARTBEAT_MS = 10_000
+// A timer that fires far too late means the tab was asleep or frozen, not the stream dead:
+// buffered events may still be on their way, so give them a moment first.
+const WOKE_UP_LATE_MS = 5_000
+const AFTER_WAKING_MS = 5_000
 
 let connection: Connection = 'connecting'
 const listeners = new Set<() => void>()
@@ -51,15 +56,22 @@ export function useAuctionEvents(): void {
     let retry: ReturnType<typeof setTimeout> | undefined
     let silence: ReturnType<typeof setTimeout> | undefined
     let connectedBefore = false
+    let heartbeatMs = DEFAULT_HEARTBEAT_MS
 
     // Every event (and the server's ping) proves the stream is alive; silence restarts it.
-    const expectMore = () => {
+    const expectMore = (within = heartbeatMs * MISSED_PINGS) => {
       clearTimeout(silence)
+      const due = Date.now() + within
       silence = setTimeout(() => {
+        if (Date.now() - due > WOKE_UP_LATE_MS) {
+          expectMore(AFTER_WAKING_MS)
+          return
+        }
         source?.close()
+        noteStreamDown()
         setConnection(connectedBefore ? 'reconnecting' : 'connecting')
         connect()
-      }, SILENT_STREAM_MS)
+      }, within)
     }
 
     const onAuctionEvent = (message: MessageEvent<string>) => {
@@ -86,17 +98,19 @@ export function useAuctionEvents(): void {
     const connect = () => {
       source = new EventSource(`/api/events?bidder_id=${encodeURIComponent(bidderId())}`)
       expectMore()
-      source.addEventListener('ping', expectMore)
+      source.addEventListener('ping', () => expectMore())
       source.addEventListener('hello', (message) => {
-        expectMore()
-        const { server_time, epoch, run } = JSON.parse(message.data) as {
+        const { server_time, epoch, run, heartbeat_seconds } = JSON.parse(message.data) as {
           server_time: string
           epoch: string
           run: string
+          heartbeat_seconds?: number
         }
+        if (heartbeat_seconds && heartbeat_seconds > 0) heartbeatMs = heartbeat_seconds * 1000
+        expectMore()
         syncServerTime(server_time)
-        // A newer epoch resets the cache (see onReseed below), which also refetches.
-        const reseeded = noteServerRun(run, epoch)
+        // A run with different data resets the cache (see onReseed below), which also refetches.
+        const reseeded = noteServerRun(run, epoch, 'hello')
         // Initial reads waited for this hello (streamGate), so they can't have missed a bid.
         const readBeforeSubscribing = streamLive()
         if (!reseeded && readBeforeSubscribing) {
@@ -109,6 +123,7 @@ export function useAuctionEvents(): void {
       source.addEventListener('bid', onAuctionEvent)
       source.addEventListener('sold', onAuctionEvent)
       source.onerror = () => {
+        noteStreamDown()
         setConnection(connectedBefore ? 'reconnecting' : 'connecting')
         // The browser retries dropped connections itself, but gives up for good on a bad
         // response (e.g. a 502 from a proxy). Then it's on us, or the page goes quietly stale.
@@ -120,7 +135,7 @@ export function useAuctionEvents(): void {
       }
     }
 
-    // Reseeded (a hello with a new epoch): bid counts restarted, so cached snapshots
+    // Reseeded (a new server run with different data, from a hello or a response): bid counts restarted, so cached snapshots
     // and what live events showed would wrongly look newer than fresh data. Drop both.
     const stopWatchingReseeds = onReseed(() => {
       forgetSeen()

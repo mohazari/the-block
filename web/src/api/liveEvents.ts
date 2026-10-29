@@ -6,13 +6,16 @@ import { formatMoney } from '../lib/format'
 import { syncServerTime } from '../lib/serverClock'
 import { forgetSeen } from './auctionLedger'
 import { applyAuction, forgetOwnBidRefreshes } from './bidding'
-import { noteDataEpoch, onReseed } from './dataEpoch'
+import { noteServerRun, onReseed } from './dataEpoch'
 import { streamLive } from './streamGate'
 import type { AuctionEvent } from './types'
 
 export type Connection = 'connecting' | 'live' | 'reconnecting'
 
 const RECONNECT_MS = 3_000
+// The server sends at least a `ping` every 15s. Three missed in a row means the connection died
+// without telling us (e.g. a proxy holding it open after the server went away): start over.
+const SILENT_STREAM_MS = 45_000
 
 let connection: Connection = 'connecting'
 const listeners = new Set<() => void>()
@@ -46,9 +49,21 @@ export function useAuctionEvents(): void {
   useEffect(() => {
     let source: EventSource | undefined
     let retry: ReturnType<typeof setTimeout> | undefined
+    let silence: ReturnType<typeof setTimeout> | undefined
     let connectedBefore = false
 
+    // Every event (and the server's ping) proves the stream is alive; silence restarts it.
+    const expectMore = () => {
+      clearTimeout(silence)
+      silence = setTimeout(() => {
+        source?.close()
+        setConnection(connectedBefore ? 'reconnecting' : 'connecting')
+        connect()
+      }, SILENT_STREAM_MS)
+    }
+
     const onAuctionEvent = (message: MessageEvent<string>) => {
+      expectMore()
       const event = JSON.parse(message.data) as AuctionEvent
       // Patches every cached copy, My bids included (see recordOwnBid for your own bids).
       applyAuction(queryClient, event.vehicle_id, event.auction, event.bid)
@@ -70,14 +85,18 @@ export function useAuctionEvents(): void {
 
     const connect = () => {
       source = new EventSource(`/api/events?bidder_id=${encodeURIComponent(bidderId())}`)
+      expectMore()
+      source.addEventListener('ping', expectMore)
       source.addEventListener('hello', (message) => {
-        const { server_time, epoch } = JSON.parse(message.data) as {
+        expectMore()
+        const { server_time, epoch, run } = JSON.parse(message.data) as {
           server_time: string
           epoch: string
+          run: string
         }
         syncServerTime(server_time)
         // A newer epoch resets the cache (see onReseed below), which also refetches.
-        const reseeded = noteDataEpoch(epoch)
+        const reseeded = noteServerRun(run, epoch)
         // Initial reads waited for this hello (streamGate), so they can't have missed a bid.
         const readBeforeSubscribing = streamLive()
         if (!reseeded && readBeforeSubscribing) {
@@ -95,6 +114,7 @@ export function useAuctionEvents(): void {
         // response (e.g. a 502 from a proxy). Then it's on us, or the page goes quietly stale.
         if (source?.readyState === EventSource.CLOSED) {
           source.close()
+          clearTimeout(silence)
           retry = setTimeout(connect, RECONNECT_MS)
         }
       }
@@ -112,6 +132,7 @@ export function useAuctionEvents(): void {
     return () => {
       stopWatchingReseeds()
       clearTimeout(retry)
+      clearTimeout(silence)
       source?.close()
     }
   }, [queryClient])

@@ -1,28 +1,30 @@
 import { describe, expect, it, vi } from 'vitest'
-import { noteDataEpoch, onReseed } from './dataEpoch'
+import { noteServerRun, onReseed } from './dataEpoch'
 
 describe('data epoch', () => {
-  it('treats any change as a reseed, including an older database', () => {
+  it('drops the cache for a new run with different data, even an older backup', () => {
     const reseeded = vi.fn()
     const stop = onReseed(reseeded)
-    expect(noteDataEpoch('b')).toBe(false) // the first hello: just recorded
-    expect(noteDataEpoch('b')).toBe(false)
-    expect(noteDataEpoch('a')).toBe(true) // e.g. a restored backup: not "newer", still different
+    expect(noteServerRun('run-1', '2026-10-29T09:00:00+00:00')).toBe(false) // first: recorded
+    expect(noteServerRun('run-2', '2026-10-29T08:00:00+00:00')).toBe(true) // older, still new
     expect(reseeded).toHaveBeenCalledTimes(1)
     stop()
   })
 
-  it('ignores an empty epoch', () => {
-    expect(noteDataEpoch('')).toBe(false)
-    expect(noteDataEpoch('a')).toBe(false) // still the first real one
+  it('keeps the cache across a restart that kept the data', () => {
+    noteServerRun('run-1', 'e')
+    expect(noteServerRun('run-2', 'e')).toBe(false)
   })
 
-  it('lets a response move the epoch only forward: a late one from before is ignored', () => {
-    const older = '2026-10-29T08:00:00+00:00'
-    const newer = '2026-10-29T09:00:00+00:00'
-    noteDataEpoch(older)
-    expect(noteDataEpoch(newer, 'response')).toBe(true)
-    expect(noteDataEpoch(older, 'response')).toBe(false) // straggler from the previous run
-    expect(noteDataEpoch(older)).toBe(true) // but a hello saying so (a restored backup) wins
+  it('ignores a late response from a run it has moved on from', () => {
+    noteServerRun('run-1', 'old')
+    expect(noteServerRun('run-2', 'new')).toBe(true)
+    expect(noteServerRun('run-1', 'old')).toBe(false) // a straggler: no flip back
+    expect(noteServerRun('run-2', 'new')).toBe(false)
+  })
+
+  it('ignores a missing run or epoch', () => {
+    expect(noteServerRun(null, 'e')).toBe(false)
+    expect(noteServerRun('run-1', '')).toBe(false)
   })
 })

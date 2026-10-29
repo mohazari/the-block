@@ -48,7 +48,13 @@ describe('live auction events', () => {
     expect(FakeEventSource.instances).toHaveLength(1)
     expect(source.url).toMatch(/^\/api\/events\?bidder_id=[0-9a-f-]+$/)
 
-    act(() => source.emit('hello', { server_time: new Date().toISOString(), epoch: 'epoch-1' }))
+    act(() =>
+      source.emit('hello', {
+        server_time: new Date().toISOString(),
+        epoch: 'epoch-1',
+        run: 'run-1',
+      }),
+    )
     expect(screen.getByRole('status', { name: 'Live updates: connected' })).toHaveTextContent(
       'Live',
     )
@@ -93,9 +99,21 @@ describe('live auction events', () => {
     renderRoute('/vehicles/veh-1')
     await panel()
     const source = FakeEventSource.latest()
-    act(() => source.emit('hello', { server_time: new Date().toISOString(), epoch: 'epoch-1' }))
+    act(() =>
+      source.emit('hello', {
+        server_time: new Date().toISOString(),
+        epoch: 'epoch-1',
+        run: 'run-1',
+      }),
+    )
     const before = api.calls.filter((url) => url.pathname === '/api/vehicles/veh-1').length
-    act(() => source.emit('hello', { server_time: new Date().toISOString(), epoch: 'epoch-1' }))
+    act(() =>
+      source.emit('hello', {
+        server_time: new Date().toISOString(),
+        epoch: 'epoch-1',
+        run: 'run-1',
+      }),
+    )
     await waitFor(() =>
       expect(
         api.calls.filter((url) => url.pathname === '/api/vehicles/veh-1').length,
@@ -134,11 +152,23 @@ describe('live auction events', () => {
     renderRoute('/vehicles/veh-1')
     const bidding = await panel()
     const source = FakeEventSource.latest()
-    act(() => source.emit('hello', { server_time: new Date().toISOString(), epoch: 'epoch-1' }))
+    act(() =>
+      source.emit('hello', {
+        server_time: new Date().toISOString(),
+        epoch: 'epoch-1',
+        run: 'run-1',
+      }),
+    )
 
     // Reseeded: the same car now has fewer bids, which must not be mistaken for "older" data.
     detail = vehicleDetail({ auction: auction({ bid_count: 3, current_bid: 9000 }) })
-    act(() => source.emit('hello', { server_time: new Date().toISOString(), epoch: 'epoch-2' }))
+    act(() =>
+      source.emit('hello', {
+        server_time: new Date().toISOString(),
+        epoch: 'epoch-2',
+        run: 'run-2',
+      }),
+    )
     expect(await bidding.findByText('3 bids')).toBeInTheDocument()
   })
 
@@ -153,12 +183,33 @@ describe('live auction events', () => {
       FakeEventSource.latest().emit('hello', {
         server_time: new Date().toISOString(),
         epoch: 'epoch-1',
+        run: 'run-1',
       }),
     )
     await panel()
     await new Promise((resolve) => setTimeout(resolve, 50))
     // Subscribed before reading: nothing could be missed, so no second fetch.
     expect(api.calls.filter((url) => url.pathname === '/api/vehicles/veh-1')).toHaveLength(1)
+  })
+
+  it('starts over when a connection goes silent without failing', async () => {
+    serveDetail()
+    renderRoute('/vehicles/veh-1')
+    await panel()
+    vi.useFakeTimers()
+    try {
+      const hello = { server_time: new Date().toISOString(), epoch: 'epoch-1', run: 'run-1' }
+      act(() => FakeEventSource.latest().emit('hello', hello))
+      act(() => vi.advanceTimersByTime(40_000))
+      act(() => FakeEventSource.latest().emit('ping', {})) // quiet, but alive
+      act(() => vi.advanceTimersByTime(40_000))
+      expect(FakeEventSource.instances).toHaveLength(1)
+      act(() => vi.advanceTimersByTime(6_000)) // 46s without even a ping: a dead connection
+      expect(FakeEventSource.instances).toHaveLength(2)
+      expect(FakeEventSource.instances[0]!.closed).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('does not stall the page when the stream never connects', async () => {
@@ -179,12 +230,24 @@ describe('live auction events', () => {
     renderRoute('/vehicles/veh-1')
     await panel()
     const source = FakeEventSource.latest()
-    act(() => source.emit('hello', { server_time: new Date().toISOString(), epoch: 'epoch-1' }))
+    act(() =>
+      source.emit('hello', {
+        server_time: new Date().toISOString(),
+        epoch: 'epoch-1',
+        run: 'run-1',
+      }),
+    )
     await waitFor(() =>
       expect(api.calls.filter((u) => u.pathname === '/api/vehicles/veh-1').length).toBe(2),
     )
 
-    act(() => source.emit('hello', { server_time: new Date().toISOString(), epoch: 'epoch-2' }))
+    act(() =>
+      source.emit('hello', {
+        server_time: new Date().toISOString(),
+        epoch: 'epoch-2',
+        run: 'run-2',
+      }),
+    )
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(api.calls.filter((u) => u.pathname === '/api/vehicles/veh-1')).toHaveLength(3)
   })
@@ -250,7 +313,13 @@ describe('live auction events', () => {
     const { queryClient } = renderRoute('/vehicles/veh-1')
     await panel()
     const source = FakeEventSource.latest()
-    act(() => source.emit('hello', { server_time: new Date().toISOString(), epoch: 'epoch-1' }))
+    act(() =>
+      source.emit('hello', {
+        server_time: new Date().toISOString(),
+        epoch: 'epoch-1',
+        run: 'run-1',
+      }),
+    )
     const mine = {
       id: 5,
       amount: 23300,
@@ -260,7 +329,13 @@ describe('live auction events', () => {
     }
     act(() => source.emit('bid', rivalBid({ vehicle_id: 'car-a', bid: mine, outbid_you: false })))
 
-    act(() => source.emit('hello', { server_time: new Date().toISOString(), epoch: 'epoch-2' }))
+    act(() =>
+      source.emit('hello', {
+        server_time: new Date().toISOString(),
+        epoch: 'epoch-2',
+        run: 'run-2',
+      }),
+    )
     await waitFor(() => expect(queryClient.getQueryState(['me', 'bids'])?.fetchStatus).toBe('idle'))
     const spy = vi.spyOn(queryClient, 'cancelQueries')
     act(() => source.emit('bid', rivalBid({ vehicle_id: 'car-b', bid: mine, outbid_you: false })))

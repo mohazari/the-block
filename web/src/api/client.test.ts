@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { serverNow } from '../lib/serverClock'
 import { ApiError, api, toSearchParams } from './client'
-import { noteDataEpoch } from './dataEpoch'
+import { noteServerRun } from './dataEpoch'
 
 function respond(status: number, body: unknown, headers: Record<string, string> = {}) {
   return vi
@@ -76,30 +76,30 @@ describe('api', () => {
   })
 
   it('rejects a read that was in flight when the data was reset, so it is read again', async () => {
-    noteDataEpoch('old')
+    noteServerRun('run-1', 'old')
     let answer!: (response: Response) => void
     vi.stubGlobal('fetch', () => new Promise<Response>((resolve) => (answer = resolve)))
     const read = api('/vehicles')
     await vi.waitFor(() => expect(answer).toBeDefined())
-    noteDataEpoch('new') // a hello reports the reset while the read is in flight
+    noteServerRun('run-2', 'new') // a hello reports the reset while the read is in flight
     answer(new Response('{"items": []}'))
     await expect(read).rejects.toMatchObject({ code: 'data_reset', status: 0 })
   })
 
   it('still returns a bid response that was in flight across a reset', async () => {
-    noteDataEpoch('old')
+    noteServerRun('run-1', 'old')
     let answer!: (response: Response) => void
     vi.stubGlobal('fetch', () => new Promise<Response>((resolve) => (answer = resolve)))
     const bid = api('/vehicles/veh-1/bids', { method: 'POST', body: { amount: 1 } })
     await vi.waitFor(() => expect(answer).toBeDefined())
-    noteDataEpoch('new')
+    noteServerRun('run-2', 'new')
     answer(new Response('{"ok": true}', { status: 201 }))
     await expect(bid).resolves.toEqual({ ok: true }) // the outcome is shown, not thrown away
   })
 
   it('learns of a reseed from any response, and rereads what that response held', async () => {
-    noteDataEpoch('2026-10-29T08:00:00+00:00')
-    const headers = { 'X-Data-Epoch': '2026-10-29T09:00:00+00:00' } // reseeded since
+    noteServerRun('run-1', 'old')
+    const headers = { 'X-Server-Run': 'run-2', 'X-Data-Epoch': 'new' } // reseeded since
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"items": []}', { headers })))
     await expect(api('/vehicles')).rejects.toMatchObject({ code: 'data_reset', status: 0 })
     await expect(api('/vehicles')).resolves.toEqual({ items: [] }) // now current

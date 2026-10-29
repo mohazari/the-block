@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createQueryClient } from '../app/queryClient'
 import { auction, vehicleDetail } from '../test/fixtures'
 import { usePlaceBid } from './bidding'
-import { noteDataEpoch } from './dataEpoch'
+import { noteServerRun } from './dataEpoch'
 import { queryKeys } from './queries'
 import type { VehicleDetail } from './types'
 
@@ -16,7 +16,7 @@ describe('a bid in flight across a data reset', () => {
     const queryClient = createQueryClient()
     const key = queryKeys.vehicle('veh-1')
     queryClient.setQueryData(key, vehicleDetail({ auction: auction({ bid_count: 2 }) }))
-    noteDataEpoch('old')
+    noteServerRun('run-1', 'old')
     let answer!: (response: Response) => void
     vi.stubGlobal('fetch', () => new Promise<Response>((resolve) => (answer = resolve)))
 
@@ -27,7 +27,7 @@ describe('a bid in flight across a data reset', () => {
     act(() => result.current.mutate({ amount: 30000, idempotencyKey: 'key-1' }))
     await waitFor(() => expect(answer).toBeDefined())
 
-    noteDataEpoch('new') // reset while the bid is in flight
+    noteServerRun('run-2', 'new') // reset while the bid is in flight
     const placed = {
       bid: {
         id: 9,

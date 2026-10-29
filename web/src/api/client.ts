@@ -1,6 +1,6 @@
 import { bidderId } from '../lib/bidder'
 import { syncServerTime } from '../lib/serverClock'
-import { noteDataEpoch, reseedCount } from './dataEpoch'
+import { noteServerRun, reseedCount } from './dataEpoch'
 import { waitForStream } from './streamGate'
 import type { AuctionSnapshot } from './types'
 
@@ -74,7 +74,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   }
 
   const receivedAt = Date.now()
-  noteDataEpoch(response.headers.get('X-Data-Epoch'), 'response')
+  noteServerRun(response.headers.get('X-Server-Run'), response.headers.get('X-Data-Epoch'))
   if (method === 'GET' && reseedCount() !== reseedsBefore) {
     // The data was reset while this read was in flight (a hello said so, or this very response
     // did): it may describe the old data, which must not refill the fresh cache. resetQueries

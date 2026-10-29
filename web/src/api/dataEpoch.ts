@@ -1,29 +1,30 @@
 /**
  * Which copy of the server's data the cache came from. Bid counts order snapshots, but they
  * restart when the data is reseeded — so a different epoch means "drop the cache", not
- * "compare". The data only changes between server runs (reset-db refuses while a server is up),
- * and each run's epoch arrives with every hello and on every API response (for a tab whose
- * stream is down).
+ * "compare". The data only changes between server runs (reset-db refuses while a server is up);
+ * every hello and API response names the run (a random id per server process) and its epoch.
  *
- * A hello is authoritative: any change is a reseed, even to an older epoch (a restored backup).
- * A response may be a late one from the previous run, so it can only move the epoch forward;
- * epochs are the time the data was seeded.
+ * Runs, not clocks, tell old from new: a run this tab has moved on from is a late response from
+ * a previous process, so it's ignored; any other new run is adopted, and drops the cache only if
+ * its epoch differs (a restart without a reset keeps it). A restored backup is a new run with a
+ * different epoch, so it counts, whatever the timestamps say.
  */
-let known: string | undefined
+let currentRun: string | undefined
+let knownEpoch: string | undefined
+const retiredRuns = new Set<string>()
 let reseeds = 0
 const listeners = new Set<() => void>()
 
-/** Records an epoch; returns whether the data was reseeded since the last one. */
-export function noteDataEpoch(
+/** Records a run and its epoch; returns whether the data was reseeded since the last one. */
+export function noteServerRun(
+  run: string | null | undefined,
   epoch: string | null | undefined,
-  from: 'hello' | 'response' = 'hello',
 ): boolean {
-  if (!epoch || epoch === known) return false
-  if (from === 'response' && known !== undefined && !(Date.parse(epoch) > Date.parse(known))) {
-    return false // older (or unreadable): a straggler from before; the next hello decides
-  }
-  const reseeded = known !== undefined
-  known = epoch
+  if (!run || !epoch || run === currentRun || retiredRuns.has(run)) return false
+  if (currentRun !== undefined) retiredRuns.add(currentRun)
+  currentRun = run
+  const reseeded = knownEpoch !== undefined && epoch !== knownEpoch
+  knownEpoch = epoch
   if (reseeded) {
     reseeds += 1
     listeners.forEach((listener) => listener())
@@ -45,6 +46,8 @@ export function onReseed(listener: () => void): () => void {
 
 /** Test hook. */
 export function resetDataEpoch(): void {
-  known = undefined
+  currentRun = undefined
+  knownEpoch = undefined
+  retiredRuns.clear()
   reseeds = 0
 }

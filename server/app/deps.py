@@ -34,7 +34,9 @@ def get_session(request: Request) -> Iterator[Session]:
 def get_write_session(request: Request) -> Iterator[Session]:
     """Session whose transaction starts with BEGIN IMMEDIATE (see app/db.py).
 
-    Commits when the endpoint returns, rolls back if it raises.
+    Commits when the endpoint returns, rolls back if it raises. Used with scope="function" (see
+    WriteSession): FastAPI's default runs this teardown only *after* the response has been sent,
+    which would acknowledge a write before it is committed and hold the write lock meanwhile.
     """
     with session_scope(request.app.state.write_sessions) as session:
         yield session
@@ -61,7 +63,8 @@ def require_bidder_id(bidder_id: Annotated[str | None, Depends(get_bidder_id)]) 
 
 
 Now = Annotated[datetime, Depends(get_now)]
-DbSession = Annotated[Session, Depends(get_session)]
-WriteSession = Annotated[Session, Depends(get_write_session)]
+# scope="function": close (and commit) before the response is sent, not after.
+DbSession = Annotated[Session, Depends(get_session, scope="function")]
+WriteSession = Annotated[Session, Depends(get_write_session, scope="function")]
 BidderId = Annotated[str | None, Depends(get_bidder_id)]
 RequiredBidderId = Annotated[str, Depends(require_bidder_id)]

@@ -1,7 +1,7 @@
 import { useId, useState, type ReactNode } from 'react'
 import type { FacetValue, InventoryQuery, VehicleList } from '../../api/types'
 import { formatKm, label } from '../../lib/format'
-import { STATUS_LABEL, type FilterPatch, type ListFilter } from './inventoryParams'
+import { NUMBER_RULES, STATUS_LABEL, type FilterPatch, type ListFilter } from './inventoryParams'
 
 interface Props {
   query: InventoryQuery
@@ -44,6 +44,7 @@ export function FilterPanel({ query, data, update }: Props) {
         max={query.price_max}
         bounds={ranges?.price}
         step={500}
+        rule={NUMBER_RULES.price_min}
         onChange={(price_min, price_max) => update({ price_min, price_max })}
       />
 
@@ -69,6 +70,7 @@ export function FilterPanel({ query, data, update }: Props) {
         min={query.year_min}
         max={query.year_max}
         bounds={ranges?.year}
+        rule={NUMBER_RULES.year_min}
         onChange={(year_min, year_max) => update({ year_min, year_max })}
       />
 
@@ -272,6 +274,7 @@ function RangeInputs({
   max,
   bounds,
   step = 1,
+  rule,
   onChange,
 }: {
   legend: string
@@ -280,6 +283,7 @@ function RangeInputs({
   max: number | null | undefined
   bounds?: { min: number; max: number }
   step?: number
+  rule: { valid: (n: number) => boolean; hint: string }
   onChange: (min: number | null, max: number | null) => void
 }) {
   const [low, setLow] = useState(min?.toString() ?? '')
@@ -294,8 +298,17 @@ function RangeInputs({
   }
   const parse = (text: string) => (text.trim() === '' ? null : Number(text))
 
+  const [invalid, setInvalid] = useState(false)
+  const hintId = useId()
   const commit = () => {
-    let next = [parse(low), parse(high)] as const
+    const values = [parse(low), parse(high)]
+    // Don't apply what the API would reject (e.g. a half-typed year "20"); say why instead.
+    if (values.some((value) => value !== null && (Number.isNaN(value) || !rule.valid(value)))) {
+      setInvalid(true)
+      return
+    }
+    setInvalid(false)
+    let next = values as [number | null, number | null]
     if (next[0] !== null && next[1] !== null && next[0] > next[1]) next = [next[1], next[0]]
     if (next[0] !== (min ?? null) || next[1] !== (max ?? null)) onChange(next[0], next[1])
   }
@@ -319,14 +332,24 @@ function RangeInputs({
                 bounds ? String(which === 'Min' ? bounds.min : bounds.max) : which.toLowerCase()
               }
               value={which === 'Min' ? low : high}
-              onChange={(event) => (which === 'Min' ? setLow : setHigh)(event.target.value)}
+              onChange={(event) => {
+                setInvalid(false)
+                ;(which === 'Min' ? setLow : setHigh)(event.target.value)
+              }}
               onBlur={commit}
               onKeyDown={(event) => event.key === 'Enter' && commit()}
+              aria-invalid={invalid}
+              aria-describedby={invalid ? hintId : undefined}
               className={field}
             />
           </label>
         ))}
       </div>
+      {invalid && (
+        <p id={hintId} className="text-outbid mt-1 text-xs">
+          {rule.hint}
+        </p>
+      )}
     </Group>
   )
 }

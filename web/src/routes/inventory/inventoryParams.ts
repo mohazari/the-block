@@ -39,19 +39,54 @@ export const SORTS: { value: SortOrder; label: string }[] = [
 
 export const PAGE_SIZE = 24
 
+const STATUSES: readonly AuctionStatus[] = ['live', 'upcoming', 'ended']
+
+/**
+ * What the API accepts for each number filter (mirrors InventoryQuery on the server). Anything
+ * else is dropped from the query: one bad value must not turn the whole run list into a 422.
+ */
+export const NUMBER_RULES: Record<NumberFilter, { valid: (n: number) => boolean; hint: string }> = {
+  year_min: {
+    valid: (n) => Number.isInteger(n) && n >= 1900 && n <= 2100,
+    hint: 'Enter a year like 2020.',
+  },
+  year_max: {
+    valid: (n) => Number.isInteger(n) && n >= 1900 && n <= 2100,
+    hint: 'Enter a year like 2020.',
+  },
+  price_min: { valid: (n) => Number.isInteger(n) && n >= 0, hint: 'Enter whole dollars.' },
+  price_max: { valid: (n) => Number.isInteger(n) && n >= 0, hint: 'Enter whole dollars.' },
+  odometer_max: { valid: (n) => Number.isInteger(n) && n >= 0, hint: 'Enter whole kilometres.' },
+  grade_min: { valid: (n) => n >= 1 && n <= 5, hint: 'Grades run from 1 to 5.' },
+}
+
+/** Inverted ranges are swapped rather than sent (the API rejects min > max). */
+function orderRange(query: InventoryQuery, low: NumberFilter, high: NumberFilter): void {
+  const min = query[low]
+  const max = query[high]
+  if (min != null && max != null && min > max) {
+    query[low] = max
+    query[high] = min
+  }
+}
+
 export function parseInventoryQuery(params: URLSearchParams): InventoryQuery {
   const query: InventoryQuery = { page_size: PAGE_SIZE }
   const q = params.get('q')?.trim()
   if (q) query.q = q
   for (const key of LIST_FILTERS) {
-    const values = params.getAll(key).filter(Boolean)
+    let values = params.getAll(key).filter(Boolean)
+    if (key === 'status')
+      values = values.filter((value) => STATUSES.includes(value as AuctionStatus))
     if (values.length) (query[key] as string[]) = values
   }
   for (const key of NUMBER_FILTERS) {
     const raw = params.get(key)?.trim()
     const value = Number(raw)
-    if (raw && Number.isFinite(value)) query[key] = value
+    if (raw && Number.isFinite(value) && NUMBER_RULES[key].valid(value)) query[key] = value
   }
+  orderRange(query, 'year_min', 'year_max')
+  orderRange(query, 'price_min', 'price_max')
   if (params.get('buy_now') === 'true') query.buy_now = true
   if (params.get('watching') === 'true') query.watching = true
   const sort = params.get('sort') as SortOrder | null

@@ -129,4 +129,15 @@ describe('InventoryPage', () => {
     expect(await screen.findByText('Page 5 is past the end of the list')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Go to the first page' })).toBeInTheDocument()
   })
+
+  it('explains an invalid range instead of applying it', async () => {
+    serve()
+    const { router } = renderRoute('/')
+    const rail = within(await screen.findByRole('complementary', { name: 'Filters' }))
+    await userEvent.type(rail.getByLabelText('Min model year'), '20')
+    await userEvent.tab()
+    expect(rail.getByText('Enter a year like 2020.')).toBeInTheDocument()
+    expect(rail.getByLabelText('Min model year')).toHaveAttribute('aria-invalid', 'true')
+    expect(router.state.location.search).toBe('')
+  })
 })

@@ -47,3 +47,19 @@ describe('active filters', () => {
     expect(chips[3]!.remove).toEqual({ price_min: null, price_max: null })
   })
 })
+
+describe('URL values the API would reject', () => {
+  it('drops unknown statuses and out-of-range or fractional numbers', () => {
+    const query = parseInventoryQuery(
+      new URLSearchParams(
+        'status=live&status=foo&year_min=20&price_min=-1&price_max=15000.5&odometer_max=50000&grade_min=9',
+      ),
+    )
+    expect(query).toEqual({ page_size: 24, status: ['live'], odometer_max: 50000 })
+  })
+
+  it('swaps inverted ranges instead of sending them', () => {
+    const query = parseInventoryQuery(new URLSearchParams('year_min=2024&year_max=2018'))
+    expect(query).toMatchObject({ year_min: 2018, year_max: 2024 })
+  })
+})

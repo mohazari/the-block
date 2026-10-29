@@ -152,3 +152,26 @@ class VehicleList(BaseModel):
     facets: dict[str, list[FacetValue]]
     ranges: InventoryRanges
     server_time: datetime
+
+
+class PlaceBidRequest(BaseModel):
+    amount: int = Field(gt=0, le=10_000_000, description="Whole dollars.")
+
+
+class BidPlaced(BaseModel):
+    bid: BidOut
+    auction: AuctionSnapshot
+    extended: bool = Field(description="The bid landed in the soft-close window and moved the end.")
+
+
+class Standing(StrEnum):
+    LEADING = "leading"
+    OUTBID = "outbid"
+    WON = "won"
+    LOST = "lost"
+
+
+class MyBid(VehicleSummary):
+    my_top_bid: int
+    my_last_bid_at: datetime
+    standing: Standing

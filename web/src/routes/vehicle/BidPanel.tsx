@@ -5,23 +5,13 @@ import { ApiError } from '../../api/client'
 import type { AuctionSnapshot, Standing, VehicleDetail } from '../../api/types'
 import { AnimatedPrice } from '../../components/auction/AnimatedPrice'
 import { AuctionClock } from '../../components/auction/AuctionClock'
-import { standingAt, statusAt } from '../../lib/auction'
+import { RESERVE_TEXT, standingAt, statusAt } from '../../lib/auction'
 import { cn } from '../../lib/cn'
 import { formatMoney, plural } from '../../lib/format'
 import { useServerNow } from '../../lib/serverClock'
+import { newId } from '../../lib/bidder'
 import { amountProblem } from '../../lib/bidRules'
 import { BidHistory } from './BidHistory'
-
-const RESERVE_TEXT = {
-  met: 'Reserve met',
-  not_met: 'Reserve not met',
-  no_reserve: 'No reserve',
-} as const
-
-const newKey = () =>
-  typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
 
 export function BidPanel({ vehicle }: { vehicle: VehicleDetail }) {
   const now = useServerNow()
@@ -120,7 +110,8 @@ function StandingBanner({
     won: { text: 'You won this vehicle.', tone: 'bg-win-soft text-win' },
     lost: {
       text:
-        auction.is_high_bidder && auction.outcome === 'reserve_not_met'
+        // The high bidder can only lose on the reserve (the outcome may not have arrived yet).
+        auction.is_high_bidder
           ? "You were the high bidder, but the reserve wasn't met."
           : 'Another buyer won this vehicle.',
       tone: 'bg-surface-sunk text-ink-muted',
@@ -182,7 +173,10 @@ function BidForm({
     event.preventDefault()
     if (problem || amount === null) return
     if (!confirming || confirming.amount !== amount) {
-      setConfirming({ amount, key: newKey() })
+      // Pin the amount: from here the draft stops following the live minimum, so the button
+      // always bids exactly what it says. If the minimum overtakes it, the form explains why.
+      setCustom(String(amount))
+      setConfirming({ amount, key: newId() })
       return
     }
     placeBid.mutate(
@@ -298,7 +292,7 @@ function BuyNow({ vehicleId, price }: { vehicleId: string; price: number }) {
 
   const click = () => {
     if (!confirmKey) {
-      setConfirmKey(newKey())
+      setConfirmKey(newId())
       return
     }
     buyNow.mutate(
@@ -326,7 +320,10 @@ function BuyNow({ vehicleId, price }: { vehicleId: string; price: number }) {
         {confirmKey && !buyNow.isPending && (
           <button
             type="button"
-            onClick={() => setConfirmKey(null)}
+            onClick={() => {
+              setConfirmKey(null)
+              buyNow.reset()
+            }}
             className="text-ink-muted hover:text-ink h-10 px-3 text-sm font-semibold"
           >
             Cancel

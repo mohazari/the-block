@@ -78,8 +78,8 @@ export function ConditionReport({ vehicle }: { vehicle: VehicleDetail }) {
                   <span className="text-ink-muted font-normal">{SEVERITY[severity].hint}</span>
                 </p>
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
-                  {notes.map((note) => (
-                    <li key={note.note}>{note.note}</li>
+                  {notes.map((note, index) => (
+                    <li key={`${index}-${note.note}`}>{note.note}</li>
                   ))}
                 </ul>
               </div>

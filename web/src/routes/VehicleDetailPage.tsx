@@ -4,8 +4,10 @@ import { ApiError } from '../api/client'
 import { useVehicle, useWatch } from '../api/queries'
 import type { VehicleDetail } from '../api/types'
 import { AuctionClock } from '../components/auction/AuctionClock'
+import { statusAt } from '../lib/auction'
 import { cn } from '../lib/cn'
 import { formatMoney, label } from '../lib/format'
+import { useServerNow } from '../lib/serverClock'
 import { vehicleName } from '../lib/vehicle'
 import { BidPanel } from './vehicle/BidPanel'
 import { ConditionReport } from './vehicle/ConditionReport'
@@ -14,6 +16,11 @@ import { SpecSheet } from './vehicle/SpecSheet'
 
 export function VehicleDetailPage() {
   const { vehicleId = '' } = useParams()
+  // A new vehicle gets fresh component state (draft bids, errors, selected view).
+  return <VehicleDetailContent key={vehicleId} vehicleId={vehicleId} />
+}
+
+function VehicleDetailContent({ vehicleId }: { vehicleId: string }) {
   const query = useVehicle(vehicleId)
 
   if (query.isPending) return <DetailSkeleton />
@@ -53,22 +60,30 @@ export function VehicleDetailPage() {
     <article aria-labelledby="vehicle-heading" className="pb-24 lg:pb-0">
       <BackLink />
       <Header vehicle={vehicle} />
-      <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="min-w-0 space-y-10">
+      {/* One bid panel, placed by the grid: after the photos on phones, a sticky column spanning
+          every row on desktop. */}
+      <div className="mt-6 grid gap-x-8 gap-y-10 lg:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="min-w-0 lg:col-start-1">
           <Gallery vehicle={vehicle} />
-          {/* On phones the bid panel comes right after the photos: it's why you're here. */}
-          <div id="bid" className="scroll-mt-20 lg:hidden">
-            <BidPanel vehicle={vehicle} />
-          </div>
-          <ConditionReport vehicle={vehicle} />
-          <SpecSheet vehicle={vehicle} />
-          <Seller vehicle={vehicle} />
         </div>
-        <aside aria-label="Bidding" className="hidden lg:block">
-          <div className="sticky top-20">
+        <aside
+          aria-label="Bidding"
+          id="bid"
+          className="scroll-mt-20 lg:col-start-2 lg:row-span-4 lg:row-start-1"
+        >
+          <div className="lg:sticky lg:top-20">
             <BidPanel vehicle={vehicle} />
           </div>
         </aside>
+        <div className="min-w-0 lg:col-start-1">
+          <ConditionReport vehicle={vehicle} />
+        </div>
+        <div className="min-w-0 lg:col-start-1">
+          <SpecSheet vehicle={vehicle} />
+        </div>
+        <div className="min-w-0 lg:col-start-1">
+          <Seller vehicle={vehicle} />
+        </div>
       </div>
       <MobileBidBar vehicle={vehicle} />
     </article>
@@ -79,13 +94,14 @@ export function VehicleDetailPage() {
 function BackLink() {
   const navigate = useNavigate()
   const location = useLocation()
-  // "default" means this page opened the session (e.g. a shared link): there's nothing to go back to.
-  const cameFromApp = location.key !== 'default'
+  // Go back only when we came from the run list, so its filters and page are restored. From
+  // anywhere else (My bids, a toast, a shared link) this is a plain link to the run list.
+  const fromRunList = (location.state as { fromRunList?: boolean } | null)?.fromRunList === true
   return (
     <Link
       to="/"
       onClick={(event) => {
-        if (!cameFromApp) return
+        if (!fromRunList) return
         event.preventDefault()
         void navigate(-1)
       }}
@@ -150,6 +166,7 @@ function Seller({ vehicle }: { vehicle: VehicleDetail }) {
 /** Phones: price and time stay in reach while reading the condition report. */
 function MobileBidBar({ vehicle }: { vehicle: VehicleDetail }) {
   const { auction } = vehicle
+  const open = statusAt(auction, useServerNow()) !== 'ended'
   return (
     <div className="border-line bg-surface/95 fixed inset-x-0 bottom-0 z-20 border-t px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur lg:hidden">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
@@ -159,12 +176,14 @@ function MobileBidBar({ vehicle }: { vehicle: VehicleDetail }) {
           </p>
           <AuctionClock auction={auction} className="text-sm" />
         </div>
-        <a
-          href="#bid"
-          className="bg-action text-action-ink inline-flex h-11 items-center rounded-[var(--radius-control)] px-5 font-semibold"
-        >
-          Bid
-        </a>
+        {open && (
+          <a
+            href="#bid"
+            className="bg-action text-action-ink inline-flex h-11 items-center rounded-[var(--radius-control)] px-5 font-semibold"
+          >
+            Bid
+          </a>
+        )}
       </div>
     </div>
   )

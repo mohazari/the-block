@@ -3,14 +3,20 @@ import { ApiError, api } from './client'
 import { queryKeys, updateCachedVehicle } from './queries'
 import type { AuctionSnapshot, BidOut, BidPlaced, VehicleDetail } from './types'
 
-/** Write a fresh auction snapshot (and optionally a new bid) into every cached copy. */
+/**
+ * Write an auction snapshot (and optionally a new bid) into every cached copy — unless the cache
+ * already has a newer one. Snapshots arrive out of order (a live event for a rival's bid can beat
+ * the response to your own), and every bid raises `bid_count`, so it orders them.
+ */
 export function applyAuction(
   queryClient: QueryClient,
   vehicleId: string,
   auction: AuctionSnapshot,
   bid?: BidOut,
 ): void {
-  updateCachedVehicle(queryClient, vehicleId, (vehicle) => ({ ...vehicle, auction }))
+  updateCachedVehicle(queryClient, vehicleId, (vehicle) =>
+    auction.bid_count >= vehicle.auction.bid_count ? { ...vehicle, auction } : vehicle,
+  )
   if (bid) {
     queryClient.setQueryData<VehicleDetail>(queryKeys.vehicle(vehicleId), (detail) =>
       detail && !detail.recent_bids.some((existing) => existing.id === bid.id)

@@ -156,8 +156,7 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
   }, [draft, value])
 
   // The browser would cut over-long pasted or dropped text mid-emoji. Insert only the whole
-  // characters that fit instead, keeping what's typed. Text dragged within the box is left to
-  // the browser: moving it can't make the value longer.
+  // characters that fit instead, keeping what's typed.
   const draggingFromBox = useRef(false)
   const insertWithinLimit = (
     event: ClipboardEvent<HTMLInputElement> | DragEvent<HTMLInputElement>,
@@ -165,8 +164,9 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
     at: 'selection' | 'end',
   ) => {
     const input = event.currentTarget
-    // Measure what the field will actually hold: a one-line input strips line breaks.
-    const inserted = text.replace(/[\r\n]/g, '')
+    // Measure what the field will actually hold: a one-line input turns each line break into a
+    // space (checked in Chromium; Firefox does the same by default).
+    const inserted = text.replace(/\r\n|[\r\n]/g, ' ')
     const start = at === 'end' ? input.value.length : (input.selectionStart ?? input.value.length)
     const end = at === 'end' ? start : (input.selectionEnd ?? start)
     const room = SEARCH_MAX_LENGTH - (input.value.length - (end - start))
@@ -209,9 +209,16 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
         onDragStart={() => (draggingFromBox.current = true)}
         onDragEnd={() => (draggingFromBox.current = false)}
         onDrop={(event) => {
-          if (draggingFromBox.current) return
-          // A drop point inside a text field can't be read, so dropped text goes at the end.
+          const fromBox = draggingFromBox.current
+          draggingFromBox.current = false
+          // Moving text within the box can't make it longer; copying it (Option/Ctrl-drag) can.
+          if (fromBox && event.dataTransfer.dropEffect === 'move') return
+          // A text field can't tell where in it the text was dropped, so an over-long drop goes
+          // at the end (one that fits lands where it was dropped, as usual).
           insertWithinLimit(event, event.dataTransfer.getData('text'), 'end')
+          // Only part of it was inserted: make it a copy, so a field it was dragged out of
+          // keeps the text rather than losing what didn't fit.
+          if (event.defaultPrevented) event.dataTransfer.dropEffect = 'copy'
         }}
         placeholder="Make, model, VIN, lot or city"
         // Typing past the limit is refused in place; pastes and drops are cut at a whole character.

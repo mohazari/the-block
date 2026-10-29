@@ -166,13 +166,13 @@ describe('InventoryPage', () => {
     expect(box).toHaveValue(`ford${'🚗'.repeat(48)}`)
   })
 
-  it('measures a pasted text without its line breaks, as the box will hold it', async () => {
+  it('measures pasted line breaks as the spaces the box turns them into', async () => {
     serve()
     renderRoute('/')
     const box = screen.getByRole('searchbox', { name: 'Search inventory' })
     await userEvent.click(box)
-    await userEvent.paste('🚗\n'.repeat(60)) // 180 units raw, 120 without the line breaks
-    expect(box).toHaveValue('🚗'.repeat(50))
+    await userEvent.paste('🚗\r\n'.repeat(40)) // 120 units as the box holds it: "🚗 " x 40
+    expect(box).toHaveValue('🚗 '.repeat(33)) // 99 units: one more car (2) would pass 100
   })
 
   it('cuts an over-long drop at a whole character, after what was typed', async () => {
@@ -180,7 +180,9 @@ describe('InventoryPage', () => {
     renderRoute('/')
     const box = screen.getByRole('searchbox', { name: 'Search inventory' })
     await userEvent.type(box, 'ford')
-    fireEvent.drop(box, { dataTransfer: { getData: () => '🚗'.repeat(60) } })
+    const dataTransfer = { getData: () => '🚗'.repeat(60), dropEffect: 'move' }
+    fireEvent.drop(box, { dataTransfer })
     expect(box).toHaveValue(`ford${'🚗'.repeat(48)}`)
+    expect(dataTransfer.dropEffect).toBe('copy') // the field it came from keeps its text
   })
 })

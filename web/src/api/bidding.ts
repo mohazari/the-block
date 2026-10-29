@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { mergeBid, noteSeen } from './auctionLedger'
 import { ApiError, api } from './client'
 import { queryKeys, updateCachedVehicle } from './queries'
 import type { AuctionSnapshot, BidOut, BidPlaced, MyBid, VehicleDetail } from './types'
@@ -14,6 +15,7 @@ export function applyAuction(
   auction: AuctionSnapshot,
   bid?: BidOut,
 ): void {
+  noteSeen(vehicleId, auction, bid)
   updateCachedVehicle(queryClient, vehicleId, (vehicle) =>
     auction.bid_count >= vehicle.auction.bid_count ? { ...vehicle, auction } : vehicle,
   )
@@ -34,23 +36,24 @@ export function applyAuction(
  * live echo come through here, so this must not trigger a refetch each time; it only fetches
  * when My bids doesn't list the car yet (e.g. a first bid placed from another tab).
  */
-// Vehicles whose first bid has started a My bids refetch that hasn't finished yet.
-const awaitingMyBids = new Set<string>()
+// Own bids whose My bids refresh has started: the bid response and its live echo share an id,
+// so only the first of the two refreshes.
+const refreshedForBid = new Set<number>()
+
+/** Test hook. */
+export const forgetOwnBidRefreshes = (): void => refreshedForBid.clear()
 
 function recordOwnBid(queryClient: QueryClient, vehicleId: string, bid: BidOut): void {
   const bids = queryClient.getQueryData<MyBid[]>(queryKeys.myBids)
   if (!bids?.some((entry) => entry.id === vehicleId)) {
-    // The response and the live echo both get here for a first bid, both after the commit. The
-    // first restarts any refetch already running (it may predate the bid); the second leaves
-    // that fresh refetch alone.
-    if (awaitingMyBids.has(vehicleId)) return
-    awaitingMyBids.add(vehicleId)
-    // Cancel explicitly: invalidate alone joins an in-flight *initial* load instead of
-    // restarting it.
+    // My bids needs a read taken after this bid. The response and its live echo both get here
+    // (after the commit); the first cancels any read already running, which may predate the
+    // bid (explicitly: invalidate alone would join an in-flight initial load), and refetches.
+    if (refreshedForBid.has(bid.id)) return
+    refreshedForBid.add(bid.id)
     void queryClient
       .cancelQueries({ queryKey: queryKeys.myBids })
       .then(() => queryClient.invalidateQueries({ queryKey: queryKeys.myBids }))
-      .finally(() => awaitingMyBids.delete(vehicleId))
     return
   }
   queryClient.setQueryData<MyBid[]>(queryKeys.myBids, (entries) =>
@@ -67,17 +70,6 @@ function recordOwnBid(queryClient: QueryClient, vehicleId: string, bid: BidOut):
         : entry,
     ),
   )
-}
-
-/**
- * Add a bid to the history in time order. Bids can arrive out of order (a rival's live event
- * before the response to your own), so position comes from when it was placed, not arrival.
- */
-function mergeBid(bids: BidOut[], bid: BidOut, limit: number): BidOut[] {
-  if (bids.some((existing) => existing.id === bid.id)) return bids
-  return [bid, ...bids]
-    .sort((a, b) => Date.parse(b.placed_at) - Date.parse(a.placed_at) || b.id - a.id)
-    .slice(0, limit) // the server's limit, so a refetch shows the same list
 }
 
 interface PlaceBid {

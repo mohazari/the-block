@@ -1,6 +1,8 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
+import { forgetSeen } from '../api/auctionLedger'
+import { forgetOwnBidRefreshes } from '../api/bidding'
 import { resetDataEpoch } from '../api/dataEpoch'
 import { resetConnection } from '../api/liveEvents'
 import { openStreamGate, resetStreamGate } from '../api/streamGate'
@@ -25,5 +27,7 @@ afterEach(() => {
   resetServerClock()
   resetConnection()
   resetDataEpoch()
+  forgetSeen()
+  forgetOwnBidRefreshes()
   clearToasts()
 })

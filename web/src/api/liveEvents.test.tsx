@@ -189,7 +189,7 @@ describe('live auction events', () => {
     expect(api.calls.filter((u) => u.pathname === '/api/vehicles/veh-1')).toHaveLength(3)
   })
 
-  it('re-reads a vehicle when a bid lands while its first read is still in flight', async () => {
+  it('shows a bid that landed while the first read was in flight, without re-reading', async () => {
     let calls = 0
     let answerFirstRead!: () => void
     vi.stubGlobal('fetch', (input: string) => {
@@ -214,6 +214,34 @@ describe('live auction events', () => {
     act(() => answerFirstRead())
     const bidding = await panel()
     expect(await bidding.findByText('17 bids')).toBeInTheDocument()
-    expect(calls).toBe(2)
+    expect(bidding.getByText('Bidder 7777')).toBeInTheDocument()
+    expect(calls).toBe(1) // settled on the client: no extra request
+  })
+
+  it('never restarts reads because of live bids, so a slow link still finishes loading', async () => {
+    let myBidsReads = 0
+    vi.stubGlobal('fetch', (input: string) => {
+      const url = new URL(input, 'http://test')
+      if (url.pathname === '/api/me/bids') {
+        myBidsReads++
+        return new Promise<Response>(() => {}) // a slow link: still loading
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(url.pathname === '/api/vehicles/veh-1' ? vehicleDetail() : [])),
+      )
+    })
+    renderRoute('/vehicles/veh-1')
+    await panel()
+    await waitFor(() => expect(myBidsReads).toBe(1))
+    for (let n = 0; n < 5; n++) {
+      act(() =>
+        FakeEventSource.latest().emit(
+          'bid',
+          rivalBid({ vehicle_id: `other-${n}`, outbid_you: false }),
+        ),
+      )
+    }
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(myBidsReads).toBe(1)
   })
 })

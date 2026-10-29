@@ -6,6 +6,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from '@tanstack/react-query'
+import { withNewestSeen } from './auctionLedger'
 import { api } from './client'
 import type { InventoryQuery, MyBid, VehicleDetail, VehicleList, VehicleSummary } from './types'
 
@@ -19,28 +20,31 @@ export const queryKeys = {
 
 type Cached = VehicleList | VehicleDetail | VehicleSummary[]
 
-const newerOf = <T extends VehicleSummary>(fresh: T, cached: T | undefined): T =>
-  cached && cached.auction.bid_count > fresh.auction.bid_count ? cached : fresh
+/** The newer of a fresh read and its cached copy, then brought up to what live events showed. */
+const newest = <T extends VehicleSummary>(fresh: T, cached: T | undefined): T =>
+  withNewestSeen(cached && cached.auction.bid_count > fresh.auction.bid_count ? cached : fresh)
 
 /**
- * A refetch is a snapshot taken when the request started; a live bid can land while it's in
- * flight. Like live events, refetched data never replaces a newer auction (by bid_count).
+ * A read is a snapshot from when it was answered; a live bid can land meanwhile — even before
+ * the first read of a page arrives. Reads therefore never replace a newer auction (by
+ * bid_count), whether it's in the cache or only in the ledger of what live events showed.
  */
 export function keepNewerAuctions(oldData: unknown, newData: unknown): unknown {
-  if (!oldData || !newData) return newData
-  const previous = oldData as Cached
+  if (!newData) return newData
+  const previous = oldData as Cached | undefined
   const next = newData as Cached
   let merged: Cached
   if (Array.isArray(next)) {
-    const byId = new Map((previous as VehicleSummary[]).map((item) => [item.id, item]))
-    merged = next.map((bid) => newerOf(bid, byId.get(bid.id)))
+    const byId = new Map(((previous ?? []) as VehicleSummary[]).map((item) => [item.id, item]))
+    merged = next.map((item) => newest(item, byId.get(item.id)))
   } else if ('items' in next) {
-    const byId = new Map((previous as VehicleList).items.map((item) => [item.id, item]))
-    merged = { ...next, items: next.items.map((item) => newerOf(item, byId.get(item.id))) }
+    const items = (previous as VehicleList | undefined)?.items ?? []
+    const byId = new Map(items.map((item) => [item.id, item]))
+    merged = { ...next, items: next.items.map((item) => newest(item, byId.get(item.id))) }
   } else {
-    merged = newerOf(next, previous as VehicleDetail)
+    merged = newest(next, previous as VehicleDetail | undefined)
   }
-  return replaceEqualDeep(oldData, merged)
+  return oldData ? replaceEqualDeep(oldData, merged) : merged
 }
 
 export function useInventory(query: InventoryQuery) {

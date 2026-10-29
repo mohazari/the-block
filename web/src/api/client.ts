@@ -1,5 +1,6 @@
 import { bidderId } from '../lib/bidder'
 import { syncServerTime } from '../lib/serverClock'
+import { reseedCount } from './dataEpoch'
 import { waitForStream } from './streamGate'
 import type { AuctionSnapshot } from './types'
 
@@ -58,6 +59,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   // Reads wait for the live stream (see streamGate); writes never do.
   if (method === 'GET') await waitForStream()
   const sentAt = Date.now()
+  const reseedsBefore = reseedCount()
   let response: Response
   try {
     response = await fetch(`/api${path}${search}`, {
@@ -72,6 +74,11 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   }
 
   const receivedAt = Date.now()
+  if (method === 'GET' && reseedCount() !== reseedsBefore) {
+    // The data was reset while this read was in flight: it may describe the old data, which
+    // must not refill the fresh cache. Queries retry status 0, so it is simply read again.
+    throw new ApiError(0, 'data_reset', 'The auction data was just reset. Please try again.')
+  }
   if (response.status === 204) return undefined as T
   const payload: unknown = await response.json().catch(() => undefined)
 

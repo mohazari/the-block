@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { mergeBid, noteSeen } from './auctionLedger'
 import { ApiError, api } from './client'
+import { reseedCount } from './dataEpoch'
 import { queryKeys, updateCachedVehicle } from './queries'
 import type { AuctionSnapshot, BidOut, BidPlaced, MyBid, VehicleDetail } from './types'
 
@@ -91,10 +92,16 @@ function useAuctionMutation<V>(vehicleId: string, request: (variables: V) => Pro
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: request,
-    onSuccess: ({ auction, bid }) => applyAuction(queryClient, vehicleId, auction, bid),
-    onError: (error) => {
+    // The data may be reset while a bid is in flight; its snapshot could then describe the old
+    // data. The outcome is still shown, but only a snapshot from the same data enters the cache
+    // (after a reset everything is refetched anyway).
+    onMutate: () => ({ reseeds: reseedCount() }),
+    onSuccess: ({ auction, bid }, _variables, sent) => {
+      if (sent?.reseeds === reseedCount()) applyAuction(queryClient, vehicleId, auction, bid)
+    },
+    onError: (error, _variables, sent) => {
       // Rejections carry the auction as it is now; show it instead of the stale view.
-      if (error instanceof ApiError && error.auction) {
+      if (error instanceof ApiError && error.auction && sent?.reseeds === reseedCount()) {
         applyAuction(queryClient, vehicleId, error.auction)
       }
     },

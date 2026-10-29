@@ -186,6 +186,19 @@ describe('applyAuction', () => {
     expect(fetches).toBe(2)
     unsubscribe()
   })
+
+  it("doesn't rewrite the cache for an identical snapshot (your own bid's live echo)", async () => {
+    const queryClient = createQueryClient()
+    const key = queryKeys.vehicle('veh-1')
+    const snapshot = auction({ bid_count: 17 })
+    queryClient.setQueryData(key, vehicleDetail({ auction: snapshot }))
+    const updatedAt = queryClient.getQueryState(key)!.dataUpdatedAt
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    applyAuction(queryClient, 'veh-1', { ...snapshot })
+    expect(queryClient.getQueryState(key)!.dataUpdatedAt).toBe(updatedAt)
+    applyAuction(queryClient, 'veh-1', { ...snapshot, is_high_bidder: true }) // same count, differs
+    expect(queryClient.getQueryData<VehicleDetail>(key)!.auction.is_high_bidder).toBe(true)
+  })
 })
 
 async function waitForFetches(count: () => number, expected: number) {

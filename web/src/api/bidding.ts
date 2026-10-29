@@ -17,7 +17,7 @@ export function applyAuction(
 ): void {
   noteSeen(vehicleId, auction, bid)
   updateCachedVehicle(queryClient, vehicleId, (vehicle) =>
-    auction.bid_count >= vehicle.auction.bid_count ? { ...vehicle, auction } : vehicle,
+    supersedes(auction, vehicle.auction) ? { ...vehicle, auction } : vehicle,
   )
   if (bid?.is_you) recordOwnBid(queryClient, vehicleId, bid)
   if (bid) {
@@ -29,6 +29,15 @@ export function applyAuction(
       return recentBids === detail.recent_bids ? undefined : { ...detail, recent_bids: recentBids }
     })
   }
+}
+
+/**
+ * Newer by bid count; at an equal count only if something differs (personalized flags can) —
+ * an identical snapshot, like your own bid's live echo, must not write or re-render anything.
+ */
+function supersedes(next: AuctionSnapshot, current: AuctionSnapshot): boolean {
+  if (next.bid_count !== current.bid_count) return next.bid_count > current.bid_count
+  return (Object.keys(next) as (keyof AuctionSnapshot)[]).some((key) => next[key] !== current[key])
 }
 
 /**

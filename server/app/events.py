@@ -12,7 +12,6 @@ shared channel such as Redis pub/sub or Postgres LISTEN/NOTIFY.
 """
 
 import asyncio
-import itertools
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -38,6 +37,7 @@ class BidEvent:
     bid: BidOut  # is_you is False
     bidder_id: str
     previous_high_bidder: str | None
+    bidders: frozenset[str]
     extended: bool
 
     @classmethod
@@ -49,6 +49,7 @@ class BidEvent:
             bid=bid_out(result.bid, bidder_id=None),
             bidder_id=result.bid.bidder_id,
             previous_high_bidder=result.previous_high_bidder,
+            bidders=result.bidders,
             extended=result.extended,
         )
 
@@ -60,9 +61,8 @@ class BidEvent:
         return AuctionEvent(
             type=self.kind,
             vehicle_id=self.vehicle_id,
-            # has_bid is a lower bound here; clients keep their own `has_bid` if already true.
             auction=self.auction.model_copy(
-                update={"is_high_bidder": is_bidder, "has_bid": is_bidder or outbid_you}
+                update={"is_high_bidder": is_bidder, "has_bid": bidder_id in self.bidders}
             ),
             bid=self.bid.model_copy(update={"is_you": is_bidder}),
             outbid_you=outbid_you,
@@ -83,7 +83,6 @@ class EventBroker:
     def __init__(self) -> None:
         self._subscribers: set[Subscriber] = set()
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._ids = itertools.count(1)
 
     def bind(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -91,9 +90,6 @@ class EventBroker:
     @property
     def subscriber_count(self) -> int:
         return len(self._subscribers)
-
-    def next_id(self) -> int:
-        return next(self._ids)
 
     @asynccontextmanager
     async def subscribe(self, bidder_id: str | None) -> AsyncIterator[Subscriber]:
@@ -105,10 +101,19 @@ class EventBroker:
             self._subscribers.discard(subscriber)
 
     def publish(self, result: BidResult) -> None:
-        """Safe to call from any thread, after the bid's transaction has committed."""
-        if result.replayed or self._loop is None or self._loop.is_closed():
+        """Safe to call from any thread, after the bid's transaction has committed.
+
+        Best-effort by design: the bid is already saved, so a failure here is logged and must
+        never turn a successful bid into an error response.
+        """
+        if result.replayed or self._loop is None:
             return
-        self._loop.call_soon_threadsafe(self._fan_out, BidEvent.from_result(result))
+        try:
+            self._loop.call_soon_threadsafe(self._fan_out, BidEvent.from_result(result))
+        except RuntimeError:
+            logger.debug("Event loop closed; dropping event during shutdown")
+        except Exception:
+            logger.exception("Failed to publish bid event")
 
     def _fan_out(self, event: BidEvent) -> None:
         for subscriber in list(self._subscribers):

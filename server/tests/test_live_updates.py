@@ -1,5 +1,6 @@
 import asyncio
 import random
+from collections.abc import Callable
 from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any
@@ -14,7 +15,7 @@ from app.clock import FrozenClock
 from app.db import write_engine
 from app.domain.auction import min_next_bid
 from app.domain.bidders import RIVAL_BIDDER_IDS
-from app.events import EventBroker
+from app.events import BidEvent, EventBroker
 from app.models import Vehicle
 from app.routers.events import events as events_endpoint
 from app.services.bidding import BidResult, place_bid
@@ -149,13 +150,29 @@ def test_stream_says_hello_then_relays_personalized_bids(
 
     hello, bid = asyncio.run(scenario())
     assert hello.event == "hello" and hello.retry == 2000
-    assert bid.event == "bid" and bid.id
+    assert bid.event == "bid" and bid.id is None  # events aren't replayable; no ids
     assert bid.data.outbid_you and bid.data.vehicle_id == vehicle_id
 
 
 def test_stream_rejects_invalid_bidder_ids(client: TestClient) -> None:
     response = client.get("/api/events", params={"bidder_id": "rival-01"})
     assert response.status_code == 400
+    assert response.json()["error"]["message"].startswith("bidder_id:")
+
+
+def test_has_bid_is_exact_for_earlier_bidders(seeded_engine: Engine, clock: FrozenClock) -> None:
+    """A bidder who was outbid two bids ago still 'has bid' when a third bidder comes in."""
+    with Session(seeded_engine) as session:
+        vehicle_id = _first_live(session, clock).id
+    _bid(seeded_engine, clock, vehicle_id, ME)
+    _bid(seeded_engine, clock, vehicle_id, OTHER)
+    third = _bid(seeded_engine, clock, vehicle_id, "browser-third-03")
+
+    event = BidEvent.from_result(third)
+    assert event.for_subscriber(ME).auction.has_bid
+    assert not event.for_subscriber(ME).outbid_you
+    assert event.for_subscriber(OTHER).outbid_you
+    assert not event.for_subscriber("browser-never-04").auction.has_bid
 
 
 # --- simulator -------------------------------------------------------------------------------
@@ -165,20 +182,29 @@ def _simulator(
     engine: Engine, clock: FrozenClock, seed: int = 7
 ) -> tuple[RivalSimulator, list[BidResult]]:
     published: list[BidResult] = []
-    return RivalSimulator(
-        _write_sessions(engine), clock, published.append, random.Random(seed)
-    ), published
+    simulator = RivalSimulator(
+        sessionmaker(engine, expire_on_commit=False),
+        _write_sessions(engine),
+        clock,
+        published.append,
+        random.Random(seed),
+    )
+    return simulator, published
+
+
+def _fixed_ceiling(monkeypatch: pytest.MonkeyPatch, ceiling: Callable[[Vehicle], int]) -> None:
+    monkeypatch.setattr(RivalSimulator, "ceiling", lambda _self, vehicle: ceiling(vehicle))
 
 
 def test_rivals_counter_a_human_leader_only_after_the_grace_period(
     seeded_engine: Engine, clock: FrozenClock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(simulator_module, "COUNTER_HUMAN_CHANCE", 1.0)
+    _fixed_ceiling(monkeypatch, lambda _vehicle: 10_000_000)  # isolate the grace rule
     with Session(seeded_engine) as session:
         vehicle_id = _first_live(session, clock).id
     _bid(seeded_engine, clock, vehicle_id, ME)
     simulator, published = _simulator(seeded_engine, clock)
-    simulator._ceilings[vehicle_id] = 10_000_000  # isolate the grace rule from the ceiling rule
 
     first = simulator.tick()
     assert first is None or first.vehicle.id != vehicle_id  # too soon to counter
@@ -192,12 +218,41 @@ def test_rivals_counter_a_human_leader_only_after_the_grace_period(
     assert published[-1] is countered
 
 
-def test_rivals_stop_at_their_ceiling(seeded_engine: Engine, clock: FrozenClock) -> None:
+def test_rivals_leave_pre_bids_alone(
+    seeded_engine: Engine, clock: FrozenClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(simulator_module, "COUNTER_HUMAN_CHANCE", 1.0)
+    _fixed_ceiling(monkeypatch, lambda _vehicle: 10_000_000)
+    with Session(seeded_engine) as session:
+        upcoming = session.scalars(
+            select(Vehicle)
+            .where(Vehicle.starts_at > clock.now(), Vehicle.buy_now_price.is_(None))
+            .order_by(Vehicle.starts_at)
+        ).first()
+        assert upcoming is not None
+    _bid(seeded_engine, clock, upcoming.id, ME)
+    clock.advance(HUMAN_LEAD_GRACE + timedelta(seconds=1))
+    simulator, published = _simulator(seeded_engine, clock)
+    for _ in range(20):
+        simulator.tick()
+    assert all(result.vehicle.id != upcoming.id for result in published)
+
+
+def test_rivals_stop_at_their_ceiling(
+    seeded_engine: Engine, clock: FrozenClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fixed_ceiling(
+        monkeypatch, lambda vehicle: min_next_bid(vehicle.starting_bid, vehicle.current_bid) - 1
+    )
+    simulator, _ = _simulator(seeded_engine, clock)
+    assert simulator.tick() is None
+
+
+def test_ceilings_are_stable_for_a_run(seeded_engine: Engine, clock: FrozenClock) -> None:
     simulator, _ = _simulator(seeded_engine, clock)
     with Session(seeded_engine) as session:
-        for vehicle in session.scalars(select(Vehicle)):
-            simulator._ceilings[vehicle.id] = vehicle.current_bid or vehicle.starting_bid - 1
-    assert simulator.tick() is None
+        vehicle = _first_live(session, clock)
+        assert simulator.ceiling(vehicle) == simulator.ceiling(vehicle)
 
 
 def test_rivals_never_bid_on_ended_auctions(seeded_engine: Engine, clock: FrozenClock) -> None:
@@ -213,8 +268,23 @@ def test_rival_bids_follow_every_auction_rule(seeded_engine: Engine, clock: Froz
         simulator.tick()
     assert published, "rivals should have found something to bid on"
     for result in published:
-        ceiling = simulator.ceiling(result.vehicle)
-        assert result.bid.amount <= ceiling
-        assert (
-            result.vehicle.buy_now_price is None or result.bid.amount < result.vehicle.buy_now_price
-        )
+        assert result.vehicle.starts_at <= result.now  # live auctions only
+        assert result.bid.amount <= simulator.ceiling(result.vehicle)
+        buy_now = result.vehicle.buy_now_price
+        assert buy_now is None or result.bid.amount < buy_now
+
+
+def test_publish_failures_never_fail_the_bid(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def explode(_result: object) -> None:
+        raise ValueError("boom")
+
+    monkeypatch.setattr("app.events.BidEvent.from_result", explode)
+    vehicle = client.get("/api/vehicles", params={"page_size": 1}).json()["items"][0]
+    response = client.post(
+        f"/api/vehicles/{vehicle['id']}/bids",
+        json={"amount": vehicle["auction"]["min_next_bid"]},
+        headers={"X-Bidder-Id": ME},
+    )
+    assert response.status_code == 201

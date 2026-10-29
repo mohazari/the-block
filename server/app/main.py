@@ -36,7 +36,9 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
 
         simulator_task = None
         if settings.simulator_enabled:
-            simulator = RivalSimulator(app.state.write_sessions, clock, on_bid=broker.publish)
+            simulator = RivalSimulator(
+                app.state.sessions, app.state.write_sessions, clock, on_bid=broker.publish
+            )
             simulator_task = asyncio.create_task(simulator.run())
             logger.info("Rival bidder simulator running (SIMULATOR_ENABLED=0 to turn off)")
         yield
@@ -60,6 +62,4 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
     return app
 
 
-# uvicorn only configures its own loggers; surface ours (seeding, simulator) next to them.
-logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s - %(message)s")
 app = create_app()

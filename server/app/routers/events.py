@@ -10,7 +10,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 
-from app.deps import get_bidder_id
+from app.deps import validate_bidder_id
 from app.events import EventBroker
 
 router = APIRouter(prefix="/api", tags=["events"])
@@ -27,7 +27,7 @@ def _stream_bidder_id(
 ) -> str | None:
     # A dependency, not a check inside the stream: dependencies run before the 200 and the
     # event-stream headers are sent, so an invalid id can still get a proper 400.
-    return get_bidder_id(bidder_id)
+    return validate_bidder_id(bidder_id, field="bidder_id")
 
 
 @router.get("/events", response_class=EventSourceResponse)
@@ -46,8 +46,6 @@ async def events(
             event = await subscriber.queue.get()
             if event is None:  # dropped as a slow consumer: end the stream so it reconnects
                 return
-            yield ServerSentEvent(
-                event=event.kind,
-                id=str(broker.next_id()),
-                data=event.for_subscriber(bidder_id),
-            )
+            # No event ids: events aren't replayable, so we don't pretend they are. Instead the
+            # `hello` sent on every (re)connect tells the client to refetch what it shows.
+            yield ServerSentEvent(event=event.kind, data=event.for_subscriber(bidder_id))

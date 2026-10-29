@@ -37,6 +37,8 @@ class BidResult:
     # Who led before this bid — the live-updates stream tells them they were outbid. None on
     # replays, which publish nothing.
     previous_high_bidder: str | None
+    # Everyone who has bid on this vehicle, so live events can say "you have bid" exactly.
+    bidders: frozenset[str]
     extended: bool
     replayed: bool  # an idempotent retry of an earlier request; nothing new was written
 
@@ -97,8 +99,15 @@ def _replay(
         vehicle=vehicle,
         now=now,
         previous_high_bidder=None,
+        bidders=frozenset(),
         extended=False,
         replayed=True,
+    )
+
+
+def _bidders(session: Session, vehicle_id: str) -> frozenset[str]:
+    return frozenset(
+        session.scalars(select(Bid.bidder_id).where(Bid.vehicle_id == vehicle_id).distinct())
     )
 
 
@@ -166,8 +175,9 @@ def place_bid(
     if new_end is not None:
         vehicle.ends_at = new_end
 
+    bidders = _bidders(session, vehicle.id)
     session.commit()
-    return BidResult(bid, vehicle, now, previous, extended=extended, replayed=False)
+    return BidResult(bid, vehicle, now, previous, bidders, extended=extended, replayed=False)
 
 
 def buy_now(
@@ -213,5 +223,6 @@ def buy_now(
     vehicle.starts_at = min(vehicle.starts_at, now)
     vehicle.ends_at = now
 
+    bidders = _bidders(session, vehicle.id)
     session.commit()
-    return BidResult(bid, vehicle, now, previous, extended=False, replayed=False)
+    return BidResult(bid, vehicle, now, previous, bidders, extended=False, replayed=False)

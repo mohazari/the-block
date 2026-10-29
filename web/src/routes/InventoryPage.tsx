@@ -9,7 +9,7 @@ import { FilterPanel } from './inventory/FilterPanel'
 import { FilterSheet } from './inventory/FilterSheet'
 import {
   activeFilterCount,
-  SEARCH_MAX_LENGTH,
+  limitSearch,
   SORTS,
   useInventoryParams,
 } from './inventory/inventoryParams'
@@ -160,9 +160,8 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
         id={id}
         type="search"
         value={draft}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={(event) => setDraft(limitSearch(event.target.value))}
         placeholder="Make, model, VIN, lot or city"
-        maxLength={SEARCH_MAX_LENGTH}
         className="border-line-strong bg-surface placeholder:text-ink-faint h-10 w-full rounded-[var(--radius-control)] border pr-3 pl-10 text-sm"
       />
     </div>

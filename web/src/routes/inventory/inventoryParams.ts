@@ -38,8 +38,26 @@ export const SORTS: { value: SortOrder; label: string }[] = [
 ]
 
 export const PAGE_SIZE = 24
-/** The API's limit on `q` (InventoryQuery.q max_length). */
+/** The API's limit on `q` (InventoryQuery.q max_length), counted as Python counts: code points. */
 export const SEARCH_MAX_LENGTH = 100
+
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
+/**
+ * Cut search text to the API's limit at the last whole character that fits — never inside a
+ * surrogate pair or a multi-part emoji (flags, skin tones, families). Used by both the search
+ * box and the URL parser, so they agree.
+ */
+export function limitSearch(text: string): string {
+  let kept = ''
+  let codePoints = 0
+  for (const { segment } of graphemes.segment(text)) {
+    codePoints += Array.from(segment).length
+    if (codePoints > SEARCH_MAX_LENGTH) break
+    kept += segment
+  }
+  return kept
+}
 
 const STATUSES: readonly AuctionStatus[] = ['live', 'upcoming', 'ended']
 
@@ -82,11 +100,7 @@ function orderRange(query: InventoryQuery, low: NumberFilter, high: NumberFilter
 
 export function parseInventoryQuery(params: URLSearchParams): InventoryQuery {
   const query: InventoryQuery = { page_size: PAGE_SIZE }
-  // Trim by code points (as the server's limit counts), never splitting an emoji in half.
-  const q = Array.from(params.get('q')?.trim() ?? '')
-    .slice(0, SEARCH_MAX_LENGTH)
-    .join('')
-    .trim()
+  const q = limitSearch(params.get('q') ?? '').trim()
   if (q) query.q = q
   for (const key of LIST_FILTERS) {
     let values = params.getAll(key).filter(Boolean)

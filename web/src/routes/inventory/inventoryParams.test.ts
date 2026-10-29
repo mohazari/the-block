@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { activeFilterCount, parseInventoryQuery } from './inventoryParams'
+import { activeFilterCount, limitSearch, parseInventoryQuery } from './inventoryParams'
 import { activeChips } from './activeChips'
 
 describe('parseInventoryQuery', () => {
@@ -77,5 +77,11 @@ describe('URL values the API would reject', () => {
   it('never cuts a character in half when trimming search text', () => {
     const query = parseInventoryQuery(new URLSearchParams({ q: `${'x'.repeat(99)}🚗🚗` }))
     expect(query.q).toBe(`${'x'.repeat(99)}🚗`)
+  })
+
+  it('never cuts a multi-part emoji, and counts code points like the server', () => {
+    const family = '👨‍👩‍👧' // 5 code points: three people joined by zero-width joiners
+    expect(limitSearch(`${'x'.repeat(97)}${family}`)).toBe('x'.repeat(97))
+    expect(limitSearch(`${'x'.repeat(95)}${family}`)).toBe(`${'x'.repeat(95)}${family}`)
   })
 })

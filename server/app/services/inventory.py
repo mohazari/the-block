@@ -264,14 +264,19 @@ def summarize(
     )
 
 
+# VehicleSummary fields the server works out; every other field is copied from the Vehicle row
+# as-is, so adding a column to both is all a new field needs.
+COMPUTED_SUMMARY_FIELDS = frozenset(
+    {"image_count", "damage_count", "worst_damage", "watching", "auction"}
+)
+COPIED_SUMMARY_FIELDS = tuple(
+    name for name in VehicleSummary.model_fields if name not in COMPUTED_SUMMARY_FIELDS
+)
+
+
 def _summary_fields(vehicle: Vehicle) -> dict[str, Any]:
-    names = (
-        "id", "lot", "vin", "year", "make", "model", "trim", "body_style", "exterior_color",
-        "transmission", "drivetrain", "fuel_type", "odometer_km", "condition_grade",
-        "title_status", "city", "province", "selling_dealership",
-    )  # fmt: skip
     return {
-        **{name: getattr(vehicle, name) for name in names},
+        **{name: getattr(vehicle, name) for name in COPIED_SUMMARY_FIELDS},
         "image_count": len(vehicle.images),
         "damage_count": len(vehicle.damage_notes),
         "worst_damage": worst_severity(vehicle.damage_notes),

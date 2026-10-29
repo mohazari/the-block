@@ -107,7 +107,7 @@ that shaped the product:
 
 ## Testing
 
-- **API: 106 pytest tests.** Auction rules, schedule normalization, seeding invariants, search
+- **API: 107 pytest tests.** Auction rules, schedule normalization, seeding invariants, search
   and facets, every bid rejection, idempotency, soft close, Buy Now, the concurrency race, SSE
   personalization and backpressure, and simulator behaviour. Warnings are errors.
 - **Web: 70 Vitest tests.** Formatting and rules, the API client, the clock sync, URL filter

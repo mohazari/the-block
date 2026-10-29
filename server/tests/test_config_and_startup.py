@@ -32,3 +32,13 @@ def test_startup_seeds_an_empty_database(tmp_path: Path, clock: FrozenClock) -> 
     with Session(engine) as session:
         assert session.scalar(select(func.count()).select_from(Vehicle)) == 200
     engine.dispose()
+
+
+def test_dev_log_config_adds_app_loggers_without_touching_uvicorns() -> None:
+    from uvicorn.config import LOGGING_CONFIG
+
+    from app.serve import log_config
+
+    config = log_config()
+    assert config["loggers"]["app"]["level"] == "INFO"
+    assert "app" not in LOGGING_CONFIG["loggers"]

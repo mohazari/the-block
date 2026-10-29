@@ -1,4 +1,4 @@
-import type { AuctionSnapshot, VehicleList, VehicleSummary } from '../api/types'
+import type { AuctionSnapshot, VehicleDetail, VehicleList, VehicleSummary } from '../api/types'
 
 const HOUR = 3_600_000
 
@@ -91,4 +91,31 @@ export function stubApi(routes: (url: URL, init?: RequestInit) => unknown) {
     })
   }
   return { fetch, calls }
+}
+
+export function vehicleDetail(overrides: Partial<VehicleDetail> = {}): VehicleDetail {
+  return {
+    ...vehicle(),
+    interior_color: 'Beige',
+    engine: '2.7L EcoBoost V6',
+    condition_report:
+      'Average condition. Engine and transmission perform within normal parameters.',
+    damage: [
+      { note: 'Scratch on liftgate', severity: 'cosmetic' },
+      { note: 'Transmission slips between 2nd and 3rd gear', severity: 'mechanical' },
+      { note: 'Flood damage - electrical issues present', severity: 'major' },
+    ],
+    images: ['a', 'b', 'c', 'd'],
+    recent_bids: [
+      {
+        id: 7,
+        amount: 22800,
+        bidder: 'Bidder 4821',
+        is_you: false,
+        placed_at: new Date().toISOString(),
+      },
+    ],
+    server_time: new Date().toISOString(),
+    ...overrides,
+  }
 }

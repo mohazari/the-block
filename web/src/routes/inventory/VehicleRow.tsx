@@ -51,7 +51,7 @@ export function VehicleRow({ vehicle }: { vehicle: VehicleSummary }) {
         <CarIllustration
           bodyStyle={vehicle.body_style}
           paint={vehicle.exterior_color}
-          className="aspect-[2/1] w-full"
+          className="aspect-[40/17] w-full"
         />
       </div>
 

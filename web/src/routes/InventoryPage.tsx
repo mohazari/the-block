@@ -268,7 +268,7 @@ function RowSkeletons() {
           key={index}
           className="border-line grid grid-cols-[104px_1fr] gap-4 border-b p-3 sm:grid-cols-[168px_1fr]"
         >
-          <div className="bg-surface-sunk aspect-[2/1] rounded-[var(--radius-control)]" />
+          <div className="bg-surface-sunk aspect-[40/17] rounded-[var(--radius-control)]" />
           <div className="space-y-2 py-1">
             <div className="bg-surface-sunk h-3 w-24 rounded" />
             <div className="bg-surface-sunk h-5 w-3/5 rounded" />

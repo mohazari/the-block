@@ -1,4 +1,5 @@
 import { QueryObserver } from '@tanstack/react-query'
+import { waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { createQueryClient } from '../app/queryClient'
 import { auction, vehicle, vehicleDetail } from '../test/fixtures'
@@ -96,7 +97,7 @@ describe('applyAuction', () => {
     expect(queryClient.getQueryState(queryKeys.myBids)?.isInvalidated).toBe(false)
   })
 
-  it('refetches My bids when your bid is on a car it does not list yet', () => {
+  it('refetches My bids when your bid is on a car it does not list yet', async () => {
     const queryClient = createQueryClient()
     queryClient.setQueryData(queryKeys.myBids, [])
     const mine = {
@@ -107,7 +108,9 @@ describe('applyAuction', () => {
       placed_at: '2026-10-28T12:05:00Z',
     }
     applyAuction(queryClient, 'veh-1', auction({ bid_count: 17 }), mine)
-    expect(queryClient.getQueryState(queryKeys.myBids)?.isInvalidated).toBe(true)
+    await waitFor(() =>
+      expect(queryClient.getQueryState(queryKeys.myBids)?.isInvalidated).toBe(true),
+    )
   })
 
   it('fetches My bids once for a first bid, even when the live echo also arrives', async () => {
@@ -135,6 +138,8 @@ describe('applyAuction', () => {
 
     applyAuction(queryClient, 'veh-1', auction({ bid_count: 17 }), mine) // live echo
     applyAuction(queryClient, 'veh-1', auction({ bid_count: 17 }), mine) // bid response
+    await waitForFetches(() => fetches - before, 1)
+    await new Promise((resolve) => setTimeout(resolve, 20))
     expect(fetches - before).toBe(1)
     finish()
     unsubscribe()
@@ -149,4 +154,37 @@ describe('applyAuction', () => {
     applyAuction(queryClient, 'veh-1', auction({ bid_count: 16 }), detail.recent_bids[0])
     expect(queryClient.getQueryData<VehicleDetail>(key)).toBe(cached)
   })
+
+  it('restarts a My bids refetch that began before your first bid was committed', async () => {
+    const queryClient = createQueryClient()
+    let fetches = 0
+    const observer = new QueryObserver(queryClient, {
+      queryKey: queryKeys.myBids,
+      queryFn: () => {
+        fetches++
+        return new Promise<MyBid[]>(() => {}) // still in flight: it read before the bid
+      },
+    })
+    const unsubscribe = observer.subscribe(() => {})
+    await waitForFetches(() => fetches, 1)
+    const mine = {
+      id: 9,
+      amount: 23300,
+      bidder: 'Bidder 1',
+      is_you: true,
+      placed_at: '2026-10-28T12:05:00Z',
+    }
+
+    applyAuction(queryClient, 'veh-2', auction({ bid_count: 17 }), mine)
+    await waitForFetches(() => fetches, 2) // a fresh read, started after the commit
+    applyAuction(queryClient, 'veh-2', auction({ bid_count: 17 }), mine) // the echo
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(fetches).toBe(2)
+    unsubscribe()
+  })
 })
+
+async function waitForFetches(count: () => number, expected: number) {
+  for (let i = 0; i < 50 && count() < expected; i++) await new Promise((r) => setTimeout(r, 5))
+  expect(count()).toBe(expected)
+}

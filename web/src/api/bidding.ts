@@ -33,12 +33,23 @@ export function applyAuction(
  * live echo come through here, so this must not trigger a refetch each time; it only fetches
  * when My bids doesn't list the car yet (e.g. a first bid placed from another tab).
  */
+// Vehicles whose first bid has started a My bids refetch that hasn't finished yet.
+const awaitingMyBids = new Set<string>()
+
 function recordOwnBid(queryClient: QueryClient, vehicleId: string, bid: BidOut): void {
   const bids = queryClient.getQueryData<MyBid[]>(queryKeys.myBids)
   if (!bids?.some((entry) => entry.id === vehicleId)) {
-    // The response and the live echo both get here for a first bid. Whichever comes second must
-    // not abort and restart the refetch the first started: it began after the bid was committed.
-    void queryClient.invalidateQueries({ queryKey: queryKeys.myBids }, { cancelRefetch: false })
+    // The response and the live echo both get here for a first bid, both after the commit. The
+    // first restarts any refetch already running (it may predate the bid); the second leaves
+    // that fresh refetch alone.
+    if (awaitingMyBids.has(vehicleId)) return
+    awaitingMyBids.add(vehicleId)
+    // Cancel explicitly: invalidate alone joins an in-flight *initial* load instead of
+    // restarting it.
+    void queryClient
+      .cancelQueries({ queryKey: queryKeys.myBids })
+      .then(() => queryClient.invalidateQueries({ queryKey: queryKeys.myBids }))
+      .finally(() => awaitingMyBids.delete(vehicleId))
     return
   }
   queryClient.setQueryData<MyBid[]>(queryKeys.myBids, (entries) =>

@@ -9,7 +9,7 @@ import { FilterPanel } from './inventory/FilterPanel'
 import { FilterSheet } from './inventory/FilterSheet'
 import {
   activeFilterCount,
-  limitSearch,
+  SEARCH_MAX_LENGTH,
   SORTS,
   useInventoryParams,
 } from './inventory/inventoryParams'
@@ -160,8 +160,11 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
         id={id}
         type="search"
         value={draft}
-        onChange={(event) => setDraft(limitSearch(event.target.value))}
+        onChange={(event) => setDraft(event.target.value)}
         placeholder="Make, model, VIN, lot or city"
+        // The browser refuses input past the limit (pasting mid-query keeps the user's text and
+        // cursor). It counts UTF-16 units, so it is a little stricter than the API for emoji.
+        maxLength={SEARCH_MAX_LENGTH}
         className="border-line-strong bg-surface placeholder:text-ink-faint h-10 w-full rounded-[var(--radius-control)] border pr-3 pl-10 text-sm"
       />
     </div>

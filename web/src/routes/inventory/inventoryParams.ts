@@ -41,20 +41,28 @@ export const PAGE_SIZE = 24
 /** The API's limit on `q` (InventoryQuery.q max_length), counted as Python counts: code points. */
 export const SEARCH_MAX_LENGTH = 100
 
-const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+let segmenter: Intl.Segmenter | undefined
+
+/** Whole characters: graphemes where supported, else code points (older browsers). Created on
+ * first use, so a browser without Intl.Segmenter can still load this module. */
+function characters(text: string): string[] {
+  if (typeof Intl.Segmenter !== 'function') return Array.from(text)
+  segmenter ??= new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+  return Array.from(segmenter.segment(text), ({ segment }) => segment)
+}
 
 /**
  * Cut search text to the API's limit at the last whole character that fits — never inside a
- * surrogate pair or a multi-part emoji (flags, skin tones, families). Used by both the search
- * box and the URL parser, so they agree.
+ * surrogate pair or a multi-part emoji (flags, skin tones, families). For text that arrives
+ * whole (a link); the search box itself refuses extra input with maxLength.
  */
 export function limitSearch(text: string): string {
   let kept = ''
   let codePoints = 0
-  for (const { segment } of graphemes.segment(text)) {
-    codePoints += Array.from(segment).length
+  for (const character of characters(text)) {
+    codePoints += Array.from(character).length
     if (codePoints > SEARCH_MAX_LENGTH) break
-    kept += segment
+    kept += character
   }
   return kept
 }
@@ -100,7 +108,8 @@ function orderRange(query: InventoryQuery, low: NumberFilter, high: NumberFilter
 
 export function parseInventoryQuery(params: URLSearchParams): InventoryQuery {
   const query: InventoryQuery = { page_size: PAGE_SIZE }
-  const q = limitSearch(params.get('q') ?? '').trim()
+  // Trim first, so surrounding whitespace doesn't use up the limit.
+  const q = limitSearch((params.get('q') ?? '').trim()).trim()
   if (q) query.q = q
   for (const key of LIST_FILTERS) {
     let values = params.getAll(key).filter(Boolean)

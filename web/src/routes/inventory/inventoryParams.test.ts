@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { activeFilterCount, limitSearch, parseInventoryQuery } from './inventoryParams'
 import { activeChips } from './activeChips'
 
@@ -83,5 +83,18 @@ describe('URL values the API would reject', () => {
     const family = '👨‍👩‍👧' // 5 code points: three people joined by zero-width joiners
     expect(limitSearch(`${'x'.repeat(97)}${family}`)).toBe('x'.repeat(97))
     expect(limitSearch(`${'x'.repeat(95)}${family}`)).toBe(`${'x'.repeat(95)}${family}`)
+  })
+
+  it('trims whitespace before applying the limit', () => {
+    const query = parseInventoryQuery(
+      new URLSearchParams({ q: `${' '.repeat(10)}${'x'.repeat(100)}` }),
+    )
+    expect(query.q).toBe('x'.repeat(100))
+  })
+
+  it('still limits search text where Intl.Segmenter is missing', () => {
+    vi.stubGlobal('Intl', { ...Intl, Segmenter: undefined })
+    expect(limitSearch(`${'x'.repeat(99)}🚗🚗`)).toBe(`${'x'.repeat(99)}🚗`)
+    vi.unstubAllGlobals()
   })
 })

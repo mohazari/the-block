@@ -5,7 +5,7 @@ import { ApiError } from '../../api/client'
 import type { AuctionSnapshot, Standing, VehicleDetail } from '../../api/types'
 import { AnimatedPrice } from '../../components/auction/AnimatedPrice'
 import { AuctionClock } from '../../components/auction/AuctionClock'
-import { RESERVE_TEXT, standingAt, statusAt } from '../../lib/auction'
+import { RESERVE_TEXT, standingAt, statusAt, wasSold } from '../../lib/auction'
 import { cn } from '../../lib/cn'
 import { formatMoney, plural } from '../../lib/format'
 import { useServerNow } from '../../lib/serverClock'
@@ -117,11 +117,11 @@ function StandingBanner({
     },
     won: { text: 'You won this vehicle.', tone: 'bg-win-soft text-win' },
     lost: {
-      text:
-        // The high bidder can only lose on the reserve (the outcome may not have arrived yet).
-        auction.is_high_bidder
-          ? "You were the high bidder, but the reserve wasn't met."
-          : 'Another buyer won this vehicle.',
+      text: auction.is_high_bidder
+        ? "You were the high bidder, but the reserve wasn't met."
+        : wasSold(auction)
+          ? 'Another buyer won this vehicle.'
+          : "The reserve wasn't met, so this vehicle didn't sell.",
       tone: 'bg-surface-sunk text-ink-muted',
     },
   }

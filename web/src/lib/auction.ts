@@ -30,6 +30,10 @@ export function statusAt(
 export function standingAt(auction: AuctionSnapshot, status: AuctionStatus): Standing | null {
   if (!auction.has_bid) return null
   if (status !== 'ended') return auction.is_high_bidder ? 'leading' : 'outbid'
-  const sold = auction.outcome ? auction.outcome === 'sold' : auction.reserve_status !== 'not_met'
-  return auction.is_high_bidder && sold ? 'won' : 'lost'
+  return auction.is_high_bidder && wasSold(auction) ? 'won' : 'lost'
+}
+
+/** Whether an ended auction sold, inferring from the reserve until the server's outcome arrives. */
+export function wasSold(auction: Pick<AuctionSnapshot, 'outcome' | 'reserve_status'>): boolean {
+  return auction.outcome ? auction.outcome === 'sold' : auction.reserve_status !== 'not_met'
 }

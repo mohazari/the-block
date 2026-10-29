@@ -32,7 +32,7 @@ type QueryValue = string | number | boolean | null | undefined | readonly (strin
 export function toSearchParams(query: Record<string, QueryValue>): URLSearchParams {
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(query)) {
-    if (value === null || value === undefined || value === '' || value === false) continue
+    if (value === null || value === undefined || value === '') continue
     if (Array.isArray(value)) value.forEach((item) => params.append(key, String(item)))
     else params.append(key, String(value))
   }
@@ -54,6 +54,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey
 
+  const sentAt = Date.now()
   let response: Response
   try {
     response = await fetch(`/api${path}${search}`, {
@@ -67,8 +68,9 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     throw new ApiError(0, 'network_error', "Can't reach The Block. Check your connection.")
   }
 
+  const receivedAt = Date.now()
   if (response.status === 204) return undefined as T
-  const payload: unknown = await response.json().catch(() => null)
+  const payload: unknown = await response.json().catch(() => undefined)
 
   if (!response.ok) {
     const error = (payload as { error?: Record<string, unknown> } | null)?.error
@@ -82,7 +84,11 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     )
   }
 
+  if (payload === undefined) {
+    // e.g. an HTML page from a proxy or captive portal: fail loudly rather than return garbage.
+    throw new ApiError(response.status, 'bad_response', 'The server sent an unexpected response.')
+  }
   const serverTime = (payload as { server_time?: unknown } | null)?.server_time
-  if (typeof serverTime === 'string') syncServerTime(serverTime)
+  if (typeof serverTime === 'string') syncServerTime(serverTime, sentAt, receivedAt)
   return payload as T
 }

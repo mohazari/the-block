@@ -23,8 +23,12 @@ def api_schema() -> dict[str, object]:
     )
     for model in _EXTRA_MODELS:
         schema = model.model_json_schema(ref_template="#/$defs/{model}", mode="serialization")
-        defs.update(schema.pop("$defs", {}))
-        defs[model.__name__] = schema
+        for name, definition in {**schema.pop("$defs", {}), model.__name__: schema}.items():
+            # The same name must mean the same shape, or the generated TS type would silently
+            # depend on which copy came last.
+            if name in defs and defs[name] != definition:
+                raise SystemExit(f"Conflicting JSON Schema definitions for {name!r}")
+            defs[name] = definition
     return {"title": "Api", "type": "object", "$defs": defs}
 
 

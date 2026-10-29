@@ -33,16 +33,17 @@ export const formatClockTime = (iso: string): string => clockTime.format(new Dat
 
 const sentenceCase = (value: string) => value.charAt(0).toUpperCase() + value.slice(1)
 
+const KNOWN_LABELS: Record<string, string> = {
+  SUV: 'SUV',
+  CVT: 'CVT',
+  AWD: 'AWD',
+  FWD: 'FWD',
+  RWD: 'RWD',
+  '4WD': '4WD',
+  'single-speed': 'Single-speed',
+}
+
 /** Dataset vocabulary → buyer-facing labels. */
 export function label(value: string): string {
-  const known: Record<string, string> = {
-    SUV: 'SUV',
-    CVT: 'CVT',
-    AWD: 'AWD',
-    FWD: 'FWD',
-    RWD: 'RWD',
-    '4WD': '4WD',
-    'single-speed': 'Single-speed',
-  }
-  return known[value] ?? sentenceCase(value.replaceAll('_', ' '))
+  return KNOWN_LABELS[value] ?? sentenceCase(value.replaceAll('_', ' '))
 }

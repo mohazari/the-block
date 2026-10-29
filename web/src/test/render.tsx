@@ -1,7 +1,6 @@
-import { QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
-import { LazyMotion, MotionConfig, domAnimation } from 'motion/react'
 import { RouterProvider, createMemoryRouter } from 'react-router'
+import { AppProviders } from '../app/AppProviders'
 import { createQueryClient } from '../app/queryClient'
 import { routes } from '../app/router'
 
@@ -13,13 +12,9 @@ export function renderRoute(path: string) {
     router,
     queryClient,
     ...render(
-      <QueryClientProvider client={queryClient}>
-        <LazyMotion features={domAnimation} strict>
-          <MotionConfig reducedMotion="always">
-            <RouterProvider router={router} />
-          </MotionConfig>
-        </LazyMotion>
-      </QueryClientProvider>,
+      <AppProviders queryClient={queryClient} reducedMotion="always">
+        <RouterProvider router={router} />
+      </AppProviders>,
     ),
   }
 }

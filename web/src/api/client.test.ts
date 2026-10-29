@@ -22,7 +22,7 @@ describe('toSearchParams', () => {
       watching: true,
       price_max: null,
     })
-    expect(params.toString()).toBe('make=Ford&make=BMW&year_min=2020&watching=true')
+    expect(params.toString()).toBe('make=Ford&make=BMW&year_min=2020&buy_now=false&watching=true')
   })
 })
 
@@ -55,6 +55,11 @@ describe('api', () => {
     expect(error).toBeInstanceOf(ApiError)
     expect(error).toMatchObject({ status: 409, code: 'bid_too_low', auction, retryAfterSeconds: 1 })
     expect(error.message).toBe('The minimum bid is now $23,800.')
+  })
+
+  it('rejects a successful response that is not JSON', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>portal</html>')))
+    await expect(api('/vehicles')).rejects.toMatchObject({ code: 'bad_response' })
   })
 
   it('reports network failures as a readable error', async () => {

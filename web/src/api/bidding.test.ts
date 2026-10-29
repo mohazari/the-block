@@ -139,4 +139,14 @@ describe('applyAuction', () => {
     finish()
     unsubscribe()
   })
+
+  it('leaves the cached detail untouched when a bid is already in the history', () => {
+    const queryClient = createQueryClient()
+    const key = queryKeys.vehicle('veh-1')
+    const detail = vehicleDetail({ auction: auction({ bid_count: 17 }) })
+    queryClient.setQueryData(key, detail)
+    const cached = queryClient.getQueryData<VehicleDetail>(key)
+    applyAuction(queryClient, 'veh-1', auction({ bid_count: 16 }), detail.recent_bids[0])
+    expect(queryClient.getQueryData<VehicleDetail>(key)).toBe(cached)
+  })
 })

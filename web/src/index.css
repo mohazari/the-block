@@ -1,87 +1,132 @@
 @import 'tailwindcss';
 
-@import '@fontsource/barlow/latin-400.css';
-@import '@fontsource/barlow/latin-500.css';
-@import '@fontsource/barlow/latin-600.css';
-@import '@fontsource/barlow/latin-700.css';
-@import '@fontsource/barlow-condensed/latin-500.css';
-@import '@fontsource/barlow-condensed/latin-600.css';
-@import '@fontsource/barlow-condensed/latin-700.css';
+/* OPENLANE's typeface, for all text. */
+@import '@fontsource/poppins/latin-400.css';
+@import '@fontsource/poppins/latin-500.css';
+@import '@fontsource/poppins/latin-600.css';
+@import '@fontsource/poppins/latin-700.css';
 
 /*
- * Design tokens. Components use the semantic names (ink, surface, action, win, outbid…), never
- * raw hex, so dark mode is one block of overrides.
+ * Figures. Poppins has proportional digits and no tabular option, so prices and countdowns would
+ * jitter as they tick. "Block Figures" is Barlow restricted to digits and the signs around them;
+ * listed before Poppins, it draws only those characters, so words stay in Poppins. Barlow's
+ * digits are 0.712em tall against Poppins' 0.743em, hence the 104% size-adjust.
+ */
+@font-face {
+  font-family: 'Block Figures';
+  font-weight: 400;
+  font-display: swap;
+  src: url('@fontsource/barlow/files/barlow-latin-400-normal.woff2') format('woff2');
+  unicode-range: U+0024-0025, U+002B-002E, U+0030-003A, U+2212;
+  size-adjust: 104%;
+}
+@font-face {
+  font-family: 'Block Figures';
+  font-weight: 500;
+  font-display: swap;
+  src: url('@fontsource/barlow/files/barlow-latin-500-normal.woff2') format('woff2');
+  unicode-range: U+0024-0025, U+002B-002E, U+0030-003A, U+2212;
+  size-adjust: 104%;
+}
+@font-face {
+  font-family: 'Block Figures';
+  font-weight: 600;
+  font-display: swap;
+  src: url('@fontsource/barlow/files/barlow-latin-600-normal.woff2') format('woff2');
+  unicode-range: U+0024-0025, U+002B-002E, U+0030-003A, U+2212;
+  size-adjust: 104%;
+}
+@font-face {
+  font-family: 'Block Figures';
+  font-weight: 700;
+  font-display: swap;
+  src: url('@fontsource/barlow/files/barlow-latin-700-normal.woff2') format('woff2');
+  unicode-range: U+0024-0025, U+002B-002E, U+0030-003A, U+2212;
+  size-adjust: 104%;
+}
+
+/*
+ * Design tokens, from OPENLANE's own palette (openlane.com publishes them as CSS variables):
+ * OPENLANE Blue #0061FF, Onward Blue #0A1B5F, the Blue 25-100 tints, the silvers, and its
+ * accessible green. Components use the semantic names (ink, surface, action, win, outbid…),
+ * never raw hex, so dark mode is one block of overrides.
  *
  * Signal colors carry strict meaning and are never decorative:
  *   win (green)    you're the high bidder · green light
  *   caution (amber) time pressure · yellow light
  *   outbid (red)   you've been outbid · red light (as-is)
- *   action (blue)  OPENLANE blue — things you can do
+ *   action (blue)  OPENLANE Blue — things you can do, and only those
  */
 :root {
   color-scheme: light;
-  --lane: #f3f5f8; /* page */
+  --lane: #f5f5f5; /* page: Light Silver 2 */
   --surface: #ffffff;
-  --surface-sunk: #e9edf2;
-  --ink: #1c2430; /* asphalt */
-  --ink-muted: #4a5565;
-  --ink-faint: #606c7c; /* faintest shade with 4.5:1 on every surface */
-  --line: #dbe1e8;
-  --line-strong: #c3ccd6;
+  --surface-sunk: #f0f0f0; /* one tone step inside a white panel */
+  --ink: #0a1b5f; /* Onward Blue */
+  --ink-muted: #4f4f4f;
+  --ink-faint: #6b6b6b; /* faintest grey with 4.5:1 on every surface, near Medium Silver */
+  --line: #e5e5e5;
+  --line-strong: #c3c3c3; /* Silver: control borders */
 
-  --action: #1f5bff;
-  --action-hover: #1749d6;
+  --action: #0061ff; /* OPENLANE Blue */
+  --action-hover: #0050d6;
   --action-ink: #ffffff;
-  --action-soft: #e8efff;
+  --action-soft: #e5efff; /* Blue 50: selected states, with ink text */
+  --action-edge: #cce0ff; /* Blue 100 */
 
-  --win: #127a4b;
-  --win-soft: #e3f4ec;
+  --win: #017a22; /* OPENLANE's accessible green */
+  --win-soft: #eefae3;
   --caution: #8a5a00;
   --caution-bright: #e0a100;
   --caution-soft: #fcf2dc;
   --outbid: #c62f25;
   --outbid-soft: #fde9e7;
 
-  --stage: #e9edf2; /* illustration backdrop */
-  --stage-floor: #dde3ea;
-  --car-outline: rgb(28 36 48 / 0.45);
-  --focus: #1f5bff;
+  --stage: #f5f9ff; /* illustration backdrop: Blue 25 */
+  --stage-floor: #e5efff;
+  --car-outline: rgb(10 27 95 / 0.4);
+  --focus: #0061ff;
 }
 
-/* index.html resolves the theme (saved choice, else the system's) into data-theme before paint. */
+/*
+ * Dark is neutral, not navy: a navy ground reads as a template and muddies the blue. OPENLANE's
+ * light blues carry the actions instead, with Onward Blue as their label.
+ * index.html resolves the theme (saved choice, else the system's) into data-theme before paint.
+ */
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --lane: #10151c;
-  --surface: #171e27;
-  --surface-sunk: #0c1117;
-  --ink: #e8edf3;
-  --ink-muted: #a3afbd;
-  --ink-faint: #798694;
-  --line: #26303c;
-  --line-strong: #364252;
+  --lane: #0a0a0a;
+  --surface: #141414;
+  --surface-sunk: #1f1f1f;
+  --ink: #ffffff;
+  --ink-muted: #b4b4b4;
+  --ink-faint: #949494;
+  --line: #2a2a2a;
+  --line-strong: #4a4a4a;
 
-  --action: #5c8bff;
-  --action-hover: #7aa1ff;
-  --action-ink: #0b1220;
-  --action-soft: #1a2747;
+  --action: #66a1ff; /* Blue 300 */
+  --action-hover: #99c0ff; /* Blue 200 */
+  --action-ink: #0a1b5f;
+  --action-soft: #10213f;
+  --action-edge: #23437a;
 
-  --win: #3ccf8e;
-  --win-soft: #12301f;
+  --win: #3fc07a;
+  --win-soft: #172a1d;
   --caution: #f2bb3d;
   --caution-bright: #f2bb3d;
   --caution-soft: #332611;
   --outbid: #ff7a6e;
   --outbid-soft: #3a1714;
 
-  --stage: #1d2530;
-  --stage-floor: #19212b;
-  --car-outline: rgb(232 237 243 / 0.35);
-  --focus: #7aa1ff;
+  --stage: #1a1a1a;
+  --stage-floor: #222222;
+  --car-outline: rgb(255 255 255 / 0.3);
+  --focus: #99c0ff;
 }
 
 @theme inline {
-  --font-sans: 'Barlow', ui-sans-serif, system-ui, sans-serif;
-  --font-display: 'Barlow Condensed', 'Barlow', ui-sans-serif, sans-serif;
+  --font-sans: 'Poppins', ui-sans-serif, system-ui, sans-serif;
+  --font-figures: 'Block Figures', 'Poppins', ui-sans-serif, system-ui, sans-serif;
 
   --color-lane: var(--lane);
   --color-surface: var(--surface);
@@ -95,6 +140,7 @@
   --color-action-hover: var(--action-hover);
   --color-action-ink: var(--action-ink);
   --color-action-soft: var(--action-soft);
+  --color-action-edge: var(--action-edge);
   --color-win: var(--win);
   --color-win-soft: var(--win-soft);
   --color-caution: var(--caution);
@@ -105,9 +151,10 @@
   --color-stage: var(--stage);
   --color-stage-floor: var(--stage-floor);
 
-  /* Radius follows hierarchy: controls are tight, panels softer. */
-  --radius-control: 6px;
-  --radius-panel: 10px;
+  /* Radius follows hierarchy: fields tight, panels a step softer; buttons are pills, as on
+     openlane.com. */
+  --radius-control: 8px;
+  --radius-panel: 12px;
 }
 
 @layer base {
@@ -126,6 +173,7 @@
 
   /* Prices, countdowns and lot numbers must not jitter as digits change. */
   .tabular {
+    font-family: var(--font-figures);
     font-variant-numeric: tabular-nums;
   }
 
@@ -134,11 +182,107 @@
     outline-offset: 2px;
   }
 
+  /* Number fields are typed into, not nudged: the browser's arrows are clutter. */
+  input[type='number'] {
+    appearance: textfield;
+  }
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+
   button,
   [role='button'],
   summary,
   label[for],
   select {
     cursor: pointer;
+  }
+}
+
+/*
+ * One set of controls for the whole app: every field, select and button has the same height,
+ * inner spacing and focus ring. Buttons are pills, as on openlane.com; fields keep a tight radius.
+ */
+@layer components {
+  .field {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    height: 2.5rem;
+    padding-inline: 0.75rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-control);
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+  .field::placeholder {
+    color: var(--ink-faint);
+  }
+  .field:hover {
+    border-color: var(--ink-faint);
+  }
+  .field[aria-invalid='true'] {
+    border-color: var(--outbid);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    height: 2.5rem;
+    padding-inline: 1.25rem;
+    border: 1px solid transparent;
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.25rem;
+    white-space: nowrap;
+    transition:
+      background-color 150ms,
+      border-color 150ms,
+      color 150ms;
+  }
+  .btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+  .btn-primary {
+    background: var(--action);
+    color: var(--action-ink);
+  }
+  .btn-primary:not(:disabled):hover {
+    background: var(--action-hover);
+  }
+  .btn-secondary {
+    border-color: var(--action);
+    background: var(--surface);
+    color: var(--action);
+  }
+  .btn-secondary:not(:disabled):hover {
+    border-color: var(--action-hover);
+    color: var(--action-hover);
+  }
+  /* Neutral outline: for controls that aren't the page's action (Filters, Previous, Next). */
+  .btn-plain {
+    border-color: var(--line-strong);
+    background: var(--surface);
+    color: var(--ink);
+  }
+  .btn-plain:not(:disabled):hover {
+    border-color: var(--ink-faint);
+  }
+
+  /* A text action: "Clear all", "Show 9 more". */
+  .link-action {
+    color: var(--action);
+    font-weight: 600;
+  }
+  .link-action:hover {
+    color: var(--action-hover);
   }
 }

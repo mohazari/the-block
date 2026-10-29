@@ -1,5 +1,7 @@
 import { useId, useState, type ReactNode } from 'react'
+import { cn } from '../../lib/cn'
 import type { FacetValue, InventoryQuery, VehicleList } from '../../api/types'
+import { SelectField } from '../../components/SelectField'
 import { formatKm, label } from '../../lib/format'
 import {
   PRICE_RULE,
@@ -210,7 +212,7 @@ function CheckboxGroup({
           type="button"
           onClick={() => setExpanded((open) => !open)}
           aria-expanded={expanded}
-          className="text-action hover:text-action-hover mt-1 text-sm font-semibold"
+          className="link-action mt-1 text-sm"
         >
           {expanded ? 'Show fewer' : `Show ${hidden} more`}
         </button>
@@ -260,11 +262,10 @@ function Select({
       <label htmlFor={id} className="mb-2 block text-sm font-semibold">
         {text}
       </label>
-      <select
+      <SelectField
         id={id}
         value={value ?? ''}
         onChange={(event) => onChange(event.target.value ? Number(event.target.value) : null)}
-        className="border-line-strong bg-surface h-10 w-full rounded-[var(--radius-control)] border px-2 text-sm"
       >
         <option value="">{anyLabel}</option>
         {options.map((option) => (
@@ -272,7 +273,7 @@ function Select({
             {option.label}
           </option>
         ))}
-      </select>
+      </SelectField>
     </div>
   )
 }
@@ -326,24 +327,32 @@ function RangeInputs({
     if (next[0] !== null && next[1] !== null && next[0] > next[1]) next = [next[1], next[0]]
     if (next[0] !== (min ?? null) || next[1] !== (max ?? null)) onChange(next[0], next[1])
   }
-  const field =
-    'h-10 w-full min-w-0 rounded-[var(--radius-control)] border border-line-strong bg-surface px-2 text-sm tabular'
+  // Placeholders show the range in the list, written the way it's read: "2,990", not "2990".
+  const hint = (value: number) => (prefix ? value.toLocaleString('en-CA') : String(value))
 
   return (
     <Group legend={legend}>
       <div className="flex items-center gap-2">
         {(['Min', 'Max'] as const).map((which) => (
-          <label key={which} className="flex flex-1 items-center gap-1 text-sm">
+          <label key={which} className="relative min-w-0 flex-1 text-sm">
             <span className="sr-only">
               {which} {legend.toLowerCase()}
             </span>
-            {prefix && <span className="text-ink-faint">{prefix}</span>}
+            {/* The unit sits inside the field, so every field in the rail has the same edges. */}
+            {prefix && (
+              <span
+                aria-hidden
+                className="text-ink-faint tabular pointer-events-none absolute top-1/2 left-3 -translate-y-1/2"
+              >
+                {prefix}
+              </span>
+            )}
             <input
               type="number"
               inputMode="numeric"
               step={step}
               placeholder={
-                bounds ? String(which === 'Min' ? bounds.min : bounds.max) : which.toLowerCase()
+                bounds ? hint(which === 'Min' ? bounds.min : bounds.max) : which.toLowerCase()
               }
               value={which === 'Min' ? low : high}
               onChange={(event) => {
@@ -354,7 +363,7 @@ function RangeInputs({
               onKeyDown={(event) => event.key === 'Enter' && commit()}
               aria-invalid={invalid}
               aria-describedby={invalid ? hintId : undefined}
-              className={field}
+              className={cn('field tabular', prefix && 'pl-7')}
             />
           </label>
         ))}

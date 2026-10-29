@@ -24,7 +24,7 @@ export function MyBidsView() {
             void bids.refetch()
             void watched.refetch()
           }}
-          className="bg-action text-action-ink mt-3 h-10 rounded-[var(--radius-control)] px-4 font-semibold"
+          className="btn btn-primary mt-3"
         >
           Try again
         </button>
@@ -37,19 +37,16 @@ export function MyBidsView() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      <h1 className="font-display text-3xl font-bold tracking-tight">My bids</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">My bids</h1>
       <p className="text-ink-muted text-sm">
         Auctions you've bid on or are watching, sorted by what needs your attention.
       </p>
 
       {empty ? (
         <div className="border-line bg-surface mt-8 rounded-[var(--radius-panel)] border px-6 py-12 text-center">
-          <h2 className="font-display text-2xl font-bold">No bids or watched vehicles yet</h2>
+          <h2 className="text-lg font-semibold">No bids or watched vehicles yet</h2>
           <p className="text-ink-muted mt-1">Bid on a vehicle or tap its star to follow it here.</p>
-          <Link
-            to="/"
-            className="bg-action text-action-ink hover:bg-action-hover mt-4 inline-block rounded-[var(--radius-control)] px-4 py-2 font-semibold"
-          >
+          <Link to="/" className="btn btn-primary mt-4">
             Browse the run list
           </Link>
         </div>
@@ -94,7 +91,7 @@ function Group({
   const id = `group-${title.toLowerCase()}`
   return (
     <section aria-labelledby={id}>
-      <h2 id={id} className="font-display flex items-baseline gap-2 text-2xl font-bold">
+      <h2 id={id} className="flex items-baseline gap-2 text-lg font-semibold">
         <span className={tone}>{title}</span>
         <span className="text-ink-faint tabular text-base">{vehicles.length}</span>
       </h2>

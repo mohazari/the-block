@@ -22,3 +22,6 @@ dist/
 coverage/
 test-results/
 playwright-report/
+
+# taste-skill inspector output (screenshots, reports)
+.taste-skill/

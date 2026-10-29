@@ -20,11 +20,7 @@ export function ActiveFilterChips({
         <ChipButton key={chip.key} chip={chip} onRemove={onRemove} />
       ))}
       {chips.length > 1 && (
-        <button
-          type="button"
-          onClick={onClearAll}
-          className="text-action hover:text-action-hover h-8 px-2 text-sm font-semibold"
-        >
+        <button type="button" onClick={onClearAll} className="link-action h-8 px-2 text-sm">
           Clear all
         </button>
       )}
@@ -44,7 +40,7 @@ export function ChipButton({
       type="button"
       onClick={() => onRemove(chip.remove)}
       aria-label={`Remove filter: ${chip.text}`}
-      className="border-line-strong bg-surface hover:border-ink-faint inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border pr-2 pl-3 text-sm"
+      className="border-line-strong bg-surface hover:border-ink-faint inline-flex h-8 items-center gap-1.5 rounded-full border pr-2.5 pl-3 text-sm"
     >
       {chip.text}
       <X size={14} aria-hidden className="text-ink-faint" />

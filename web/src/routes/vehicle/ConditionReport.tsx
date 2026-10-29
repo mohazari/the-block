@@ -30,7 +30,7 @@ export function ConditionReport({ vehicle }: { vehicle: VehicleDetail }) {
 
   return (
     <section aria-labelledby="condition-heading" className="space-y-4">
-      <h2 id="condition-heading" className="font-display text-2xl font-bold">
+      <h2 id="condition-heading" className="text-lg font-semibold">
         Condition
       </h2>
 

@@ -1,7 +1,14 @@
 import { useId, useState, type ReactNode } from 'react'
 import type { FacetValue, InventoryQuery, VehicleList } from '../../api/types'
 import { formatKm, label } from '../../lib/format'
-import { NUMBER_RULES, STATUS_LABEL, type FilterPatch, type ListFilter } from './inventoryParams'
+import {
+  PRICE_RULE,
+  STATUS_LABEL,
+  YEAR_RULE,
+  type FilterPatch,
+  type ListFilter,
+  type NumberRule,
+} from './inventoryParams'
 
 interface Props {
   query: InventoryQuery
@@ -44,7 +51,7 @@ export function FilterPanel({ query, data, update }: Props) {
         max={query.price_max}
         bounds={ranges?.price}
         step={500}
-        rule={NUMBER_RULES.price_min}
+        rule={PRICE_RULE}
         onChange={(price_min, price_max) => update({ price_min, price_max })}
       />
 
@@ -70,7 +77,7 @@ export function FilterPanel({ query, data, update }: Props) {
         min={query.year_min}
         max={query.year_max}
         bounds={ranges?.year}
-        rule={NUMBER_RULES.year_min}
+        rule={YEAR_RULE}
         onChange={(year_min, year_max) => update({ year_min, year_max })}
       />
 
@@ -283,7 +290,7 @@ function RangeInputs({
   max: number | null | undefined
   bounds?: { min: number; max: number }
   step?: number
-  rule: { valid: (n: number) => boolean; hint: string }
+  rule: NumberRule
   onChange: (min: number | null, max: number | null) => void
 }) {
   const [low, setLow] = useState(min?.toString() ?? '')

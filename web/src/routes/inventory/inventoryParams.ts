@@ -47,22 +47,27 @@ const STATUSES: readonly AuctionStatus[] = ['live', 'upcoming', 'ended']
  * What the API accepts for each number filter (mirrors InventoryQuery on the server). Anything
  * else is dropped from the query: one bad value must not turn the whole run list into a 422.
  */
-export const NUMBER_RULES: Record<NumberFilter, { valid: (n: number) => boolean; hint: string }> = {
-  year_min: {
-    valid: (n) => Number.isSafeInteger(n) && n >= 1900 && n <= 2100,
-    hint: 'Enter a year like 2020.',
-  },
-  year_max: {
-    valid: (n) => Number.isSafeInteger(n) && n >= 1900 && n <= 2100,
-    hint: 'Enter a year like 2020.',
-  },
-  price_min: { valid: (n) => Number.isSafeInteger(n) && n >= 0, hint: 'Enter whole dollars.' },
-  price_max: { valid: (n) => Number.isSafeInteger(n) && n >= 0, hint: 'Enter whole dollars.' },
-  odometer_max: {
-    valid: (n) => Number.isSafeInteger(n) && n >= 0,
-    hint: 'Enter whole kilometres.',
-  },
-  grade_min: { valid: (n) => n >= 1 && n <= 5, hint: 'Grades run from 1 to 5.' },
+export interface NumberRule {
+  valid: (n: number) => boolean
+  hint: string
+}
+
+const wholeNumber = (n: number) => Number.isSafeInteger(n) && n >= 0
+export const YEAR_RULE: NumberRule = {
+  valid: (n) => Number.isSafeInteger(n) && n >= 1900 && n <= 2100,
+  hint: 'Enter a year like 2020.',
+}
+export const PRICE_RULE: NumberRule = { valid: wholeNumber, hint: 'Enter whole dollars.' }
+const ODOMETER_RULE: NumberRule = { valid: wholeNumber, hint: 'Enter whole kilometres.' }
+const GRADE_RULE: NumberRule = { valid: (n) => n >= 1 && n <= 5, hint: 'Grades run from 1 to 5.' }
+
+export const NUMBER_RULES: Record<NumberFilter, NumberRule> = {
+  year_min: YEAR_RULE,
+  year_max: YEAR_RULE,
+  price_min: PRICE_RULE,
+  price_max: PRICE_RULE,
+  odometer_max: ODOMETER_RULE,
+  grade_min: GRADE_RULE,
 }
 
 /** Inverted ranges are swapped rather than sent (the API rejects min > max). */

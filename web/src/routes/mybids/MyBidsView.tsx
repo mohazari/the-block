@@ -3,7 +3,7 @@ import { useMyBids, useWatchlist } from '../../api/queries'
 import type { VehicleSummary } from '../../api/types'
 import { formatMoney } from '../../lib/format'
 import { useServerNow } from '../../lib/serverClock'
-import { VehicleRow } from '../inventory/VehicleRow'
+import { VehicleRow, VehicleRowHeader } from '../inventory/VehicleRow'
 import { groupMyBids } from './groupMyBids'
 
 export function MyBidsView() {
@@ -96,7 +96,8 @@ function Group({
         <span className="text-ink-faint tabular text-base">{vehicles.length}</span>
       </h2>
       <p className="text-ink-muted mb-3 text-sm">{hint}</p>
-      <div className="border-line overflow-hidden rounded-[var(--radius-panel)] border">
+      <div className="border-line overflow-clip rounded-[var(--radius-panel)] border">
+        <VehicleRowHeader />
         {vehicles.map((vehicle) => (
           <VehicleRow
             key={vehicle.id}

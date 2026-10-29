@@ -15,7 +15,7 @@ import {
   SORTS,
   useInventoryParams,
 } from './inventory/inventoryParams'
-import { VehicleRow } from './inventory/VehicleRow'
+import { VehicleRow, VehicleRowHeader } from './inventory/VehicleRow'
 
 export function InventoryPage() {
   const { query, update, clearAll, clearCount } = useInventoryParams()
@@ -95,11 +95,14 @@ export function InventoryPage() {
             <EmptyResults query={query} onRemove={update} onClearAll={clearAll} />
           ) : (
             data && (
+              // overflow-clip, not overflow-hidden: it rounds the corners without becoming a
+              // scroll box, so the column header can still stick under the page header.
               <div
-                className="border-line overflow-hidden rounded-[var(--radius-panel)] border transition-opacity"
+                className="border-line overflow-clip rounded-[var(--radius-panel)] border transition-opacity"
                 style={{ opacity: inventory.isPlaceholderData ? 0.6 : 1 }}
                 aria-busy={inventory.isPlaceholderData}
               >
+                <VehicleRowHeader />
                 {data.items.map((vehicle) => (
                   <VehicleRow key={vehicle.id} vehicle={vehicle} />
                 ))}
@@ -114,7 +117,12 @@ export function InventoryPage() {
               Previous
             </PageButton>
             <p className="text-ink-muted tabular text-sm">
-              Page {page} of {pages}
+              {/* The range as well as the page: "26–50 of 178". */}
+              {(page - 1) * data.page_size + 1}–{Math.min(page * data.page_size, data.total)} of{' '}
+              {data.total}
+              <span className="sr-only">
+                , page {page} of {pages}
+              </span>
             </p>
             <PageButton disabled={page >= pages} onClick={() => goToPage(page + 1)}>
               Next

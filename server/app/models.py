@@ -63,6 +63,11 @@ class Vehicle(Base):
     # Lower-cased "year make model trim vin lot dealer city province…" for keyword search.
     search_text: Mapped[str]
 
+    @property
+    def title(self) -> str:
+        """How the vehicle is named to buyers, e.g. "2023 Ford Bronco"."""
+        return f"{self.year} {self.make} {self.model}"
+
     bids: Mapped[list["Bid"]] = relationship(
         back_populates="vehicle", order_by=lambda: (Bid.placed_at.desc(), Bid.id.desc())
     )

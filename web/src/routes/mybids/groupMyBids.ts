@@ -28,4 +28,4 @@ export function groupMyBids(bids: MyBid[], watched: VehicleSummary[], now: numbe
 
 /** Open auctions where the buyer has been outbid: the number on the nav badge. */
 export const needsAttention = (bids: MyBid[], now: number): number =>
-  bids.filter((bid) => standingAt(bid.auction, statusAt(bid.auction, now)) === 'outbid').length
+  groupMyBids(bids, [], now).outbid.length

@@ -46,7 +46,7 @@ class BidEvent:
         return cls(
             kind="sold" if result.bid.kind == "buy_now" else "bid",
             vehicle_id=result.vehicle.id,
-            vehicle_title=f"{result.vehicle.year} {result.vehicle.make} {result.vehicle.model}",
+            vehicle_title=result.vehicle.title,
             auction=snapshot(result.vehicle, result.now, bidder_id=None, has_bid=False),
             bid=bid_out(result.bid, bidder_id=None),
             bidder_id=result.bid.bidder_id,

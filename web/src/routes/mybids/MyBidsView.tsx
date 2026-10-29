@@ -73,7 +73,15 @@ export function MyBidsView() {
             vehicles={groups.leading}
             tone="text-win"
           />
-          <Group title="Watching" hint="Vehicles you've starred." vehicles={groups.watching} />
+          <Group
+            title="Watching"
+            hint={
+              watched.data.total > watched.data.items.length
+                ? `Vehicles you've starred. Showing the first ${watched.data.items.length} of ${watched.data.total}.`
+                : "Vehicles you've starred."
+            }
+            vehicles={groups.watching}
+          />
           <Group
             title="Finished"
             hint="Closed auctions you took part in."

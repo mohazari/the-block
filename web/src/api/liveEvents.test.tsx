@@ -101,4 +101,20 @@ describe('live auction events', () => {
       ).toBeGreaterThan(before),
     )
   })
+
+  it('reconnects itself when the browser gives up on the stream', async () => {
+    serveDetail()
+    renderRoute('/vehicles/veh-1')
+    await panel()
+    vi.useFakeTimers()
+    try {
+      act(() => FakeEventSource.latest().fail({ fatal: true }))
+      expect(FakeEventSource.instances).toHaveLength(1)
+      act(() => vi.advanceTimersByTime(3_000))
+      expect(FakeEventSource.instances).toHaveLength(2)
+      expect(FakeEventSource.instances[0]!.closed).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

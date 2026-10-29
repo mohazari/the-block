@@ -8,7 +8,7 @@ export function ConnectionStatus() {
   return (
     <span
       role="status"
-      aria-label={`Live updates: ${live ? 'connected' : 'reconnecting'}`}
+      aria-label={`Live updates: ${live ? 'connected' : connection}`}
       className={cn(
         'hidden items-center gap-1.5 text-xs sm:inline-flex',
         live ? 'text-ink-faint' : 'text-caution',

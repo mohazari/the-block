@@ -2,7 +2,7 @@ import { X } from 'lucide-react'
 import { AnimatePresence, m } from 'motion/react'
 import { Link } from 'react-router'
 import { cn } from '../../lib/cn'
-import { dismissToast, useToasts, type Toast } from './toastStore'
+import { dismissToast, pauseToast, resumeToast, useToasts, type Toast } from './toastStore'
 
 const TONE: Record<Toast['tone'], string> = {
   outbid: 'border-l-outbid',
@@ -28,6 +28,12 @@ export function Toaster() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, transition: { duration: 0.15 } }}
             transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
+            onMouseEnter={() => pauseToast(toast.id)}
+            onMouseLeave={() => resumeToast(toast.id)}
+            onFocus={() => pauseToast(toast.id)}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) resumeToast(toast.id)
+            }}
             className={cn(
               'border-line bg-surface pointer-events-auto w-full max-w-sm rounded-[var(--radius-panel)] border border-l-4 p-4 shadow-lg',
               TONE[toast.tone],

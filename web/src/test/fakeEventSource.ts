@@ -1,5 +1,8 @@
 /** jsdom has no EventSource. This stand-in lets tests push server events and drop connections. */
 export class FakeEventSource {
+  static readonly CONNECTING = 0
+  static readonly OPEN = 1
+  static readonly CLOSED = 2
   static instances: FakeEventSource[] = []
   static latest(): FakeEventSource {
     const source = FakeEventSource.instances.at(-1)
@@ -9,6 +12,7 @@ export class FakeEventSource {
 
   readonly url: string
   closed = false
+  readyState = FakeEventSource.CONNECTING
   onerror: ((event: Event) => void) | null = null
   private listeners = new Map<string, Set<(event: MessageEvent<string>) => void>>()
 
@@ -24,6 +28,7 @@ export class FakeEventSource {
 
   close(): void {
     this.closed = true
+    this.readyState = FakeEventSource.CLOSED
   }
 
   /** Deliver a server event, as `event: <type>` + `data: <json>`. */
@@ -32,7 +37,9 @@ export class FakeEventSource {
     this.listeners.get(type)?.forEach((listener) => listener(event))
   }
 
-  fail(): void {
+  /** A dropped connection the browser will retry, or (`fatal`) a bad response it gives up on. */
+  fail({ fatal = false }: { fatal?: boolean } = {}): void {
+    this.readyState = fatal ? FakeEventSource.CLOSED : FakeEventSource.CONNECTING
     this.onerror?.(new Event('error'))
   }
 }

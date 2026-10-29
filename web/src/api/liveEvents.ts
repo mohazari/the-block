@@ -10,6 +10,8 @@ import type { AuctionEvent } from './types'
 
 export type Connection = 'connecting' | 'live' | 'reconnecting'
 
+const RECONNECT_MS = 3_000
+
 let connection: Connection = 'connecting'
 const listeners = new Set<() => void>()
 function setConnection(next: Connection) {
@@ -40,23 +42,16 @@ export function useAuctionEvents(): void {
   const queryClient = useQueryClient()
 
   useEffect(() => {
-    const source = new EventSource(`/api/events?bidder_id=${encodeURIComponent(bidderId())}`)
+    let source: EventSource | undefined
+    let retry: ReturnType<typeof setTimeout> | undefined
     let connectedBefore = false
-
-    source.addEventListener('hello', (message) => {
-      const { server_time } = JSON.parse(message.data) as { server_time: string }
-      syncServerTime(server_time)
-      if (connectedBefore) void queryClient.invalidateQueries()
-      connectedBefore = true
-      setConnection('live')
-    })
 
     const onAuctionEvent = (message: MessageEvent<string>) => {
       const event = JSON.parse(message.data) as AuctionEvent
+      // Patches every cached copy, My bids included; only a bid of yours from elsewhere (another
+      // tab) can add a vehicle My bids doesn't have yet.
       applyAuction(queryClient, event.vehicle_id, event.auction, event.bid)
-      if (event.outbid_you || event.bid.is_you) {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.myBids })
-      }
+      if (event.bid.is_you) void queryClient.invalidateQueries({ queryKey: queryKeys.myBids })
       if (event.outbid_you) {
         showToast({
           tone: 'outbid',
@@ -72,12 +67,33 @@ export function useAuctionEvents(): void {
         })
       }
     }
-    source.addEventListener('bid', onAuctionEvent)
-    source.addEventListener('sold', onAuctionEvent)
 
-    // EventSource reconnects on its own; this only reflects that it's trying.
-    source.onerror = () => setConnection(connectedBefore ? 'reconnecting' : 'connecting')
+    const connect = () => {
+      source = new EventSource(`/api/events?bidder_id=${encodeURIComponent(bidderId())}`)
+      source.addEventListener('hello', (message) => {
+        const { server_time } = JSON.parse(message.data) as { server_time: string }
+        syncServerTime(server_time)
+        if (connectedBefore) void queryClient.invalidateQueries()
+        connectedBefore = true
+        setConnection('live')
+      })
+      source.addEventListener('bid', onAuctionEvent)
+      source.addEventListener('sold', onAuctionEvent)
+      source.onerror = () => {
+        setConnection(connectedBefore ? 'reconnecting' : 'connecting')
+        // The browser retries dropped connections itself, but gives up for good on a bad
+        // response (e.g. a 502 from a proxy). Then it's on us, or the page goes quietly stale.
+        if (source?.readyState === EventSource.CLOSED) {
+          source.close()
+          retry = setTimeout(connect, RECONNECT_MS)
+        }
+      }
+    }
 
-    return () => source.close()
+    connect()
+    return () => {
+      clearTimeout(retry)
+      source?.close()
+    }
   }, [queryClient])
 }

@@ -1,5 +1,6 @@
 import {
   keepPreviousData,
+  replaceEqualDeep,
   useMutation,
   useQuery,
   useQueryClient,
@@ -15,12 +16,39 @@ export const queryKeys = {
   myBids: ['me', 'bids'] as const,
 }
 
+type Cached = VehicleList | VehicleDetail | MyBid[]
+
+const newerOf = <T extends VehicleSummary>(fresh: T, cached: T | undefined): T =>
+  cached && cached.auction.bid_count > fresh.auction.bid_count ? cached : fresh
+
+/**
+ * A refetch is a snapshot taken when the request started; a live bid can land while it's in
+ * flight. Like live events, refetched data never replaces a newer auction (by bid_count).
+ */
+export function keepNewerAuctions(oldData: unknown, newData: unknown): unknown {
+  if (!oldData || !newData) return newData
+  const previous = oldData as Cached
+  const next = newData as Cached
+  let merged: Cached
+  if (Array.isArray(next)) {
+    const byId = new Map((previous as MyBid[]).map((bid) => [bid.id, bid]))
+    merged = next.map((bid) => newerOf(bid, byId.get(bid.id)))
+  } else if ('items' in next) {
+    const byId = new Map((previous as VehicleList).items.map((item) => [item.id, item]))
+    merged = { ...next, items: next.items.map((item) => newerOf(item, byId.get(item.id))) }
+  } else {
+    merged = newerOf(next, previous as VehicleDetail)
+  }
+  return replaceEqualDeep(oldData, merged)
+}
+
 export function useInventory(query: InventoryQuery) {
   return useQuery({
     queryKey: queryKeys.inventory(query),
     queryFn: ({ signal }) => api<VehicleList>('/vehicles', { query: { ...query }, signal }),
     // Keep the current results on screen while a new filter loads, instead of flashing empty.
     placeholderData: keepPreviousData,
+    structuralSharing: keepNewerAuctions,
   })
 }
 
@@ -28,6 +56,7 @@ export function useVehicle(id: string) {
   return useQuery({
     queryKey: queryKeys.vehicle(id),
     queryFn: ({ signal }) => api<VehicleDetail>(`/vehicles/${id}`, { signal }),
+    structuralSharing: keepNewerAuctions,
   })
 }
 
@@ -35,6 +64,7 @@ export function useMyBids() {
   return useQuery({
     queryKey: queryKeys.myBids,
     queryFn: ({ signal }) => api<MyBid[]>('/me/bids', { signal }),
+    structuralSharing: keepNewerAuctions,
   })
 }
 
@@ -68,9 +98,14 @@ export function useWatch() {
     mutationFn: ({ vehicleId, watching }: { vehicleId: string; watching: boolean }) =>
       api<void>(`/me/watchlist/${vehicleId}`, { method: watching ? 'PUT' : 'DELETE' }),
     onMutate: async ({ vehicleId, watching }) => {
-      // A refetch landing after the optimistic toggle would otherwise undo it.
-      await queryClient.cancelQueries({ queryKey: ['vehicles'] })
-      const snapshot = queryClient.getQueriesData({ queryKey: ['vehicles'] })
+      // Every cache updateCachedVehicle writes to: a refetch landing after the optimistic toggle
+      // would otherwise undo it, and a failure must restore all of them.
+      const filters = {
+        predicate: ({ queryKey }: { queryKey: readonly unknown[] }) =>
+          queryKey[0] === 'vehicles' || queryKey[0] === 'me',
+      }
+      await queryClient.cancelQueries(filters)
+      const snapshot = queryClient.getQueriesData(filters)
       updateCachedVehicle(queryClient, vehicleId, (vehicle) => ({ ...vehicle, watching }))
       return { snapshot }
     },

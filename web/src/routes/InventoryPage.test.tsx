@@ -24,7 +24,7 @@ describe('InventoryPage', () => {
     expect(within(row).getByText('$22,800')).toBeInTheDocument()
     expect(within(row).getByText('Green light')).toBeInTheDocument()
     expect(within(row).getByText(/Ends in/)).toBeInTheDocument()
-    expect(screen.getByText('1 vehicles')).toBeInTheDocument()
+    expect(screen.getByText('1 vehicle')).toBeInTheDocument()
   })
 
   it('shows starting bid and standing for the viewer', async () => {
@@ -98,8 +98,16 @@ describe('InventoryPage', () => {
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
   })
 
-  it('watches a vehicle optimistically', async () => {
-    const api = serve()
+  it('watches a vehicle optimistically and keeps it after revalidating', async () => {
+    const list = vehicleList([vehicle()])
+    const api = stubApi((url, init) => {
+      if (url.pathname === '/api/me/watchlist/veh-1') {
+        list.items[0]!.watching = init?.method === 'PUT' // the server remembers
+        return undefined
+      }
+      return url.pathname === '/api/vehicles' ? structuredClone(list) : undefined
+    })
+    vi.stubGlobal('fetch', api.fetch)
     renderRoute('/')
     const star = await screen.findByRole('button', { name: 'Watch 2023 Ford Bronco' })
     await userEvent.click(star)
@@ -107,5 +115,18 @@ describe('InventoryPage', () => {
       await screen.findByRole('button', { name: 'Stop watching 2023 Ford Bronco' }),
     ).toHaveAttribute('aria-pressed', 'true')
     expect(api.calls.some((url) => url.pathname === '/api/me/watchlist/veh-1')).toBe(true)
+    await waitFor(() =>
+      expect(api.calls.filter((url) => url.pathname === '/api/vehicles')).toHaveLength(2),
+    )
+    expect(
+      screen.getByRole('button', { name: 'Stop watching 2023 Ford Bronco' }),
+    ).toBeInTheDocument()
+  })
+
+  it('explains a page past the end instead of blaming the filters', async () => {
+    serve(vehicleList([], { total: 30 }))
+    renderRoute('/?page=5')
+    expect(await screen.findByText('Page 5 is past the end of the list')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Go to the first page' })).toBeInTheDocument()
   })
 })

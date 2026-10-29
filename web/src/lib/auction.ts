@@ -1,4 +1,4 @@
-import type { AuctionSnapshot, AuctionStatus } from '../api/types'
+import type { AuctionSnapshot, AuctionStatus, Standing } from '../api/types'
 
 /** Under this, a live countdown turns amber. */
 export const ENDING_SOON_MS = 15 * 60_000
@@ -16,13 +16,14 @@ export function statusAt(
   return 'ended'
 }
 
-export type Standing = 'winning' | 'outbid' | 'won' | 'lost' | null
-
-/** The viewer's position in this auction, if they've taken part. */
-export function standingAt(auction: AuctionSnapshot, status: AuctionStatus): Standing {
+/**
+ * The viewer's position, in the API's vocabulary (the same rule as GET /api/me/bids), but derived
+ * locally so it flips the moment the clock runs out. Right at that moment the cached snapshot has
+ * no `outcome` yet, so a sale is inferred from the reserve: met or no reserve means sold.
+ */
+export function standingAt(auction: AuctionSnapshot, status: AuctionStatus): Standing | null {
   if (!auction.has_bid) return null
-  if (status === 'ended') {
-    return auction.is_high_bidder && auction.outcome !== 'reserve_not_met' ? 'won' : 'lost'
-  }
-  return auction.is_high_bidder ? 'winning' : 'outbid'
+  if (status !== 'ended') return auction.is_high_bidder ? 'leading' : 'outbid'
+  const sold = auction.outcome ? auction.outcome === 'sold' : auction.reserve_status !== 'not_met'
+  return auction.is_high_bidder && sold ? 'won' : 'lost'
 }

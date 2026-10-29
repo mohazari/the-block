@@ -2,6 +2,7 @@ import { SlidersHorizontal, X } from 'lucide-react'
 import { AnimatePresence, m } from 'motion/react'
 import { Dialog } from 'radix-ui'
 import { useState, type ReactNode } from 'react'
+import { plural } from '../../lib/format'
 
 /**
  * Mobile filters: a bottom sheet over the run list. Radix handles focus trapping, Escape and
@@ -65,7 +66,7 @@ export function FilterSheet({
                     Clear all
                   </button>
                   <Dialog.Close className="bg-action text-action-ink hover:bg-action-hover h-11 flex-1 rounded-[var(--radius-control)] text-sm font-semibold">
-                    {total === undefined ? 'Show vehicles' : `Show ${total} vehicles`}
+                    {total === undefined ? 'Show vehicles' : `Show ${plural(total, 'vehicle')}`}
                   </Dialog.Close>
                 </div>
               </m.div>

@@ -47,3 +47,6 @@ const KNOWN_LABELS: Record<string, string> = {
 export function label(value: string): string {
   return KNOWN_LABELS[value] ?? sentenceCase(value.replaceAll('_', ' '))
 }
+
+export const plural = (count: number, noun: string): string =>
+  `${count} ${count === 1 ? noun : `${noun}s`}`

@@ -1,7 +1,8 @@
 import { Search } from 'lucide-react'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useId, useRef, useState } from 'react'
 import { useInventory } from '../api/queries'
 import { LightsLegend } from '../components/auction/ConditionLight'
+import { plural } from '../lib/format'
 import { ActiveFilterChips, ChipButton } from './inventory/ActiveFilterChips'
 import { activeChips } from './inventory/activeChips'
 import { FilterPanel } from './inventory/FilterPanel'
@@ -50,7 +51,7 @@ export function InventoryPage() {
               Run list
             </h1>
             <p className="text-ink-muted text-sm" aria-live="polite">
-              {data ? `${data.total} vehicles` : 'Loading vehicles…'}
+              {data ? plural(data.total, 'vehicle') : 'Loading vehicles…'}
             </p>
           </div>
           <LightsLegend />
@@ -74,6 +75,14 @@ export function InventoryPage() {
               title="Couldn't load the run list"
               body={inventory.error.message}
               action={{ label: 'Try again', onClick: () => void inventory.refetch() }}
+            />
+          ) : data && data.items.length === 0 && data.total > 0 ? (
+            // A stale link or a shrinking list can point past the last page.
+            <Notice
+              title={`Page ${page} is past the end of the list`}
+              body={`There are ${pages} pages of results.`}
+              action={{ label: 'Go to the first page', onClick: () => goToPage(1) }}
+              role="status"
             />
           ) : data && data.items.length === 0 ? (
             <EmptyResults query={query} onRemove={update} onClearAll={clearAll} />
@@ -123,11 +132,14 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
     if (value !== draft.trim()) setDraft(value)
   }
 
+  // The latest onSearch without making it a dependency: a parent re-render (e.g. live bids
+  // updating the list) must not restart the debounce timer.
+  const commit = useEffectEvent((q: string) => onSearch(q))
   useEffect(() => {
     if (draft.trim() === value) return
-    const timer = setTimeout(() => onSearch(draft.trim()), 300)
+    const timer = setTimeout(() => commit(draft.trim()), 300)
     return () => clearTimeout(timer)
-  }, [draft, value, onSearch])
+  }, [draft, value])
 
   return (
     <div className="relative min-w-0 flex-1 basis-full sm:basis-64">
@@ -220,14 +232,16 @@ function Notice({
   title,
   body,
   action,
+  role = 'alert',
 }: {
   title: string
   body: string
   action: { label: string; onClick: () => void }
+  role?: 'alert' | 'status'
 }) {
   return (
     <div
-      role="alert"
+      role={role}
       className="border-line bg-surface rounded-[var(--radius-panel)] border px-6 py-12 text-center"
     >
       <h2 className="font-display text-2xl font-bold">{title}</h2>

@@ -8,7 +8,7 @@ import { StandingTag } from '../../components/auction/StandingTag'
 import { CarIllustration } from '../../components/CarIllustration'
 import { standingAt, statusAt } from '../../lib/auction'
 import { cn } from '../../lib/cn'
-import { formatKm, formatMoney, label } from '../../lib/format'
+import { formatKm, formatMoney, label, plural } from '../../lib/format'
 import { useServerNow } from '../../lib/serverClock'
 import { vehicleName } from '../../lib/vehicle'
 
@@ -19,7 +19,7 @@ const RESERVE_TEXT = {
 } as const
 
 const EDGE = {
-  winning: 'before:bg-win',
+  leading: 'before:bg-win',
   won: 'before:bg-win',
   outbid: 'before:bg-outbid',
   lost: 'before:bg-transparent',
@@ -92,7 +92,7 @@ export function VehicleRow({ vehicle }: { vehicle: VehicleSummary }) {
           </p>
         </div>
         <p className="text-ink-muted text-sm">
-          {hasBids ? `${auction.bid_count} bids` : 'No bids yet'}
+          {hasBids ? plural(auction.bid_count, 'bid') : 'No bids yet'}
           <span className="hidden lg:block">{RESERVE_TEXT[auction.reserve_status]}</span>
         </p>
       </div>
@@ -116,7 +116,7 @@ function WatchButton({ vehicle, name }: { vehicle: VehicleSummary; name: string 
       aria-label={vehicle.watching ? `Stop watching ${name}` : `Watch ${name}`}
       onClick={() => watch.mutate({ vehicleId: vehicle.id, watching: !vehicle.watching })}
       className={cn(
-        'absolute top-2 right-2 z-10 grid size-10 place-items-center rounded-[var(--radius-control)] lg:static',
+        'absolute top-2 right-2 z-10 grid size-10 place-items-center rounded-[var(--radius-control)] lg:relative lg:top-auto lg:right-auto',
         vehicle.watching ? 'text-action' : 'text-ink-faint hover:text-ink',
       )}
     >

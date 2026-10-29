@@ -67,6 +67,14 @@ def test_words_match_at_word_starts_only(client: TestClient) -> None:
         assert item["make"] == "Ford" or "Ford" in item["selling_dealership"]
 
 
+def test_partial_lot_numbers_and_hyphenated_words_match(client: TestClient) -> None:
+    lot = DATASET[42]["lot"]  # e.g. "A-0043"
+    items = _all_items(client, q=lot.split("-")[1], status=["live", "upcoming", "ended"])
+    assert DATASET[42]["id"] in {item["id"] for item in items}
+    f150 = _all_items(client, q="150", status=["live", "upcoming", "ended"])
+    assert any(item["model"] == "F-150" for item in f150)
+
+
 def test_short_tokens_with_digits_match_models_not_random_vins(client: TestClient) -> None:
     items = _all_items(client, q="x5", status=["live", "upcoming", "ended"])
     assert items and all(item["model"] == "X5" for item in items)

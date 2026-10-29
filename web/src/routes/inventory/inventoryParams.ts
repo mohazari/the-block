@@ -48,8 +48,9 @@ export function parseInventoryQuery(params: URLSearchParams): InventoryQuery {
     if (values.length) (query[key] as string[]) = values
   }
   for (const key of NUMBER_FILTERS) {
-    const value = Number(params.get(key))
-    if (params.has(key) && Number.isFinite(value)) query[key] = value
+    const raw = params.get(key)?.trim()
+    const value = Number(raw)
+    if (raw && Number.isFinite(value)) query[key] = value
   }
   if (params.get('buy_now') === 'true') query.buy_now = true
   if (params.get('watching') === 'true') query.watching = true

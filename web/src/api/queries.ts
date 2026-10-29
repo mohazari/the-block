@@ -58,24 +58,23 @@ export function updateCachedVehicle(
   )
 }
 
-/** Watch / unwatch with an optimistic toggle; rolls back if the request fails. */
+/** Watch / unwatch with an optimistic toggle; restores the exact previous cache on failure. */
 export function useWatch() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ vehicleId, watching }: { vehicleId: string; watching: boolean }) =>
       api<void>(`/me/watchlist/${vehicleId}`, { method: watching ? 'PUT' : 'DELETE' }),
-    onMutate: ({ vehicleId, watching }) => {
+    onMutate: async ({ vehicleId, watching }) => {
+      // A refetch landing after the optimistic toggle would otherwise undo it.
+      await queryClient.cancelQueries({ queryKey: ['vehicles'] })
+      const snapshot = queryClient.getQueriesData({ queryKey: ['vehicles'] })
       updateCachedVehicle(queryClient, vehicleId, (vehicle) => ({ ...vehicle, watching }))
+      return { snapshot }
     },
-    onError: (_error, { vehicleId, watching }) => {
-      updateCachedVehicle(queryClient, vehicleId, (vehicle) => ({
-        ...vehicle,
-        watching: !watching,
-      }))
+    onError: (_error, _variables, context) => {
+      context?.snapshot.forEach(([key, data]) => queryClient.setQueryData(key, data))
     },
-    onSettled: (_data, _error, { watching }) => {
-      // Only the "Watching" filter's results actually change membership.
-      if (!watching) void queryClient.invalidateQueries({ queryKey: queryKeys.inventoryAll })
-    },
+    // Watching or unwatching changes what the "Watching" filter contains.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.inventoryAll }),
   })
 }

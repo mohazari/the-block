@@ -290,26 +290,16 @@ function RangeInputs({
   step?: number
   onChange: (min: number | null, max: number | null) => void
 }) {
-  // Remount the drafts when the applied values change (e.g. a chip was removed elsewhere).
-  return (
-    <RangeDraft
-      key={`${min ?? ''}-${max ?? ''}`}
-      {...{ legend, prefix, min, max, bounds, step, onChange }}
-    />
-  )
-}
-
-function RangeDraft({
-  legend,
-  prefix,
-  min,
-  max,
-  bounds,
-  step,
-  onChange,
-}: Parameters<typeof RangeInputs>[0]) {
   const [low, setLow] = useState(min?.toString() ?? '')
   const [high, setHigh] = useState(max?.toString() ?? '')
+  // Follow outside changes (a chip removed, "Clear all") by adjusting state while rendering. No
+  // remount: remounting on commit would drop focus when tabbing from Min to Max.
+  const [applied, setApplied] = useState([min, max])
+  if (applied[0] !== min || applied[1] !== max) {
+    setApplied([min, max])
+    setLow(min?.toString() ?? '')
+    setHigh(max?.toString() ?? '')
+  }
   const parse = (text: string) => (text.trim() === '' ? null : Number(text))
 
   const commit = () => {

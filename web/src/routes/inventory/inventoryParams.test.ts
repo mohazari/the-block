@@ -21,7 +21,9 @@ describe('parseInventoryQuery', () => {
   })
 
   it('ignores junk instead of sending it to the API', () => {
-    const query = parseInventoryQuery(new URLSearchParams('sort=cheapest&page=-3&year_min=abc'))
+    const query = parseInventoryQuery(
+      new URLSearchParams('sort=cheapest&page=-3&year_min=abc&price_max='),
+    )
     expect(query).toEqual({ page_size: 24 })
   })
 })

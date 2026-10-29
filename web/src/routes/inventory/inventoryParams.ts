@@ -82,7 +82,11 @@ function orderRange(query: InventoryQuery, low: NumberFilter, high: NumberFilter
 
 export function parseInventoryQuery(params: URLSearchParams): InventoryQuery {
   const query: InventoryQuery = { page_size: PAGE_SIZE }
-  const q = params.get('q')?.trim().slice(0, SEARCH_MAX_LENGTH).trim()
+  // Trim by code points (as the server's limit counts), never splitting an emoji in half.
+  const q = Array.from(params.get('q')?.trim() ?? '')
+    .slice(0, SEARCH_MAX_LENGTH)
+    .join('')
+    .trim()
   if (q) query.q = q
   for (const key of LIST_FILTERS) {
     let values = params.getAll(key).filter(Boolean)

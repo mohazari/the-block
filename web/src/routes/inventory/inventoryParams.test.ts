@@ -73,4 +73,9 @@ describe('URL values the API would reject', () => {
     const query = parseInventoryQuery(new URLSearchParams('price_min=1e21&odometer_max=1e21'))
     expect(query).toEqual({ page_size: 24 })
   })
+
+  it('never cuts a character in half when trimming search text', () => {
+    const query = parseInventoryQuery(new URLSearchParams({ q: `${'x'.repeat(99)}🚗🚗` }))
+    expect(query.q).toBe(`${'x'.repeat(99)}🚗`)
+  })
 })

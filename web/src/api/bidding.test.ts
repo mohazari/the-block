@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { createQueryClient } from '../app/queryClient'
-import { auction, vehicleDetail } from '../test/fixtures'
+import { auction, vehicle, vehicleDetail } from '../test/fixtures'
 import { applyAuction } from './bidding'
 import { queryKeys } from './queries'
-import type { VehicleDetail } from './types'
+import type { MyBid, VehicleDetail } from './types'
 
 describe('applyAuction', () => {
   it('never lets an older snapshot overwrite a newer one', () => {
@@ -68,5 +68,44 @@ describe('applyAuction', () => {
     const latest = { ...old, id: 2, amount: 200, placed_at: '2026-10-28T12:01:00Z' }
     applyAuction(queryClient, 'veh-1', auction({ bid_count: 99 }), latest)
     expect(queryClient.getQueryData<VehicleDetail>(key)!.recent_bids.map((b) => b.id)).toEqual([2])
+  })
+
+  it('records your own bid in My bids without refetching it', () => {
+    const queryClient = createQueryClient()
+    const entry = {
+      ...vehicle({ id: 'veh-1' }),
+      my_top_bid: 22000,
+      my_last_bid_at: '2026-10-28T12:00:00Z',
+      standing: 'outbid' as const,
+    }
+    queryClient.setQueryData(queryKeys.myBids, [entry])
+    const mine = {
+      id: 9,
+      amount: 23300,
+      bidder: 'Bidder 1',
+      is_you: true,
+      placed_at: '2026-10-28T12:05:00Z',
+    }
+
+    applyAuction(queryClient, 'veh-1', auction({ bid_count: 17 }), mine)
+    applyAuction(queryClient, 'veh-1', auction({ bid_count: 17 }), mine) // the live echo
+
+    const [updated] = queryClient.getQueryData<MyBid[]>(queryKeys.myBids)!
+    expect(updated).toMatchObject({ my_top_bid: 23300, my_last_bid_at: '2026-10-28T12:05:00Z' })
+    expect(queryClient.getQueryState(queryKeys.myBids)?.isInvalidated).toBe(false)
+  })
+
+  it('refetches My bids when your bid is on a car it does not list yet', () => {
+    const queryClient = createQueryClient()
+    queryClient.setQueryData(queryKeys.myBids, [])
+    const mine = {
+      id: 9,
+      amount: 23300,
+      bidder: 'Bidder 1',
+      is_you: true,
+      placed_at: '2026-10-28T12:05:00Z',
+    }
+    applyAuction(queryClient, 'veh-1', auction({ bid_count: 17 }), mine)
+    expect(queryClient.getQueryState(queryKeys.myBids)?.isInvalidated).toBe(true)
   })
 })

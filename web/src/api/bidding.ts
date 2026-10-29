@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { ApiError, api } from './client'
 import { queryKeys, updateCachedVehicle } from './queries'
-import type { AuctionSnapshot, BidOut, BidPlaced, VehicleDetail } from './types'
+import type { AuctionSnapshot, BidOut, BidPlaced, MyBid, VehicleDetail } from './types'
 
 /**
  * Write an auction snapshot (and optionally a new bid) into every cached copy — unless the cache
@@ -17,6 +17,7 @@ export function applyAuction(
   updateCachedVehicle(queryClient, vehicleId, (vehicle) =>
     auction.bid_count >= vehicle.auction.bid_count ? { ...vehicle, auction } : vehicle,
   )
+  if (bid?.is_you) recordOwnBid(queryClient, vehicleId, bid)
   if (bid) {
     queryClient.setQueryData<VehicleDetail>(
       queryKeys.vehicle(vehicleId),
@@ -27,6 +28,33 @@ export function applyAuction(
         },
     )
   }
+}
+
+/**
+ * Your own bid updates My bids in place (top bid, last bid time). Both the bid response and its
+ * live echo come through here, so this must not trigger a refetch each time; it only fetches
+ * when My bids doesn't list the car yet (e.g. a first bid placed from another tab).
+ */
+function recordOwnBid(queryClient: QueryClient, vehicleId: string, bid: BidOut): void {
+  const bids = queryClient.getQueryData<MyBid[]>(queryKeys.myBids)
+  if (!bids?.some((entry) => entry.id === vehicleId)) {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.myBids })
+    return
+  }
+  queryClient.setQueryData<MyBid[]>(queryKeys.myBids, (entries) =>
+    entries?.map((entry) =>
+      entry.id === vehicleId
+        ? {
+            ...entry,
+            my_top_bid: Math.max(entry.my_top_bid, bid.amount),
+            my_last_bid_at:
+              Date.parse(bid.placed_at) > Date.parse(entry.my_last_bid_at)
+                ? bid.placed_at
+                : entry.my_last_bid_at,
+          }
+        : entry,
+    ),
+  )
 }
 
 /**
@@ -50,10 +78,7 @@ function useAuctionMutation<V>(vehicleId: string, request: (variables: V) => Pro
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: request,
-    onSuccess: ({ auction, bid }) => {
-      applyAuction(queryClient, vehicleId, auction, bid)
-      void queryClient.invalidateQueries({ queryKey: queryKeys.myBids })
-    },
+    onSuccess: ({ auction, bid }) => applyAuction(queryClient, vehicleId, auction, bid),
     onError: (error) => {
       // Rejections carry the auction as it is now; show it instead of the stale view.
       if (error instanceof ApiError && error.auction) {

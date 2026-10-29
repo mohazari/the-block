@@ -5,7 +5,6 @@ import { bidderId } from '../lib/bidder'
 import { formatMoney } from '../lib/format'
 import { syncServerTime } from '../lib/serverClock'
 import { applyAuction } from './bidding'
-import { queryKeys } from './queries'
 import type { AuctionEvent } from './types'
 
 export type Connection = 'connecting' | 'live' | 'reconnecting'
@@ -53,10 +52,8 @@ export function useAuctionEvents(): void {
 
     const onAuctionEvent = (message: MessageEvent<string>) => {
       const event = JSON.parse(message.data) as AuctionEvent
-      // Patches every cached copy, My bids included; only a bid of yours from elsewhere (another
-      // tab) can add a vehicle My bids doesn't have yet.
+      // Patches every cached copy, My bids included (see recordOwnBid for your own bids).
       applyAuction(queryClient, event.vehicle_id, event.auction, event.bid)
-      if (event.bid.is_you) void queryClient.invalidateQueries({ queryKey: queryKeys.myBids })
       if (event.outbid_you) {
         showToast({
           tone: 'outbid',

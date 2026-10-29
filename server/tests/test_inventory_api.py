@@ -6,7 +6,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.clock import FrozenClock
-from app.models import Vehicle
 from app.services.inventory import COPIED_SUMMARY_FIELDS, check_copied_fields
 
 from .conftest import DATA_PATH
@@ -218,10 +217,9 @@ def test_framework_errors_use_the_envelope(client: TestClient) -> None:
     assert wrong_method.json()["error"]["code"] == "method_not_allowed"
 
 
-def test_every_copied_summary_field_exists_on_the_vehicle_model() -> None:
-    columns = set(Vehicle.__table__.columns.keys())
-    assert set(COPIED_SUMMARY_FIELDS) <= columns
-    assert "reserve_price" not in COPIED_SUMMARY_FIELDS  # the privacy boundary still holds
+def test_reserve_price_is_never_copied_into_a_summary() -> None:
+    # (That copied fields exist on the model is checked when the module loads.)
+    assert "reserve_price" not in COPIED_SUMMARY_FIELDS
 
 
 def test_a_schema_field_missing_from_the_model_fails_loudly() -> None:

@@ -32,7 +32,8 @@ export function InventoryPage() {
   }
 
   return (
-    <div className="lg:grid lg:grid-cols-[248px_minmax(0,1fr)] lg:gap-8">
+    // The rail grows a little with the screen; the list takes everything else.
+    <div className="lg:grid lg:grid-cols-[clamp(15rem,16vw,18rem)_minmax(0,1fr)] lg:gap-8 2xl:gap-12">
       <aside aria-label="Filters" className="hidden lg:block">
         {/* A scrolling box clips anything past its edges, focus rings included: the 4px of
             padding (taken back by the negative margin) keeps them whole. */}

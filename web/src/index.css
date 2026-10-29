@@ -86,6 +86,9 @@
   --stage-floor: #e5efff;
   --car-outline: rgb(10 27 95 / 0.4);
   --focus: #0061ff;
+
+  /* Page gutters grow with the screen: 16px on a phone, 48px on a large monitor. */
+  --gutter: clamp(16px, 2.5vw, 48px);
 }
 
 /*
@@ -206,6 +209,17 @@
  * inner spacing and focus ring. Buttons are pills, as on openlane.com; fields keep a tight radius.
  */
 @layer components {
+  /*
+   * The page frame. Fluid at every width, so the app fills whatever monitor it's on; past 1920px
+   * of content it centres, where a single row would get too long for the eye to follow.
+   */
+  .frame {
+    width: 100%;
+    max-width: calc(1920px + 2 * var(--gutter));
+    margin-inline: auto;
+    padding-inline: var(--gutter);
+  }
+
   .field {
     display: block;
     width: 100%;

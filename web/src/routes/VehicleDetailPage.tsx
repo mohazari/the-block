@@ -53,28 +53,28 @@ function VehicleDetailContent({ vehicleId }: { vehicleId: string }) {
     <article aria-labelledby="vehicle-heading" className="pb-24 lg:pb-0">
       <BackLink />
       <Header vehicle={vehicle} />
-      {/* One bid panel, placed by the grid: after the photos on phones, a sticky column spanning
-          every row on desktop. */}
-      <div className="mt-6 grid gap-x-8 gap-y-10 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="min-w-0 lg:col-start-1">
+      {/* One bid panel, placed by the grid: after the photos on phones, a sticky column on
+          desktop. On wide screens the condition report moves up beside the photos, so the first
+          screen answers "can I trust this car?" as well as "what does it cost?". The last row is
+          1fr: the tall bid column's extra height lands there, not as gaps between sections. */}
+      <div className="mt-6 grid items-start gap-x-8 gap-y-10 lg:grid-cols-[minmax(0,1fr)_clamp(22rem,26vw,27.5rem)] lg:grid-rows-[auto_auto_1fr] 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_clamp(22rem,24vw,27.5rem)] 2xl:grid-rows-[auto_1fr] 2xl:gap-x-12">
+        <div className="min-w-0 lg:col-start-1 lg:row-start-1">
           <Gallery vehicle={vehicle} />
         </div>
         <aside
           aria-label="Bidding"
           id="bid"
-          className="scroll-mt-20 lg:col-start-2 lg:row-span-4 lg:row-start-1"
+          className="scroll-mt-20 lg:col-start-2 lg:row-span-3 lg:row-start-1 2xl:col-start-3 2xl:row-span-2"
         >
           <div className="lg:sticky lg:top-20">
             <BidPanel vehicle={vehicle} />
           </div>
         </aside>
-        <div className="min-w-0 lg:col-start-1">
+        <div className="min-w-0 lg:col-start-1 lg:row-start-2 2xl:col-start-2 2xl:row-span-2 2xl:row-start-1">
           <ConditionReport vehicle={vehicle} />
         </div>
-        <div className="min-w-0 lg:col-start-1">
+        <div className="min-w-0 space-y-10 lg:col-start-1 lg:row-start-3 2xl:row-start-2">
           <SpecSheet vehicle={vehicle} />
-        </div>
-        <div className="min-w-0 lg:col-start-1">
           <Seller vehicle={vehicle} />
         </div>
       </div>
@@ -112,15 +112,18 @@ function Header({ vehicle }: { vehicle: VehicleDetail }) {
   return (
     <header className="mt-3 flex flex-wrap items-start justify-between gap-4">
       <div>
-        <p className="text-ink-faint tabular text-sm">Lot {vehicle.lot}</p>
         <h1
           id="vehicle-heading"
           className="text-2xl leading-tight font-semibold tracking-tight lg:text-[1.75rem]"
         >
           {name}
         </h1>
-        <p className="text-ink-muted text-lg">
+        <p className="text-ink-muted mt-1">
           {vehicle.trim} {label(vehicle.body_style)}
+          <span aria-hidden className="text-ink-faint mx-2">
+            /
+          </span>
+          <span className="tabular">Lot {vehicle.lot}</span>
         </p>
       </div>
       <button
@@ -145,7 +148,8 @@ function Seller({ vehicle }: { vehicle: VehicleDetail }) {
       <h2 id="seller-heading" className="mb-3 text-lg font-semibold">
         Seller
       </h2>
-      <div className="border-line bg-surface rounded-[var(--radius-panel)] border p-4">
+      {/* Sized to its two lines, not stretched across the column. */}
+      <div className="border-line bg-surface inline-flex flex-col rounded-[var(--radius-panel)] border px-4 py-3">
         <p className="font-semibold">{vehicle.selling_dealership}</p>
         <p className="text-ink-muted mt-1 inline-flex items-center gap-1.5 text-sm">
           <MapPin size={15} aria-hidden />
@@ -161,8 +165,8 @@ function MobileBidBar({ vehicle }: { vehicle: VehicleDetail }) {
   const { auction } = vehicle
   const open = statusAt(auction, useServerNow()) !== 'ended'
   return (
-    <div className="border-line bg-surface fixed inset-x-0 bottom-0 z-20 border-t px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:hidden">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
+    <div className="border-line bg-surface fixed inset-x-0 bottom-0 z-20 border-t py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:hidden">
+      <div className="frame flex items-center justify-between gap-3">
         <div>
           <p className="tabular text-xl leading-none font-bold">
             {formatMoney(auction.current_bid ?? auction.starting_bid)}
@@ -185,7 +189,7 @@ function DetailSkeleton() {
     <div aria-busy="true" aria-label="Loading vehicle">
       <div className="bg-surface-sunk h-4 w-24 rounded" />
       <div className="bg-surface-sunk mt-4 h-9 w-72 rounded" />
-      <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_clamp(22rem,26vw,27.5rem)]">
         <div className="bg-surface-sunk aspect-[40/17] rounded-[var(--radius-panel)]" />
         <div className="bg-surface-sunk h-96 rounded-[var(--radius-panel)]" />
       </div>

@@ -1,6 +1,12 @@
 import { Moon, Sun } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router'
+import { useAuctionEvents } from '../api/liveEvents'
+import { useMyBids } from '../api/queries'
 import { useTheme } from '../app/theme'
+import { needsAttention } from '../routes/mybids/groupMyBids'
+import { useServerNow } from '../lib/serverClock'
+import { ConnectionStatus } from './ConnectionStatus'
+import { Toaster } from './toasts/Toaster'
 import { cn } from '../lib/cn'
 
 const navLink = ({ isActive }: { isActive: boolean }) =>
@@ -11,6 +17,7 @@ const navLink = ({ isActive }: { isActive: boolean }) =>
 
 export function AppShell() {
   const [theme, toggleTheme] = useTheme()
+  useAuctionEvents()
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -34,8 +41,10 @@ export function AppShell() {
             </NavLink>
             <NavLink to="/my-bids" className={navLink}>
               My bids
+              <AttentionBadge />
             </NavLink>
           </nav>
+          <ConnectionStatus />
           <button
             type="button"
             onClick={toggleTheme}
@@ -49,9 +58,24 @@ export function AppShell() {
       <main id="main" className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">
         <Outlet />
       </main>
+      <Toaster />
       <footer className="border-line text-ink-faint border-t py-4 text-center text-xs">
         Prototype for the OPENLANE coding challenge. Vehicles, bids and rival dealers are simulated.
       </footer>
     </div>
+  )
+}
+
+/** How many open auctions you've been outbid on: the thing to act on next. */
+function AttentionBadge() {
+  const now = useServerNow()
+  const { data } = useMyBids()
+  const count = data ? needsAttention(data, now) : 0
+  if (count === 0) return null
+  return (
+    <span className="bg-outbid tabular ml-1.5 inline-grid min-w-5 place-items-center rounded-full px-1 text-xs leading-5 font-bold text-white">
+      {count}
+      <span className="sr-only"> outbid</span>
+    </span>
   )
 }

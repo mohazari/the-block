@@ -55,6 +55,10 @@ export interface AuctionEvent {
   outbid_you: boolean
   type: 'bid' | 'sold'
   vehicle_id: string
+  /**
+   * e.g. "2023 Ford Bronco", for notifications.
+   */
+  vehicle_title: string
 }
 /**
  * This interface was referenced by `Api`'s JSON-Schema

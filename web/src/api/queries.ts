@@ -38,7 +38,7 @@ export function useMyBids() {
   })
 }
 
-/** Apply `update` to this vehicle wherever it is cached: every inventory page and its detail. */
+/** Apply `update` to this vehicle wherever it is cached: inventory pages, its detail, My bids. */
 export function updateCachedVehicle(
   queryClient: QueryClient,
   vehicleId: string,
@@ -55,6 +55,9 @@ export function updateCachedVehicle(
   queryClient.setQueryData<VehicleDetail>(
     queryKeys.vehicle(vehicleId),
     (detail) => detail && update(detail),
+  )
+  queryClient.setQueryData<MyBid[]>(queryKeys.myBids, (bids) =>
+    bids?.map((bid) => (bid.id === vehicleId ? update(bid) : bid)),
   )
 }
 

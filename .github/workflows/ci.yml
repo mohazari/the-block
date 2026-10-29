@@ -36,7 +36,14 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
       - run: npm ci
+      - name: API types match the server's Pydantic models
+        run: |
+          npm --workspace web run gen:api
+          git diff --exit-code web/src/api/schema.ts
       - run: npm --workspace web run lint
       - run: npm --workspace web run typecheck
       - run: npm --workspace web run format:check

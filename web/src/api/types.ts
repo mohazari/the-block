@@ -1,0 +1,20 @@
+/** Friendly aliases over the generated API types (see schema.ts / `npm run gen:api`). */
+export type {
+  AuctionEvent,
+  AuctionOutcome,
+  AuctionSnapshot,
+  AuctionStatus,
+  BidOut,
+  BidPlaced,
+  DamageNote,
+  DamageSeverity,
+  FacetValue,
+  InventoryQuery,
+  MyBid,
+  ReserveStatus,
+  SortOrder,
+  Standing,
+  VehicleDetail,
+  VehicleList,
+  VehicleSummary,
+} from './schema'

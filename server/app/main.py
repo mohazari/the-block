@@ -35,7 +35,11 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
         app.state.write_sessions = sessionmaker(write_engine(engine), expire_on_commit=False)
         app.state.broker = broker = EventBroker()
         broker.bind(asyncio.get_running_loop())
-        app.state.epoch = epoch = EpochWatcher(engine, on_change=lambda _epoch: broker.close_all())
+        app.state.epoch = epoch = EpochWatcher(
+            engine,
+            on_change=lambda _epoch: broker.close_all(),
+            listeners=lambda: broker.subscriber_count,
+        )
         background = [asyncio.create_task(epoch.run())]
 
         if settings.simulator_enabled:

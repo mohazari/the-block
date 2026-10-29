@@ -22,10 +22,22 @@ CHECK_EVERY_SECONDS = 2.0
 
 
 class EpochWatcher:
-    def __init__(self, engine: Engine, on_change: Callable[[str], None]) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        on_change: Callable[[str], None],
+        listeners: Callable[[], int] = lambda: 0,
+    ) -> None:
         self._engine = engine
         self._on_change = on_change
+        # Idle when nobody would notice: no open streams and no API requests since the last check.
+        self._listeners = listeners
+        self._active = False
         self.current = data_epoch(engine)
+
+    def note_activity(self) -> None:
+        """An API request arrived: keep checking while clients are around."""
+        self._active = True
 
     def check(self) -> str | None:
         """The epoch now in the database if it differs from `current`, else None.
@@ -39,6 +51,9 @@ class EpochWatcher:
     async def run(self) -> None:
         while True:
             await asyncio.sleep(CHECK_EVERY_SECONDS)
+            if not (self._active or self._listeners()):
+                continue
+            self._active = False
             check = asyncio.ensure_future(asyncio.to_thread(self.check))
             try:
                 latest = await asyncio.shield(check)
@@ -76,6 +91,7 @@ class DataEpochHeader:
         async def stamped(message: Message) -> None:
             watcher = getattr(scope["app"].state, "epoch", None)
             if message["type"] == "http.response.start" and watcher is not None:
+                watcher.note_activity()
                 headers = list(message.get("headers", []))
                 headers.append((b"x-data-epoch", watcher.current.encode()))
                 message = {**message, "headers": headers}

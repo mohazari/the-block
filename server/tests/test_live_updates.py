@@ -338,7 +338,9 @@ def test_watcher_updates_the_epoch_and_ends_streams_together(
     monkeypatch.setattr("app.epoch.CHECK_EVERY_SECONDS", 0.01)
     seen_at_close: list[str] = []
     watcher = EpochWatcher(
-        seeded_engine, on_change=lambda _epoch: seen_at_close.append(watcher.current)
+        seeded_engine,
+        on_change=lambda _epoch: seen_at_close.append(watcher.current),
+        listeners=lambda: 1,  # a browser is connected, so the watcher checks
     )
     reset(seeded_engine, DATA_PATH, clock.now() + timedelta(days=1))
 
@@ -352,3 +354,32 @@ def test_watcher_updates_the_epoch_and_ends_streams_together(
 
     asyncio.run(scenario())
     assert seen_at_close == [data_epoch(seeded_engine)]
+
+
+def test_watcher_idles_when_nobody_is_connected(
+    seeded_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.epoch.CHECK_EVERY_SECONDS", 0.01)
+    checks = 0
+    watcher = EpochWatcher(seeded_engine, on_change=lambda _epoch: None)
+    original = watcher.check
+
+    def counting_check() -> str | None:
+        nonlocal checks
+        checks += 1
+        return original()
+
+    monkeypatch.setattr(watcher, "check", counting_check)
+
+    async def run_for(seconds: float) -> None:
+        task = asyncio.create_task(watcher.run())
+        await asyncio.sleep(seconds)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run_for(0.1))
+    assert checks == 0  # no streams, no requests: no database reads
+    watcher.note_activity()
+    asyncio.run(run_for(0.1))
+    assert checks == 1  # one check for the request, then idle again

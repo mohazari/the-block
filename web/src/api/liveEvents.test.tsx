@@ -140,4 +140,22 @@ describe('live auction events', () => {
     act(() => source.emit('hello', { server_time: new Date().toISOString(), epoch: 'epoch-2' }))
     expect(await bidding.findByText('3 bids')).toBeInTheDocument()
   })
+
+  it('refetches once connected, so bids placed before the stream opened are not missed', async () => {
+    const api = serveDetail()
+    renderRoute('/vehicles/veh-1')
+    await panel()
+    const before = api.calls.filter((url) => url.pathname === '/api/vehicles/veh-1').length
+    act(() =>
+      FakeEventSource.latest().emit('hello', {
+        server_time: new Date().toISOString(),
+        epoch: 'epoch-1',
+      }),
+    )
+    await waitFor(() =>
+      expect(api.calls.filter((url) => url.pathname === '/api/vehicles/veh-1').length).toBe(
+        before + 1,
+      ),
+    )
+  })
 })

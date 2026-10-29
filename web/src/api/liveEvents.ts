@@ -40,8 +40,8 @@ export const useConnection = (): Connection =>
 /**
  * One app-wide subscription to /api/events. Each bid is written straight into every cached copy
  * of that vehicle (run list, detail page, My bids), so prices move everywhere without refetching.
- * The server sends `hello` on every (re)connect; after the first it means "you may have missed
- * events", so everything is refetched.
+ * The server sends `hello` on every (re)connect. Anything fetched before it may have missed
+ * events, so everything on screen is refetched — on first connect too.
  */
 export function useAuctionEvents(): void {
   const queryClient = useQueryClient()
@@ -85,7 +85,9 @@ export function useAuctionEvents(): void {
           // The server reseeded: bid counts restarted, so cached snapshots would wrongly look
           // newer than fresh ones. Drop the cache instead of comparing across datasets.
           void queryClient.resetQueries()
-        } else if (connectedBefore) {
+        } else {
+          // Every hello, the first included: data fetched before the stream connected may have
+          // missed bids committed in between (on a reconnect, while it was down).
           void queryClient.invalidateQueries()
         }
         knownEpoch = epoch

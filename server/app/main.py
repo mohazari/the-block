@@ -7,6 +7,8 @@ from sqlalchemy.orm import sessionmaker
 from app.clock import Clock, SystemClock
 from app.config import Settings
 from app.db import create_db_engine, write_engine
+from app.errors import install_error_handlers
+from app.routers import vehicles
 from app.seed import ensure_seeded
 
 
@@ -26,6 +28,8 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
         engine.dispose()
 
     app = FastAPI(title="The Block API", version="0.1.0", lifespan=lifespan)
+    install_error_handlers(app)
+    app.include_router(vehicles.router)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

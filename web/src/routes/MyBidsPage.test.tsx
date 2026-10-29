@@ -1,22 +1,21 @@
 import { screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { MyBid } from '../api/types'
-import { auction, stubApi, vehicle, vehicleList } from '../test/fixtures'
+import type { MyBid, VehicleSummary } from '../api/types'
+import { auction, stubApi, vehicle } from '../test/fixtures'
 import { renderRoute } from '../test/render'
 
 afterEach(() => vi.unstubAllGlobals())
 
-function serve(bids: MyBid[], watched = vehicleList([])) {
-  vi.stubGlobal(
-    'fetch',
-    stubApi((url) =>
-      url.pathname === '/api/me/bids'
-        ? bids
-        : url.pathname === '/api/vehicles'
-          ? watched
-          : undefined,
-    ).fetch,
+function serve(bids: MyBid[], watched: VehicleSummary[] = []) {
+  const api = stubApi((url) =>
+    url.pathname === '/api/me/bids'
+      ? bids
+      : url.pathname === '/api/me/watchlist'
+        ? watched
+        : undefined,
   )
+  vi.stubGlobal('fetch', api.fetch)
+  return api
 }
 
 const outbid: MyBid = {
@@ -44,5 +43,13 @@ describe('MyBidsPage', () => {
       await screen.findByRole('heading', { name: 'No bids or watched vehicles yet' }),
     ).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Browse the run list' })).toHaveAttribute('href', '/')
+  })
+
+  it('loads watched cars from the watchlist endpoint, not the inventory search', async () => {
+    const api = serve([], [vehicle({ id: 'starred', model: 'Escape', watching: true })])
+    renderRoute('/my-bids')
+    const section = (await screen.findByRole('heading', { name: /Watching/ })).closest('section')!
+    expect(within(section).getByRole('article', { name: '2023 Ford Escape' })).toBeInTheDocument()
+    expect(api.calls.some((url) => url.pathname === '/api/vehicles')).toBe(false)
   })
 })

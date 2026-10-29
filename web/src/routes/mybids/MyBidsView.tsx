@@ -1,21 +1,15 @@
 import { Link } from 'react-router'
-import { useInventory, useMyBids } from '../../api/queries'
-import type { InventoryQuery, VehicleSummary } from '../../api/types'
+import { useMyBids, useWatchlist } from '../../api/queries'
+import type { VehicleSummary } from '../../api/types'
 import { formatMoney } from '../../lib/format'
 import { useServerNow } from '../../lib/serverClock'
 import { VehicleRow } from '../inventory/VehicleRow'
 import { groupMyBids } from './groupMyBids'
 
-const WATCHED: InventoryQuery = {
-  watching: true,
-  status: ['live', 'upcoming', 'ended'],
-  page_size: 100,
-}
-
 export function MyBidsView() {
   const now = useServerNow()
   const bids = useMyBids()
-  const watched = useInventory(WATCHED)
+  const watched = useWatchlist()
 
   if (bids.isPending || watched.isPending) {
     return <p className="text-ink-muted">Loading your bids…</p>
@@ -38,7 +32,7 @@ export function MyBidsView() {
     )
   }
 
-  const groups = groupMyBids(bids.data, watched.data.items, now)
+  const groups = groupMyBids(bids.data, watched.data, now)
   const empty = bids.data.length === 0 && groups.watching.length === 0
 
   return (
@@ -73,15 +67,7 @@ export function MyBidsView() {
             vehicles={groups.leading}
             tone="text-win"
           />
-          <Group
-            title="Watching"
-            hint={
-              watched.data.total > watched.data.items.length
-                ? `Vehicles you've starred. Showing the first ${watched.data.items.length} of ${watched.data.total}.`
-                : "Vehicles you've starred."
-            }
-            vehicles={groups.watching}
-          />
+          <Group title="Watching" hint="Vehicles you've starred." vehicles={groups.watching} />
           <Group
             title="Finished"
             hint="Closed auctions you took part in."

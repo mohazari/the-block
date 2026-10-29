@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from app.deps import DbSession, Now, RequiredBidderId, WriteSession
 from app.domain.auction import AuctionOutcome, AuctionStatus
 from app.models import Bid, Vehicle, WatchlistEntry
-from app.schemas import MyBid, Standing
+from app.schemas import MyBid, Standing, VehicleSummary
 from app.services.inventory import get_vehicle_or_404, ids_for_bidder, open_first_key, summarize
 
 router = APIRouter(prefix="/api/me", tags=["me"])
@@ -49,6 +49,24 @@ def my_bids(session: DbSession, now: Now, bidder_id: RequiredBidderId) -> list[M
                 standing=_standing(auction.status, auction.is_high_bidder, auction.outcome),
             )
         )
+    items.sort(key=lambda item: open_first_key(item.auction))
+    return items
+
+
+@router.get("/watchlist")
+def my_watchlist(session: DbSession, now: Now, bidder_id: RequiredBidderId) -> list[VehicleSummary]:
+    """Every vehicle the buyer is watching, in the inventory's "ending soon" order.
+
+    Its own endpoint rather than the inventory search: no facets or ranges to compute, no page cap.
+    """
+    vehicles = session.scalars(
+        select(Vehicle)
+        .join(WatchlistEntry, WatchlistEntry.vehicle_id == Vehicle.id)
+        .where(WatchlistEntry.bidder_id == bidder_id)
+    ).all()
+    ids = [vehicle.id for vehicle in vehicles]
+    bid_on = ids_for_bidder(session, bidder_id, Bid, ids)
+    items = [summarize(vehicle, now, bidder_id, ids, bid_on) for vehicle in vehicles]
     items.sort(key=lambda item: open_first_key(item.auction))
     return items
 

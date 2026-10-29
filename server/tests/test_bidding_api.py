@@ -370,3 +370,18 @@ def test_leader_can_raise_toward_an_unmet_reserve(client: TestClient) -> None:
     raise_ = _bid(client, vehicle["id"], first["auction"]["min_next_bid"])
     assert raise_.status_code == 201, raise_.text
     assert raise_.json()["auction"]["is_high_bidder"]
+
+
+def test_watchlist_endpoint_lists_every_watched_vehicle(
+    client: TestClient, clock: FrozenClock
+) -> None:
+    vehicles = _vehicles(client, page_size=3)
+    for vehicle in vehicles:
+        client.put(f"/api/me/watchlist/{vehicle['id']}", headers=ME)
+    clock.advance(timedelta(hours=1))  # the first one has now ended: it still belongs here
+
+    watched = client.get("/api/me/watchlist", headers=ME).json()
+    assert {item["id"] for item in watched} == {v["id"] for v in vehicles}
+    assert all(item["watching"] for item in watched)
+    assert watched[-1]["auction"]["status"] == "ended"  # open auctions first
+    assert client.get("/api/me/watchlist", headers=RIVAL).json() == []

@@ -14,9 +14,10 @@ export const queryKeys = {
   inventoryAll: ['vehicles', 'list'] as const,
   vehicle: (id: string) => ['vehicles', 'detail', id] as const,
   myBids: ['me', 'bids'] as const,
+  watchlist: ['me', 'watchlist'] as const,
 }
 
-type Cached = VehicleList | VehicleDetail | MyBid[]
+type Cached = VehicleList | VehicleDetail | VehicleSummary[]
 
 const newerOf = <T extends VehicleSummary>(fresh: T, cached: T | undefined): T =>
   cached && cached.auction.bid_count > fresh.auction.bid_count ? cached : fresh
@@ -31,7 +32,7 @@ export function keepNewerAuctions(oldData: unknown, newData: unknown): unknown {
   const next = newData as Cached
   let merged: Cached
   if (Array.isArray(next)) {
-    const byId = new Map((previous as MyBid[]).map((bid) => [bid.id, bid]))
+    const byId = new Map((previous as VehicleSummary[]).map((item) => [item.id, item]))
     merged = next.map((bid) => newerOf(bid, byId.get(bid.id)))
   } else if ('items' in next) {
     const byId = new Map((previous as VehicleList).items.map((item) => [item.id, item]))
@@ -56,6 +57,14 @@ export function useVehicle(id: string) {
   return useQuery({
     queryKey: queryKeys.vehicle(id),
     queryFn: ({ signal }) => api<VehicleDetail>(`/vehicles/${id}`, { signal }),
+    structuralSharing: keepNewerAuctions,
+  })
+}
+
+export function useWatchlist() {
+  return useQuery({
+    queryKey: queryKeys.watchlist,
+    queryFn: ({ signal }) => api<VehicleSummary[]>('/me/watchlist', { signal }),
     structuralSharing: keepNewerAuctions,
   })
 }
@@ -88,6 +97,9 @@ export function updateCachedVehicle(
   )
   queryClient.setQueryData<MyBid[]>(queryKeys.myBids, (bids) =>
     bids?.map((bid) => (bid.id === vehicleId ? update(bid) : bid)),
+  )
+  queryClient.setQueryData<VehicleSummary[]>(queryKeys.watchlist, (watched) =>
+    watched?.map((vehicle) => (vehicle.id === vehicleId ? update(vehicle) : vehicle)),
   )
 }
 

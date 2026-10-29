@@ -1,10 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  helloCount,
-  isCurrentRun,
-  noteServerRun,
+  currentRunId,
+  noteHello,
+  noteResponse,
   noteStreamDown,
-  noteStreamUp,
   onReseed,
   onStaleStream,
 } from './dataEpoch'
@@ -13,73 +12,82 @@ describe('data epoch', () => {
   it('drops the cache for a new run with different data, even an older backup', () => {
     const reseeded = vi.fn()
     const stop = onReseed(reseeded)
-    expect(noteServerRun('run-1', '2026-10-29T09:00:00+00:00', 'hello')).toBe(false) // recorded
-    expect(noteServerRun('run-2', '2026-10-29T08:00:00+00:00', 'hello')).toBe(true) // older, new
+    expect(noteHello('run-1', '2026-10-29T09:00:00+00:00')).toBe(false) // first: recorded
+    expect(noteHello('run-2', '2026-10-29T08:00:00+00:00')).toBe(true) // older, still new
     expect(reseeded).toHaveBeenCalledTimes(1)
     stop()
   })
 
   it('keeps the cache across a restart that kept the data', () => {
-    noteServerRun('run-1', 'e', 'hello')
-    expect(noteServerRun('run-2', 'e', 'hello')).toBe(false)
+    noteHello('run-1', 'e')
+    expect(noteHello('run-2', 'e')).toBe(false)
   })
 
-  it('ignores a late response from a run it has moved on from', () => {
-    noteServerRun('run-1', 'old', 'hello')
+  it('treats a response from a run it has moved on from as other data', () => {
+    noteHello('run-1', 'old')
     noteStreamDown()
-    expect(noteServerRun('run-2', 'new', 'response', helloCount())).toBe(true) // stream down: news by response
-    expect(noteServerRun('run-1', 'old', 'response', helloCount())).toBe(false) // a straggler: no flip back
+    expect(noteResponse('run-2', 'new', currentRunId())).toBe(true) // adopted: newer
+    expect(noteResponse('run-1', 'old', 'run-1')).toBe(false) // a straggler: no flip back
+    expect(currentRunId()).toBe('run-2')
   })
 
   it('adopts a new run from a response even while the stream looks connected', () => {
     const stale = vi.fn()
     const stop = onStaleStream(stale)
-    noteStreamUp()
-    noteServerRun('run-1', 'a', 'hello')
+    noteHello('run-1', 'a')
     // The stream says run-1, but run-2 answered: run-1 is gone and the stream died silently.
-    expect(noteServerRun('run-2', 'b', 'response', helloCount())).toBe(true) // no mixing a's and b's data
+    expect(noteResponse('run-2', 'b', currentRunId())).toBe(true)
+    expect(currentRunId()).toBe('run-2')
     expect(stale).toHaveBeenCalledTimes(1) // and the stream is told to reconnect
     stop()
   })
 
-  it('always believes a hello, even for a run it had retired', () => {
-    noteServerRun('run-1', 'a', 'hello')
-    noteStreamDown()
-    noteServerRun('run-2', 'b', 'response', helloCount())
-    expect(noteServerRun('run-1', 'a', 'hello')).toBe(true) // the stream is connected to it
-  })
-
-  it('accepts an empty epoch as a value, but ignores a missing run', () => {
-    noteServerRun('run-1', '', 'hello')
-    expect(noteServerRun('run-2', '', 'hello')).toBe(false) // same (empty) data
-    expect(noteServerRun(null, 'e', 'hello')).toBe(false)
-  })
-
-  it('ignores a response that was in flight while a hello arrived: the hello is newer', () => {
+  it('sets aside a response from an unseen run if the tab moved runs while it was in flight', () => {
     const stale = vi.fn()
     const stop = onStaleStream(stale)
-    noteStreamUp()
-    noteServerRun('run-1', 'a', 'hello')
-    const sent = helloCount() // a request goes out...
-    noteStreamUp() // ...the stream reconnects to run-3 meanwhile...
-    noteServerRun('run-3', 'c', 'hello')
-    // ...and the answer comes from run-2, which lived and died in between.
-    expect(noteServerRun('run-2', 'b', 'response', sent)).toBe(false)
+    noteHello('run-1', 'a')
+    const sent = currentRunId() // a request goes out...
+    noteHello('run-3', 'c') // ...the stream reconnects to run-3 meanwhile...
+    // ...and run-2 answers, which lived and died in between (or not: it can't be ordered).
+    expect(noteResponse('run-2', 'b', sent)).toBe(false)
+    expect(currentRunId()).toBe('run-3')
     expect(stale).not.toHaveBeenCalled() // the healthy stream stays
-    expect(isCurrentRun('run-2')).toBe(false) // and its data isn't applied
     stop()
   })
 
-  it('adopts the run even if reconnecting the stale stream throws', () => {
-    const stop = onStaleStream(() => {
+  it('still adopts a new run after a reconnect to the same run', () => {
+    noteHello('run-1', 'a')
+    const sent = currentRunId()
+    noteHello('run-1', 'a') // the stream blipped and came back to run-1
+    expect(noteResponse('run-2', 'b', sent)).toBe(true) // still the newest news
+  })
+
+  it('always believes a hello, even for a run it had retired', () => {
+    noteHello('run-1', 'a')
+    noteStreamDown()
+    noteResponse('run-2', 'b', currentRunId())
+    expect(noteHello('run-1', 'a')).toBe(true) // the stream is connected to it
+  })
+
+  it('adopts the run even if a listener throws', () => {
+    const stopStale = onStaleStream(() => {
       throw new Error('no EventSource here')
     })
+    const stopReseed = onReseed(() => {
+      throw new Error('cache trouble')
+    })
     const quiet = vi.spyOn(console, 'error').mockImplementation(() => {})
-    noteStreamUp()
-    noteServerRun('run-1', 'a', 'hello')
-    expect(noteServerRun('run-2', 'b', 'response', helloCount())).toBe(true)
-    expect(isCurrentRun('run-2')).toBe(true)
+    noteHello('run-1', 'a')
+    expect(noteResponse('run-2', 'b', currentRunId())).toBe(true)
+    expect(currentRunId()).toBe('run-2')
+    expect(quiet).toHaveBeenCalledTimes(2) // both failures reported, neither escaped
     quiet.mockRestore()
-    stop()
+    stopStale()
+    stopReseed()
+  })
+
+  it('accepts an empty epoch as a value', () => {
+    noteHello('run-1', '')
+    expect(noteHello('run-2', '')).toBe(false) // same (empty) data
   })
 })

@@ -6,7 +6,7 @@ import { formatMoney } from '../lib/format'
 import { syncServerTime } from '../lib/serverClock'
 import { forgetSeen } from './auctionLedger'
 import { applyAuction, forgetOwnBidRefreshes } from './bidding'
-import { noteServerRun, noteStreamDown, noteStreamUp, onReseed, onStaleStream } from './dataEpoch'
+import { noteHello, noteStreamDown, onReseed, onStaleStream } from './dataEpoch'
 import { streamLive } from './streamGate'
 import type { AuctionEvent } from './types'
 
@@ -112,16 +112,17 @@ export function useAuctionEvents(): void {
           run: string
           heartbeat_seconds?: number
         }
-        // Only a hello naming its run proves which server the stream is connected to.
-        if (run && epoch != null) noteStreamUp()
+        expectMore()
+        // A hello that doesn't name its run and data says nothing usable: wait for one that does.
+        if (!run || epoch == null) return
         const [shortest, longest] = HEARTBEAT_LIMITS_MS
         if (typeof heartbeat_seconds === 'number' && heartbeat_seconds > 0) {
           heartbeatMs = Math.min(Math.max(heartbeat_seconds * 1000, shortest), longest)
         }
-        expectMore()
+        expectMore() // now sized from the announced heartbeat
         syncServerTime(server_time)
         // A run with different data resets the cache (see onReseed below), which also refetches.
-        const reseeded = noteServerRun(run, epoch, 'hello')
+        const reseeded = noteHello(run, epoch)
         // Initial reads waited for this hello (streamGate), so they can't have missed a bid.
         const readBeforeSubscribing = streamLive()
         if (!reseeded && readBeforeSubscribing) {

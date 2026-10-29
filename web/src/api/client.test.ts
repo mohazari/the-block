@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { serverNow } from '../lib/serverClock'
-import { ApiError, api, toSearchParams } from './client'
-import { noteServerRun, noteStreamDown } from './dataEpoch'
+import { ApiError, api, isFromOtherData, toSearchParams } from './client'
+import { noteHello, noteStreamDown, onReseed } from './dataEpoch'
 
 function respond(status: number, body: unknown, headers: Record<string, string> = {}) {
   return vi
@@ -76,33 +76,57 @@ describe('api', () => {
   })
 
   it('rejects a read that was in flight when the data was reset, so it is read again', async () => {
-    noteServerRun('run-1', 'old', 'hello')
+    noteHello('run-1', 'old')
     let answer!: (response: Response) => void
     vi.stubGlobal('fetch', () => new Promise<Response>((resolve) => (answer = resolve)))
     const read = api('/vehicles')
     await vi.waitFor(() => expect(answer).toBeDefined())
-    noteServerRun('run-2', 'new', 'hello') // a hello reports the reset while the read is in flight
+    noteHello('run-2', 'new') // a hello reports the reset while the read is in flight
     answer(new Response('{"items": []}'))
     await expect(read).rejects.toMatchObject({ code: 'data_reset', status: 0 })
   })
 
   it('still returns a bid response that was in flight across a reset', async () => {
-    noteServerRun('run-1', 'old', 'hello')
+    noteHello('run-1', 'old')
     let answer!: (response: Response) => void
     vi.stubGlobal('fetch', () => new Promise<Response>((resolve) => (answer = resolve)))
     const bid = api('/vehicles/veh-1/bids', { method: 'POST', body: { amount: 1 } })
     await vi.waitFor(() => expect(answer).toBeDefined())
-    noteServerRun('run-2', 'new', 'hello')
+    noteHello('run-2', 'new')
     answer(new Response('{"ok": true}', { status: 201 }))
     await expect(bid).resolves.toEqual({ ok: true }) // the outcome is shown, not thrown away
   })
 
-  it('learns of a reseed from any response, and rereads what that response held', async () => {
-    noteServerRun('run-1', 'old', 'hello')
+  it('learns of a reseed from any response, whose data is the new data', async () => {
+    noteHello('run-1', 'old')
     noteStreamDown() // a tab whose stream is down: responses are its only news
+    const reseeded = vi.fn()
+    const stop = onReseed(reseeded)
     const headers = { 'X-Server-Run': 'run-2', 'X-Data-Epoch': 'new' } // reseeded since
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"items": []}', { headers })))
+    await expect(api('/vehicles')).resolves.toEqual({ items: [] }) // from run-2: usable
+    expect(reseeded).toHaveBeenCalledTimes(1) // and the old cache is dropped
+    stop()
+  })
+
+  it('rereads a response from a run the tab has moved on from', async () => {
+    noteHello('run-1', 'old')
+    noteHello('run-2', 'new')
+    const headers = { 'X-Server-Run': 'run-1', 'X-Data-Epoch': 'old' } // a late straggler
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"items": []}', { headers })))
     await expect(api('/vehicles')).rejects.toMatchObject({ code: 'data_reset', status: 0 })
-    await expect(api('/vehicles')).resolves.toEqual({ items: [] }) // now current
+  })
+
+  it("marks a bid answered from other data, so its snapshot isn't applied", async () => {
+    noteHello('run-1', 'old')
+    noteHello('run-2', 'new')
+    const headers = { 'X-Server-Run': 'run-1', 'X-Data-Epoch': 'old' }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('{"ok": 1}', { status: 201, headers })),
+    )
+    const placed = await api('/vehicles/veh-1/bids', { method: 'POST', body: { amount: 1 } })
+    expect(placed).toEqual({ ok: 1 }) // the outcome stands
+    expect(isFromOtherData(placed)).toBe(true)
   })
 })

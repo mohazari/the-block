@@ -1,6 +1,6 @@
 import { bidderId } from '../lib/bidder'
 import { syncServerTime } from '../lib/serverClock'
-import { helloCount, isCurrentRun, noteServerRun, reseedCount } from './dataEpoch'
+import { currentRunId, noteResponse, reseedCount } from './dataEpoch'
 import { waitForStream } from './streamGate'
 import type { AuctionSnapshot } from './types'
 
@@ -11,6 +11,8 @@ export class ApiError extends Error {
   /** Fresh auction state sent with bid rejections, so the UI can recover in place. */
   readonly auction?: AuctionSnapshot
   readonly retryAfterSeconds?: number
+  /** Answered from data other than the cache's (see dataEpoch): don't apply `auction`. */
+  fromOtherData = false
 
   constructor(
     status: number,
@@ -60,7 +62,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   if (method === 'GET') await waitForStream()
   const sentAt = Date.now()
   const reseedsBefore = reseedCount()
-  const hellosBefore = helloCount()
+  const runWhenSent = currentRunId()
   let response: Response
   try {
     response = await fetch(`/api${path}${search}`, {
@@ -76,13 +78,12 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
 
   const receivedAt = Date.now()
   const run = response.headers.get('X-Server-Run')
-  noteServerRun(run, response.headers.get('X-Data-Epoch'), 'response', hellosBefore)
-  if (method === 'GET' && (reseedCount() !== reseedsBefore || !isCurrentRun(run))) {
-    // The data was reset while this read was in flight (a hello said so, or this very response
-    // did), or it was answered by a server run this tab isn't on (a late straggler): it may
-    // describe other data, which must not refill the cache. resetQueries
-    // aborts most such reads; this also covers one already past its headers. Queries retry
-    // status 0, so it is simply read again.
+  const sameData =
+    noteResponse(run, response.headers.get('X-Data-Epoch'), runWhenSent) &&
+    (run !== null || reseedCount() === reseedsBefore)
+  if (method === 'GET' && !sameData) {
+    // Answered from other data than the cache's (a run the tab moved away from, or one it can't
+    // order): it must not refill the cache. Queries retry status 0, so it is simply read again.
     throw new ApiError(0, 'data_reset', 'The auction data was just reset. Please try again.')
   }
   if (response.status === 204) return undefined as T
@@ -91,13 +92,15 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   if (!response.ok) {
     const error = (payload as { error?: Record<string, unknown> } | null)?.error
     const retryAfter = Number(response.headers.get('Retry-After'))
-    throw new ApiError(
+    const failure = new ApiError(
       response.status,
       typeof error?.code === 'string' ? error.code : 'http_error',
       typeof error?.message === 'string' ? error.message : `Request failed (${response.status}).`,
       error?.auction as AuctionSnapshot | undefined,
       Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
     )
+    failure.fromOtherData = !sameData
+    throw failure
   }
 
   if (payload === undefined) {
@@ -106,5 +109,15 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   }
   const serverTime = (payload as { server_time?: unknown } | null)?.server_time
   if (typeof serverTime === 'string') syncServerTime(serverTime, sentAt, receivedAt)
+  if (!sameData && typeof payload === 'object' && payload !== null)
+    answeredFromOtherData.add(payload)
   return payload as T
 }
+
+// Write responses answered from other data than the cache's: their outcome stands (the bid was
+// placed), but their snapshots mustn't be applied.
+const answeredFromOtherData = new WeakSet<object>()
+
+/** Whether a response from `api()` was answered from other data than the cache's. */
+export const isFromOtherData = (payload: unknown): boolean =>
+  typeof payload === 'object' && payload !== null && answeredFromOtherData.has(payload)

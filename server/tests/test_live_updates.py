@@ -321,3 +321,11 @@ def test_a_reseed_under_a_running_server_ends_every_stream(
             return await asyncio.wait_for(subscriber.queue.get(), timeout=1)
 
     assert asyncio.run(scenario()) is None  # the stream ends; the browser reconnects
+
+
+def test_api_responses_carry_the_epoch_from_memory(client: TestClient) -> None:
+    watcher = client.app.state.epoch  # type: ignore[attr-defined]
+    assert client.get("/api/health").headers["X-Data-Epoch"] == watcher.current
+    watcher.current = "2099-01-01T00:00:00+00:00"  # as if the watcher just noticed a reseed
+    response = client.get("/api/vehicles", params={"page_size": 1})
+    assert response.headers["X-Data-Epoch"] == "2099-01-01T00:00:00+00:00"

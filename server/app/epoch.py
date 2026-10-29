@@ -12,6 +12,7 @@ import logging
 from collections.abc import Callable
 
 from sqlalchemy import Engine
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.seed import data_epoch
 
@@ -43,3 +44,30 @@ class EpochWatcher:
                     self._on_change(self.current)
             except Exception:  # a failed check must not stop future ones
                 logger.exception("Data epoch check failed")
+
+
+class DataEpochHeader:
+    """Stamps `X-Data-Epoch` on API responses, from memory (the watcher keeps it current).
+
+    A client whose live stream is down — or in the seconds before it reconnects after a reseed —
+    still learns about a reseed from any response. Pure ASGI on purpose: `@app.middleware`
+    would route the long-lived event stream through BaseHTTPMiddleware's buffering.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or not scope["path"].startswith("/api/"):
+            await self.app(scope, receive, send)
+            return
+
+        async def stamped(message: Message) -> None:
+            watcher = getattr(scope["app"].state, "epoch", None)
+            if message["type"] == "http.response.start" and watcher is not None:
+                headers = list(message.get("headers", []))
+                headers.append((b"x-data-epoch", watcher.current.encode()))
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, stamped)

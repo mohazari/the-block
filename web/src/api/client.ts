@@ -1,5 +1,6 @@
 import { bidderId } from '../lib/bidder'
 import { syncServerTime } from '../lib/serverClock'
+import { noteDataEpoch } from './dataEpoch'
 import { waitForStream } from './streamGate'
 import type { AuctionSnapshot } from './types'
 
@@ -72,6 +73,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   }
 
   const receivedAt = Date.now()
+  noteDataEpoch(response.headers.get('X-Data-Epoch'))
   if (response.status === 204) return undefined as T
   const payload: unknown = await response.json().catch(() => undefined)
 

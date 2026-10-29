@@ -130,14 +130,12 @@ export function useWatch() {
   const queryClient = useQueryClient()
   // Toggles still pending (this one included): for one car, or for any car.
   const pendingToggles = (vehicleId?: string) =>
-    queryClient
-      .getMutationCache()
-      .findAll({ mutationKey: ['watchlist'], status: 'pending' })
-      .filter(
-        (mutation) =>
-          vehicleId === undefined ||
-          (mutation.state.variables as { vehicleId: string } | undefined)?.vehicleId === vehicleId,
-      ).length
+    queryClient.isMutating({
+      mutationKey: ['watchlist'],
+      predicate: ({ state }) =>
+        vehicleId === undefined ||
+        (state.variables as { vehicleId: string } | undefined)?.vehicleId === vehicleId,
+    })
   return useMutation({
     // Run toggles one after another, in click order: a quick watch-unwatch must not reach the
     // server as a PUT and DELETE racing each other.

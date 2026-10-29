@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { auction, stubApi, vehicle, vehicleList } from '../test/fixtures'
@@ -163,6 +163,24 @@ describe('InventoryPage', () => {
     await userEvent.type(box, 'ford')
     await userEvent.click(box)
     await userEvent.paste('🚗'.repeat(60)) // 120 UTF-16 units: only 48 cars fit after "ford"
+    expect(box).toHaveValue(`ford${'🚗'.repeat(48)}`)
+  })
+
+  it('measures a pasted text without its line breaks, as the box will hold it', async () => {
+    serve()
+    renderRoute('/')
+    const box = screen.getByRole('searchbox', { name: 'Search inventory' })
+    await userEvent.click(box)
+    await userEvent.paste('🚗\n'.repeat(60)) // 180 units raw, 120 without the line breaks
+    expect(box).toHaveValue('🚗'.repeat(50))
+  })
+
+  it('cuts an over-long drop at a whole character, after what was typed', async () => {
+    serve()
+    renderRoute('/')
+    const box = screen.getByRole('searchbox', { name: 'Search inventory' })
+    await userEvent.type(box, 'ford')
+    fireEvent.drop(box, { dataTransfer: { getData: () => '🚗'.repeat(60) } })
     expect(box).toHaveValue(`ford${'🚗'.repeat(48)}`)
   })
 })

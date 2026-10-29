@@ -1,5 +1,13 @@
 import { Search } from 'lucide-react'
-import { useEffect, useEffectEvent, useId, useRef, useState, type ClipboardEvent } from 'react'
+import {
+  useEffect,
+  useEffectEvent,
+  useId,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type DragEvent,
+} from 'react'
 import { useInventory } from '../api/queries'
 import { LightsLegend } from '../components/auction/ConditionLight'
 import { plural } from '../lib/format'
@@ -147,17 +155,33 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
     return () => clearTimeout(timer)
   }, [draft, value])
 
-  // The browser would cut an over-long paste mid-emoji. Insert only the whole characters that
-  // fit instead, keeping everything already typed and the caret right after the paste.
-  const pasteWithinLimit = (event: ClipboardEvent<HTMLInputElement>) => {
+  // The browser would cut over-long pasted or dropped text mid-emoji. Insert only the whole
+  // characters that fit instead, keeping what's typed. Text dragged within the box is left to
+  // the browser: moving it can't make the value longer.
+  const draggingFromBox = useRef(false)
+  const insertWithinLimit = (
+    event: ClipboardEvent<HTMLInputElement> | DragEvent<HTMLInputElement>,
+    text: string,
+    at: 'selection' | 'end',
+  ) => {
     const input = event.currentTarget
-    const start = input.selectionStart ?? input.value.length
-    const end = input.selectionEnd ?? start
+    // Measure what the field will actually hold: a one-line input strips line breaks.
+    const inserted = text.replace(/[\r\n]/g, '')
+    const start = at === 'end' ? input.value.length : (input.selectionStart ?? input.value.length)
+    const end = at === 'end' ? start : (input.selectionEnd ?? start)
     const room = SEARCH_MAX_LENGTH - (input.value.length - (end - start))
-    const pasted = event.clipboardData.getData('text')
-    if (pasted.length <= room) return // fits: let the browser do it
+    if (inserted.length <= room) return // fits: the browser does it
     event.preventDefault()
-    const fitting = limitSearch(pasted, Math.max(0, room))
+    const fitting = limitSearch(inserted, Math.max(0, room))
+    input.focus()
+    input.setSelectionRange(start, end)
+    // insertText goes through the browser's editing, so Cmd/Ctrl+Z undoes it as usual.
+    if (
+      typeof document.execCommand === 'function' &&
+      document.execCommand('insertText', false, fitting)
+    ) {
+      return
+    }
     setDraft(input.value.slice(0, start) + fitting + input.value.slice(end))
     requestAnimationFrame(() =>
       input.setSelectionRange(start + fitting.length, start + fitting.length),
@@ -179,9 +203,18 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
         type="search"
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
-        onPaste={pasteWithinLimit}
+        onPaste={(event) =>
+          insertWithinLimit(event, event.clipboardData.getData('text'), 'selection')
+        }
+        onDragStart={() => (draggingFromBox.current = true)}
+        onDragEnd={() => (draggingFromBox.current = false)}
+        onDrop={(event) => {
+          if (draggingFromBox.current) return
+          // A drop point inside a text field can't be read, so dropped text goes at the end.
+          insertWithinLimit(event, event.dataTransfer.getData('text'), 'end')
+        }}
         placeholder="Make, model, VIN, lot or city"
-        // Typing past the limit is refused in place; pastes are cut at a whole character.
+        // Typing past the limit is refused in place; pastes and drops are cut at a whole character.
         maxLength={SEARCH_MAX_LENGTH}
         className="border-line-strong bg-surface placeholder:text-ink-faint h-10 w-full rounded-[var(--radius-control)] border pr-3 pl-10 text-sm"
       />

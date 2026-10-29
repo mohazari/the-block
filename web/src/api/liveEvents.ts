@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query'
+import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useEffect, useSyncExternalStore } from 'react'
 import { showToast } from '../components/toasts/toastStore'
 import { bidderId } from '../lib/bidder'
@@ -8,6 +8,25 @@ import { applyAuction } from './bidding'
 import { noteDataEpoch } from './dataEpoch'
 import { streamLive } from './streamGate'
 import type { AuctionEvent } from './types'
+
+/**
+ * A read still in flight when a bid lands may have been answered before it: when it arrives it
+ * would replace nothing (there's no cached copy to patch yet) and show the older price. Restart
+ * those reads. Cancelled explicitly, since a refetch would join an in-flight initial load.
+ */
+function restartReadsInFlight(queryClient: QueryClient, vehicleId: string): void {
+  const affected = queryClient.getQueryCache().findAll({
+    predicate: ({ queryKey, state }) =>
+      state.fetchStatus === 'fetching' &&
+      ((queryKey[0] === 'vehicles' && (queryKey[1] === 'list' || queryKey[2] === vehicleId)) ||
+        queryKey[0] === 'me'),
+  })
+  for (const { queryKey } of affected) {
+    void queryClient
+      .cancelQueries({ queryKey, exact: true })
+      .then(() => queryClient.refetchQueries({ queryKey, exact: true }))
+  }
+}
 
 export type Connection = 'connecting' | 'live' | 'reconnecting'
 
@@ -51,6 +70,7 @@ export function useAuctionEvents(): void {
       const event = JSON.parse(message.data) as AuctionEvent
       // Patches every cached copy, My bids included (see recordOwnBid for your own bids).
       applyAuction(queryClient, event.vehicle_id, event.auction, event.bid)
+      restartReadsInFlight(queryClient, event.vehicle_id)
       if (event.outbid_you) {
         showToast({
           tone: 'outbid',

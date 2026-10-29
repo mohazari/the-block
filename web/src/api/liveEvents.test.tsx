@@ -188,4 +188,32 @@ describe('live auction events', () => {
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(api.calls.filter((u) => u.pathname === '/api/vehicles/veh-1')).toHaveLength(3)
   })
+
+  it('re-reads a vehicle when a bid lands while its first read is still in flight', async () => {
+    let calls = 0
+    let answerFirstRead!: () => void
+    vi.stubGlobal('fetch', (input: string) => {
+      const url = new URL(input, 'http://test')
+      if (url.pathname !== '/api/vehicles/veh-1') return Promise.resolve(new Response('[]'))
+      calls++
+      if (calls === 1) {
+        // Read before the rival's bid, answered after it.
+        const stale = JSON.stringify(vehicleDetail({ auction: auction({ bid_count: 16 }) }))
+        return new Promise<Response>(
+          (resolve) => (answerFirstRead = () => resolve(new Response(stale))),
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(vehicleDetail({ auction: rivalBid().auction }))),
+      )
+    })
+    renderRoute('/vehicles/veh-1')
+    await waitFor(() => expect(calls).toBe(1))
+
+    act(() => FakeEventSource.latest().emit('bid', rivalBid({ outbid_you: false })))
+    act(() => answerFirstRead())
+    const bidding = await panel()
+    expect(await bidding.findByText('17 bids')).toBeInTheDocument()
+    expect(calls).toBe(2)
+  })
 })

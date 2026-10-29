@@ -126,3 +126,10 @@ def test_pre_bids_are_accepted_on_upcoming_auctions() -> None:
 )
 def test_bid_rejections(overrides: dict[str, object], rejection: BidRejection) -> None:
     assert _validate(**overrides) is rejection
+
+
+def test_reaching_the_buy_now_price_meets_the_reserve() -> None:
+    # Seller agreed to sell at Buy Now, even if it sits below the reserve.
+    assert reserve_status(30_000, 28_000, buy_now_price=28_000) is ReserveStatus.MET
+    assert auction_outcome(30_000, 28_000, buy_now_price=28_000) is AuctionOutcome.SOLD
+    assert reserve_status(30_000, 27_000, buy_now_price=28_000) is ReserveStatus.NOT_MET

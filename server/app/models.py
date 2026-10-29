@@ -80,6 +80,7 @@ class Bid(Base):
     vehicle_id: Mapped[str] = mapped_column(ForeignKey("vehicles.id"))
     bidder_id: Mapped[str] = mapped_column(index=True)
     amount: Mapped[int]
+    kind: Mapped[str] = mapped_column(String(8), default="bid")  # "bid" | "buy_now"
     placed_at: Mapped[datetime] = mapped_column(UTCDateTime)
     idempotency_key: Mapped[str | None]
 

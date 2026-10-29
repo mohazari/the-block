@@ -73,19 +73,27 @@ def auction_status(starts_at: datetime, ends_at: datetime, now: datetime) -> Auc
     return AuctionStatus.ENDED
 
 
-def reserve_status(reserve_price: int | None, current_bid: int | None) -> ReserveStatus:
-    """Buyers see whether the reserve is met — never the reserve amount itself."""
+def reserve_status(
+    reserve_price: int | None, current_bid: int | None, buy_now_price: int | None = None
+) -> ReserveStatus:
+    """Buyers see whether the reserve is met — never the reserve amount itself.
+
+    The seller has agreed to sell at the Buy Now price, so reaching it satisfies the reserve too.
+    """
     if reserve_price is None:
         return ReserveStatus.NO_RESERVE
-    if current_bid is not None and current_bid >= reserve_price:
+    threshold = reserve_price if buy_now_price is None else min(reserve_price, buy_now_price)
+    if current_bid is not None and current_bid >= threshold:
         return ReserveStatus.MET
     return ReserveStatus.NOT_MET
 
 
-def auction_outcome(reserve_price: int | None, current_bid: int | None) -> AuctionOutcome:
+def auction_outcome(
+    reserve_price: int | None, current_bid: int | None, buy_now_price: int | None = None
+) -> AuctionOutcome:
     if current_bid is None:
         return AuctionOutcome.NO_BIDS
-    if reserve_status(reserve_price, current_bid) is ReserveStatus.NOT_MET:
+    if reserve_status(reserve_price, current_bid, buy_now_price) is ReserveStatus.NOT_MET:
         return AuctionOutcome.RESERVE_NOT_MET
     return AuctionOutcome.SOLD
 

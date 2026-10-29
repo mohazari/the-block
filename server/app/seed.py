@@ -25,7 +25,7 @@ from app.models import Base, Bid, Meta, Vehicle
 logger = logging.getLogger(__name__)
 
 # Bump whenever the models change: an existing dev database is then rebuilt automatically.
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 # Fixed seed: the synthesized bid history is identical on every run.
 _HISTORY_SEED = 42

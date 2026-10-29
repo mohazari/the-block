@@ -3,10 +3,8 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 
 from app.deps import BidderId, DbSession, Now
-from app.errors import ApiError
-from app.models import Vehicle
 from app.schemas import InventoryQuery, VehicleDetail, VehicleList
-from app.services.inventory import search_inventory, vehicle_detail
+from app.services.inventory import get_vehicle_or_404, search_inventory, vehicle_detail
 
 router = APIRouter(prefix="/api/vehicles", tags=["vehicles"])
 
@@ -23,7 +21,4 @@ def list_vehicles(
 def get_vehicle(
     vehicle_id: str, session: DbSession, now: Now, bidder_id: BidderId
 ) -> VehicleDetail:
-    vehicle = session.get(Vehicle, vehicle_id)
-    if vehicle is None:
-        raise ApiError(404, "vehicle_not_found", "No vehicle with that id.")
-    return vehicle_detail(session, vehicle, now, bidder_id)
+    return vehicle_detail(session, get_vehicle_or_404(session, vehicle_id), now, bidder_id)

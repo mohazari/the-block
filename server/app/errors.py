@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,15 @@ def install_error_handlers(app: FastAPI) -> None:
         # Framework-level errors: unknown route (404), wrong method (405), …
         code = HTTPStatus(exc.status_code).phrase.lower().replace(" ", "_")
         return _response(exc.status_code, code, str(exc.detail))
+
+    @app.exception_handler(OperationalError)
+    async def _db_busy(request: Request, exc: OperationalError) -> JSONResponse:
+        if "database is locked" not in str(exc.orig):
+            return await _unexpected(request, exc)
+        # Waited the full busy timeout for the write lock: safe to retry, nothing was written.
+        response = _response(503, "busy", "Lots of bidding right now — please try again.")
+        response.headers["Retry-After"] = "1"
+        return response
 
     @app.exception_handler(Exception)
     async def _unexpected(request: Request, exc: Exception) -> JSONResponse:

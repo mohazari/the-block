@@ -63,4 +63,10 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(Exception)
     async def _unexpected(request: Request, exc: Exception) -> JSONResponse:
         logger.exception("Unhandled error on %s %s", request.method, request.url.path)
-        return _response(500, "internal_error", "Something went wrong on our side.")
+        response = _response(500, "internal_error", "Something went wrong on our side.")
+        # Unhandled errors are answered by Starlette's outermost middleware, outside
+        # DataEpochHeader, so stamp the epoch here: every API response carries it.
+        watcher = getattr(request.app.state, "epoch", None)
+        if watcher is not None:
+            response.headers["X-Data-Epoch"] = watcher.current
+        return response

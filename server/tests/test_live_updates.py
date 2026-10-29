@@ -413,3 +413,16 @@ def test_a_failing_stream_close_does_not_stop_the_watcher(
 
     asyncio.run(scenario())
     assert len(calls) == 2
+
+
+def test_unexpected_errors_carry_the_epoch_too(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def crash(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("app.routers.vehicles.search_inventory", crash)
+    # Same running app, but see the 500 response as a browser would instead of re-raising.
+    response = TestClient(client.app, raise_server_exceptions=False).get("/api/vehicles")
+    assert response.status_code == 500
+    assert response.headers["X-Data-Epoch"] == client.app.state.epoch.current  # type: ignore[attr-defined]

@@ -7,6 +7,7 @@ import argparse
 import json
 import logging
 import random
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -25,7 +26,7 @@ from app.models import Base, Bid, Meta, Vehicle
 logger = logging.getLogger(__name__)
 
 # Bump whenever the models change: an existing dev database is then rebuilt automatically.
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 
 # Fixed seed: the synthesized bid history is identical on every run.
 _HISTORY_SEED = 42
@@ -44,7 +45,11 @@ _COPIED_FIELDS = (
 
 
 def search_text(record: dict[str, Any]) -> str:
-    return " ".join(str(record[field]) for field in _SEARCH_FIELDS).lower()
+    """Lower-cased searchable words. Punctuated words are also stored split apart, so word-start
+    search finds "0043" in lot A-0043, "150" in F-150 and "benz" in Mercedes-Benz."""
+    text = " ".join(str(record[field]) for field in _SEARCH_FIELDS).lower()
+    split = re.sub(r"[^a-z0-9]+", " ", text)
+    return text if split == text else f"{text} {split}"
 
 
 def ladder_amounts(

@@ -4,7 +4,7 @@ from collections.abc import Collection
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ColumnElement, Select, case, func, select
+from sqlalchemy import ColumnElement, Select, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.domain.auction import (
@@ -67,6 +67,25 @@ def _escape_like(token: str) -> str:
     return token.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+# Partial-VIN search kicks in from this many characters; shorter tokens like "x5" would match
+# arbitrary VINs.
+_MIN_VIN_FRAGMENT = 4
+
+
+def _token_matches(token: str) -> ColumnElement[bool]:
+    """Tokens match at the start of a word: "ford" finds Fords but not "Oxford White" paint, and
+    "x5" finds the BMW X5. Digit-bearing tokens of 4+ characters also match anywhere in the VIN,
+    because dealers look cars up by the last digits of a VIN."""
+    escaped = _escape_like(token)
+    matches = [
+        Vehicle.search_text.like(f"{escaped}%", escape="\\"),
+        Vehicle.search_text.like(f"% {escaped}%", escape="\\"),
+    ]
+    if len(token) >= _MIN_VIN_FRAGMENT and any(char.isdigit() for char in token):
+        matches.append(func.lower(Vehicle.vin).like(f"%{escaped}%", escape="\\"))
+    return or_(*matches)
+
+
 def _condition_groups(
     query: InventoryQuery, now: datetime, bidder_id: str | None
 ) -> dict[str, list[ColumnElement[bool]]]:
@@ -80,9 +99,9 @@ def _condition_groups(
     statuses = query.status or list(_OPEN_STATUSES)
     groups["status"] = [_status(now).in_([s.value for s in statuses])]
 
-    rest: list[ColumnElement[bool]] = []
-    for token in (query.q or "").lower().split():
-        rest.append(Vehicle.search_text.like(f"%{_escape_like(token)}%", escape="\\"))
+    rest: list[ColumnElement[bool]] = [
+        _token_matches(token) for token in (query.q or "").lower().split()
+    ]
     if query.year_min is not None:
         rest.append(Vehicle.year >= query.year_min)
     if query.year_max is not None:

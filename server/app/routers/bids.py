@@ -1,10 +1,11 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Header, Response, status
+from fastapi import APIRouter, Depends, Header, Response, status
 from sqlalchemy.orm import Session
 
-from app.deps import Now, RequiredBidderId, WriteSession
+from app.clock import Clock
+from app.deps import RequiredBidderId, WriteSession, get_clock
 from app.domain.auction import BidRejection, max_allowed_bid
 from app.errors import ApiError
 from app.models import Bid, Vehicle
@@ -23,6 +24,7 @@ router = APIRouter(prefix="/api/vehicles/{vehicle_id}", tags=["bidding"])
 IdempotencyKey = Annotated[
     str | None,
     Header(
+        min_length=1,
         max_length=64,
         description="Retrying with the same key returns the original result instead of bidding "
         "twice.",
@@ -32,7 +34,10 @@ IdempotencyKey = Annotated[
 _REJECTION_RESPONSES: dict[int | str, dict[str, str]] = {
     404: {"description": "Unknown vehicle"},
     409: {"description": "Rejected against the current auction state; body has a fresh snapshot"},
+    503: {"description": "Too much contention right now; retry after the Retry-After delay"},
 }
+# Bids are judged by the clock *inside* the locked transaction, so the service takes the clock.
+ClockDep = Annotated[Clock, Depends(get_clock)]
 
 
 def _message(rejection: BidRejection, vehicle: Vehicle, minimum: int) -> str:
@@ -62,11 +67,11 @@ def _fresh_snapshot(
     return snapshot(vehicle, now, bidder_id, has_bid=has_bid)
 
 
-def _placed(result: BidResult, bidder_id: str, now: datetime, response: Response) -> BidPlaced:
+def _placed(result: BidResult, bidder_id: str, response: Response) -> BidPlaced:
     response.status_code = status.HTTP_200_OK if result.replayed else status.HTTP_201_CREATED
     return BidPlaced(
         bid=bid_out(result.bid, bidder_id),
-        auction=snapshot(result.vehicle, now, bidder_id, has_bid=True),
+        auction=snapshot(result.vehicle, result.now, bidder_id, has_bid=True),
         extended=result.extended,
     )
 
@@ -77,7 +82,7 @@ def create_bid(
     body: PlaceBidRequest,
     response: Response,
     session: WriteSession,
-    now: Now,
+    clock: ClockDep,
     bidder_id: RequiredBidderId,
     idempotency_key: IdempotencyKey = None,
 ) -> BidPlaced:
@@ -87,18 +92,18 @@ def create_bid(
             vehicle_id=vehicle_id,
             bidder_id=bidder_id,
             amount=body.amount,
-            now=now,
+            clock=clock,
             idempotency_key=idempotency_key,
         )
     except BidRejectedError as rejected:
-        fresh = _fresh_snapshot(session, rejected.vehicle, now, bidder_id)
+        fresh = _fresh_snapshot(session, rejected.vehicle, rejected.now, bidder_id)
         raise ApiError(
             409,
             rejected.rejection.value,
             _message(rejected.rejection, rejected.vehicle, fresh.min_next_bid),
             auction=fresh.model_dump(mode="json"),
         ) from None
-    return _placed(result, bidder_id, now, response)
+    return _placed(result, bidder_id, response)
 
 
 @router.post("/buy-now", status_code=status.HTTP_201_CREATED, responses=_REJECTION_RESPONSES)
@@ -106,7 +111,7 @@ def create_buy_now(
     vehicle_id: str,
     response: Response,
     session: WriteSession,
-    now: Now,
+    clock: ClockDep,
     bidder_id: RequiredBidderId,
     idempotency_key: IdempotencyKey = None,
 ) -> BidPlaced:
@@ -115,15 +120,15 @@ def create_buy_now(
             session,
             vehicle_id=vehicle_id,
             bidder_id=bidder_id,
-            now=now,
+            clock=clock,
             idempotency_key=idempotency_key,
         )
     except BuyNowUnavailableError as unavailable:
-        fresh = _fresh_snapshot(session, unavailable.vehicle, now, bidder_id)
+        fresh = _fresh_snapshot(session, unavailable.vehicle, unavailable.now, bidder_id)
         raise ApiError(
             409,
             "buy_now_unavailable",
             "Buy Now is no longer available on this vehicle.",
             auction=fresh.model_dump(mode="json"),
         ) from None
-    return _placed(result, bidder_id, now, response)
+    return _placed(result, bidder_id, response)

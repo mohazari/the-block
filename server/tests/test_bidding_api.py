@@ -1,3 +1,4 @@
+import sqlite3
 import threading
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -6,6 +7,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.clock import FrozenClock
@@ -207,7 +209,7 @@ def test_concurrent_equal_bids_have_exactly_one_winner(
                     vehicle_id=vehicle["id"],
                     bidder_id=f"contender-{n:04d}",
                     amount=amount,
-                    now=clock.now(),
+                    clock=clock,
                 )
                 result = "won"
             except BidRejectedError as rejected:
@@ -263,3 +265,75 @@ def test_watchlist_round_trip(client: TestClient) -> None:
     assert client.delete(url, headers=ME).status_code == 204
     assert client.get("/api/vehicles", params={"watching": True}, headers=ME).json()["total"] == 0
     assert client.put("/api/me/watchlist/nope", headers=ME).status_code == 404
+
+
+def test_idempotency_key_cannot_turn_a_bid_into_a_buy_now(client: TestClient) -> None:
+    vehicle = _find(client, lambda v: v["auction"]["buy_now_available"])
+    headers = {**ME, "Idempotency-Key": "shared-key"}
+    bid = client.post(
+        f"/api/vehicles/{vehicle['id']}/bids",
+        json={"amount": vehicle["auction"]["min_next_bid"]},
+        headers=headers,
+    )
+    assert bid.status_code == 201
+    buy = client.post(f"/api/vehicles/{vehicle['id']}/buy-now", headers=headers)
+    assert buy.status_code == 409
+    assert buy.json()["error"]["code"] == "idempotency_key_reused"
+
+
+def test_empty_idempotency_key_is_rejected(client: TestClient) -> None:
+    vehicle = _live_without_buy_now(client)
+    response = client.post(
+        f"/api/vehicles/{vehicle['id']}/bids",
+        json={"amount": vehicle["auction"]["min_next_bid"]},
+        headers={**ME, "Idempotency-Key": ""},
+    )
+    assert response.status_code == 422
+
+
+def test_unknown_vehicle_wins_over_a_reused_key(client: TestClient) -> None:
+    vehicle = _live_without_buy_now(client)
+    headers = {**ME, "Idempotency-Key": "key-404"}
+    url = f"/api/vehicles/{vehicle['id']}/bids"
+    client.post(url, json={"amount": vehicle["auction"]["min_next_bid"]}, headers=headers)
+    response = client.post("/api/vehicles/nope/bids", json={"amount": 1000}, headers=headers)
+    assert response.status_code == 404
+
+
+def test_the_clock_is_read_while_holding_the_write_lock(
+    client: TestClient, clock: FrozenClock
+) -> None:
+    """A bid queued behind other writers must be judged when it runs, not when it arrived."""
+    vehicle = _live_without_buy_now(client)
+    engine: Engine = client.app.state.write_sessions.kw["bind"]  # type: ignore[attr-defined]
+
+    with Session(write_engine(engine)) as session:
+
+        class LockCheckingClock:
+            def now(self) -> datetime:
+                assert session.in_transaction(), "clock read before the write lock was taken"
+                return clock.now()
+
+        place_bid(
+            session,
+            vehicle_id=vehicle["id"],
+            bidder_id="browser-lock-0001",
+            amount=vehicle["auction"]["min_next_bid"],
+            clock=LockCheckingClock(),
+        )
+
+
+def test_lock_timeout_is_a_retryable_503(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def locked(*_args: object, **_kwargs: object) -> None:
+        raise OperationalError(
+            "BEGIN IMMEDIATE", {}, sqlite3.OperationalError("database is locked")
+        )
+
+    monkeypatch.setattr("app.routers.bids.place_bid", locked)
+    vehicle = _live_without_buy_now(client)
+    response = _bid(client, vehicle["id"], vehicle["auction"]["min_next_bid"])
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "1"
+    assert response.json()["error"]["code"] == "busy"

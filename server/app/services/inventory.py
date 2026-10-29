@@ -216,11 +216,13 @@ def snapshot(
             vehicle.current_bid if vehicle.current_bid is not None else vehicle.starting_bid
         ),
         max_bid=max_allowed_bid(minimum),
-        reserve_status=reserve_status(vehicle.reserve_price, vehicle.current_bid),
+        reserve_status=reserve_status(
+            vehicle.reserve_price, vehicle.current_bid, vehicle.buy_now_price
+        ),
         buy_now_price=vehicle.buy_now_price,
         buy_now_available=buy_now_available(status, vehicle.buy_now_price, vehicle.current_bid),
         outcome=(
-            auction_outcome(vehicle.reserve_price, vehicle.current_bid)
+            auction_outcome(vehicle.reserve_price, vehicle.current_bid, vehicle.buy_now_price)
             if status is AuctionStatus.ENDED
             else None
         ),
@@ -255,6 +257,25 @@ def _summary_fields(vehicle: Vehicle) -> dict[str, Any]:
         "damage_count": len(vehicle.damage_notes),
         "worst_damage": worst_severity(vehicle.damage_notes),
     }
+
+
+def get_vehicle_or_404(session: Session, vehicle_id: str) -> Vehicle:
+    vehicle = session.get(Vehicle, vehicle_id)
+    if vehicle is None:
+        raise ApiError(404, "vehicle_not_found", "No vehicle with that id.")
+    return vehicle
+
+
+def open_first_key(auction: AuctionSnapshot) -> tuple[int, float]:
+    """Sort key matching the inventory's "ending soon" order, for lists sorted in Python:
+    live by soonest close, upcoming by soonest open, then ended with the most recent first."""
+    match auction.status:
+        case AuctionStatus.LIVE:
+            return (0, auction.ends_at.timestamp())
+        case AuctionStatus.UPCOMING:
+            return (1, auction.starts_at.timestamp())
+        case AuctionStatus.ENDED:
+            return (2, -auction.ends_at.timestamp())
 
 
 def bid_out(bid: Bid, bidder_id: str | None) -> BidOut:

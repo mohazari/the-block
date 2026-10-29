@@ -1,16 +1,18 @@
 """Placing bids and buying now.
 
-Both run inside a write session (BEGIN IMMEDIATE): the very first statement takes SQLite's write
-lock, so reading the current price, validating against it and writing the new bid happen as one
-step no other bidder can interleave with.
+Both run inside a write session (BEGIN IMMEDIATE). `_lock()` takes SQLite's write lock before
+anything is read, and only then is the clock read — so a request that queued behind other bidders
+is judged (live or ended? soft close?) and timestamped at the moment it actually executes.
 """
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.clock import Clock
 from app.domain.auction import (
     AuctionStatus,
     BidRejection,
@@ -22,34 +24,58 @@ from app.domain.auction import (
 )
 from app.errors import ApiError
 from app.models import Bid, Vehicle
+from app.services.inventory import get_vehicle_or_404
+
+BidKind = Literal["bid", "buy_now"]
 
 
 @dataclass(frozen=True)
 class BidResult:
     bid: Bid
     vehicle: Vehicle
+    now: datetime  # when the bid was judged, under the lock
+    # Who led before this bid — the live-updates stream tells them they were outbid. None on
+    # replays, which publish nothing.
     previous_high_bidder: str | None
     extended: bool
     replayed: bool  # an idempotent retry of an earlier request; nothing new was written
 
 
 class BidRejectedError(Exception):
-    def __init__(self, rejection: BidRejection, vehicle: Vehicle) -> None:
+    def __init__(self, rejection: BidRejection, vehicle: Vehicle, now: datetime) -> None:
         super().__init__(rejection.value)
         self.rejection = rejection
         self.vehicle = vehicle
+        self.now = now
 
 
 class BuyNowUnavailableError(Exception):
-    def __init__(self, vehicle: Vehicle) -> None:
+    def __init__(self, vehicle: Vehicle, now: datetime) -> None:
         super().__init__("buy_now_unavailable")
         self.vehicle = vehicle
+        self.now = now
+
+
+def _lock(session: Session) -> None:
+    """Start the transaction now: BEGIN IMMEDIATE blocks until we hold SQLite's write lock."""
+    session.connection()
 
 
 def _replay(
-    session: Session, bidder_id: str, key: str | None, vehicle_id: str, amount: int | None
+    session: Session,
+    *,
+    bidder_id: str,
+    key: str | None,
+    vehicle: Vehicle,
+    kind: BidKind,
+    amount: int | None,
+    now: datetime,
 ) -> BidResult | None:
-    """Return the earlier result for a retried request, if this idempotency key was used."""
+    """Return the earlier result for a retried request, if this idempotency key was used.
+
+    The retry must be the *same* request — same vehicle, same kind, same amount — otherwise a key
+    first used for a $12,000 bid could "replay" as a successful Buy Now.
+    """
     if key is None:
         return None
     existing = session.scalar(
@@ -57,24 +83,23 @@ def _replay(
     )
     if existing is None:
         return None
-    if existing.vehicle_id != vehicle_id or (amount is not None and existing.amount != amount):
+    same_request = (
+        existing.vehicle_id == vehicle.id
+        and existing.kind == kind
+        and (amount is None or existing.amount == amount)
+    )
+    if not same_request:
         raise ApiError(
             409, "idempotency_key_reused", "This Idempotency-Key was already used for another bid."
         )
     return BidResult(
         bid=existing,
-        vehicle=existing.vehicle,
+        vehicle=vehicle,
+        now=now,
         previous_high_bidder=None,
         extended=False,
         replayed=True,
     )
-
-
-def _locked_vehicle(session: Session, vehicle_id: str) -> Vehicle:
-    vehicle = session.get(Vehicle, vehicle_id)
-    if vehicle is None:
-        raise ApiError(404, "vehicle_not_found", "No vehicle with that id.")
-    return vehicle
 
 
 def _record(session: Session, vehicle: Vehicle, bid: Bid) -> str | None:
@@ -92,14 +117,24 @@ def place_bid(
     vehicle_id: str,
     bidder_id: str,
     amount: int,
-    now: datetime,
+    clock: Clock,
     idempotency_key: str | None = None,
 ) -> BidResult:
-    replay = _replay(session, bidder_id, idempotency_key, vehicle_id, amount)
+    _lock(session)
+    now = clock.now()
+    vehicle = get_vehicle_or_404(session, vehicle_id)
+    replay = _replay(
+        session,
+        bidder_id=bidder_id,
+        key=idempotency_key,
+        vehicle=vehicle,
+        kind="bid",
+        amount=amount,
+        now=now,
+    )
     if replay is not None:
         return replay
 
-    vehicle = _locked_vehicle(session, vehicle_id)
     status = auction_status(vehicle.starts_at, vehicle.ends_at, now)
     rejection = validate_bid(
         amount=amount,
@@ -114,7 +149,7 @@ def place_bid(
         ),
     )
     if rejection is not None:
-        raise BidRejectedError(rejection, vehicle)
+        raise BidRejectedError(rejection, vehicle, now)
 
     bid = Bid(
         vehicle_id=vehicle.id,
@@ -132,7 +167,7 @@ def place_bid(
         vehicle.ends_at = new_end
 
     session.commit()
-    return BidResult(bid, vehicle, previous, extended=extended, replayed=False)
+    return BidResult(bid, vehicle, now, previous, extended=extended, replayed=False)
 
 
 def buy_now(
@@ -140,24 +175,35 @@ def buy_now(
     *,
     vehicle_id: str,
     bidder_id: str,
-    now: datetime,
+    clock: Clock,
     idempotency_key: str | None = None,
 ) -> BidResult:
-    replay = _replay(session, bidder_id, idempotency_key, vehicle_id, amount=None)
+    _lock(session)
+    now = clock.now()
+    vehicle = get_vehicle_or_404(session, vehicle_id)
+    replay = _replay(
+        session,
+        bidder_id=bidder_id,
+        key=idempotency_key,
+        vehicle=vehicle,
+        kind="buy_now",
+        amount=None,
+        now=now,
+    )
     if replay is not None:
         return replay
 
-    vehicle = _locked_vehicle(session, vehicle_id)
     status = auction_status(vehicle.starts_at, vehicle.ends_at, now)
     if vehicle.buy_now_price is None or not buy_now_available(
         status, vehicle.buy_now_price, vehicle.current_bid
     ):
-        raise BuyNowUnavailableError(vehicle)
+        raise BuyNowUnavailableError(vehicle, now)
 
     bid = Bid(
         vehicle_id=vehicle.id,
         bidder_id=bidder_id,
         amount=vehicle.buy_now_price,
+        kind="buy_now",
         placed_at=now,
         idempotency_key=idempotency_key,
     )
@@ -168,4 +214,4 @@ def buy_now(
     vehicle.ends_at = now
 
     session.commit()
-    return BidResult(bid, vehicle, previous, extended=False, replayed=False)
+    return BidResult(bid, vehicle, now, previous, extended=False, replayed=False)

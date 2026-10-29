@@ -7,10 +7,9 @@ from sqlalchemy import func, select
 
 from app.deps import DbSession, Now, RequiredBidderId, WriteSession
 from app.domain.auction import AuctionOutcome, AuctionStatus
-from app.errors import ApiError
 from app.models import Bid, Vehicle, WatchlistEntry
 from app.schemas import MyBid, Standing
-from app.services.inventory import ids_for_bidder, summarize
+from app.services.inventory import get_vehicle_or_404, ids_for_bidder, open_first_key, summarize
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -50,13 +49,7 @@ def my_bids(session: DbSession, now: Now, bidder_id: RequiredBidderId) -> list[M
                 standing=_standing(auction.status, auction.is_high_bidder, auction.outcome),
             )
         )
-    items.sort(
-        key=lambda item: (
-            item.auction.status is AuctionStatus.ENDED,
-            item.auction.ends_at.timestamp()
-            * (-1 if item.auction.status is AuctionStatus.ENDED else 1),
-        )
-    )
+    items.sort(key=lambda item: open_first_key(item.auction))
     return items
 
 
@@ -64,8 +57,7 @@ def my_bids(session: DbSession, now: Now, bidder_id: RequiredBidderId) -> list[M
 def watch(
     vehicle_id: str, session: WriteSession, now: Now, bidder_id: RequiredBidderId
 ) -> Response:
-    if session.get(Vehicle, vehicle_id) is None:
-        raise ApiError(404, "vehicle_not_found", "No vehicle with that id.")
+    get_vehicle_or_404(session, vehicle_id)
     key = {"bidder_id": bidder_id, "vehicle_id": vehicle_id}
     if session.get(WatchlistEntry, key) is None:  # PUT is idempotent
         session.add(WatchlistEntry(**key, created_at=now))

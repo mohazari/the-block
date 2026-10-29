@@ -4,3 +4,20 @@ node_modules/
 .DS_Store
 *.log
 *.bak
+
+# Python
+__pycache__/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# App data (SQLite DB is generated from data/vehicles.json)
+server/*.db
+server/*.db-*
+
+# Web
+dist/
+coverage/
+test-results/
+playwright-report/

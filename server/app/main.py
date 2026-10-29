@@ -46,7 +46,8 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
             await asyncio.gather(waiting, return_exceptions=True)
             database_lock.release()
             raise
-        assert acquired  # False only when give_up was set, i.e. on the path above
+        if not acquired:  # only when give_up is set, which only the path above does
+            raise RuntimeError("Stopped waiting for the database lock")
         try:
             async with _running(app):
                 yield

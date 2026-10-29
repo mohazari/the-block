@@ -155,4 +155,14 @@ describe('InventoryPage', () => {
     expect(year).toHaveValue(null)
     expect(year).not.toHaveAttribute('aria-invalid', 'true')
   })
+
+  it('cuts an over-long paste at a whole character and keeps what was typed', async () => {
+    serve()
+    renderRoute('/')
+    const box = screen.getByRole('searchbox', { name: 'Search inventory' })
+    await userEvent.type(box, 'ford')
+    await userEvent.click(box)
+    await userEvent.paste('🚗'.repeat(60)) // 120 UTF-16 units: only 48 cars fit after "ford"
+    expect(box).toHaveValue(`ford${'🚗'.repeat(48)}`)
+  })
 })

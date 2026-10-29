@@ -1,5 +1,5 @@
 import { Search } from 'lucide-react'
-import { useEffect, useEffectEvent, useId, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useId, useRef, useState, type ClipboardEvent } from 'react'
 import { useInventory } from '../api/queries'
 import { LightsLegend } from '../components/auction/ConditionLight'
 import { plural } from '../lib/format'
@@ -9,6 +9,7 @@ import { FilterPanel } from './inventory/FilterPanel'
 import { FilterSheet } from './inventory/FilterSheet'
 import {
   activeFilterCount,
+  limitSearch,
   SEARCH_MAX_LENGTH,
   SORTS,
   useInventoryParams,
@@ -146,6 +147,23 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
     return () => clearTimeout(timer)
   }, [draft, value])
 
+  // The browser would cut an over-long paste mid-emoji. Insert only the whole characters that
+  // fit instead, keeping everything already typed and the caret right after the paste.
+  const pasteWithinLimit = (event: ClipboardEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const start = input.selectionStart ?? input.value.length
+    const end = input.selectionEnd ?? start
+    const room = SEARCH_MAX_LENGTH - (input.value.length - (end - start))
+    const pasted = event.clipboardData.getData('text')
+    if (pasted.length <= room) return // fits: let the browser do it
+    event.preventDefault()
+    const fitting = limitSearch(pasted, Math.max(0, room))
+    setDraft(input.value.slice(0, start) + fitting + input.value.slice(end))
+    requestAnimationFrame(() =>
+      input.setSelectionRange(start + fitting.length, start + fitting.length),
+    )
+  }
+
   return (
     <div className="relative min-w-0 flex-1 basis-full sm:basis-64">
       <label htmlFor={id} className="sr-only">
@@ -161,9 +179,9 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
         type="search"
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
+        onPaste={pasteWithinLimit}
         placeholder="Make, model, VIN, lot or city"
-        // The browser refuses input past the limit (pasting mid-query keeps the user's text and
-        // cursor). It counts UTF-16 units, so it is a little stricter than the API for emoji.
+        // Typing past the limit is refused in place; pastes are cut at a whole character.
         maxLength={SEARCH_MAX_LENGTH}
         className="border-line-strong bg-surface placeholder:text-ink-faint h-10 w-full rounded-[var(--radius-control)] border pr-3 pl-10 text-sm"
       />

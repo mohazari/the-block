@@ -63,26 +63,32 @@ describe('URL values the API would reject', () => {
     expect(query).toMatchObject({ year_min: 2018, year_max: 2024 })
   })
 
-  it("trims search text to the API's 100-character limit", () => {
-    const query = parseInventoryQuery(new URLSearchParams({ q: 'x'.repeat(150) }))
-    expect(query.q).toHaveLength(100)
-  })
-
   it('drops numbers too large to send as plain integers', () => {
     // 1e21 is an "integer" to JavaScript but would be sent as "1e+21", which the API rejects.
     const query = parseInventoryQuery(new URLSearchParams('price_min=1e21&odometer_max=1e21'))
     expect(query).toEqual({ page_size: 24 })
   })
 
-  it('never cuts a character in half when trimming search text', () => {
-    const query = parseInventoryQuery(new URLSearchParams({ q: `${'x'.repeat(99)}🚗🚗` }))
-    expect(query.q).toBe(`${'x'.repeat(99)}🚗`)
+  it('still limits search text where Intl.Segmenter is missing', () => {
+    // Intl's members aren't enumerable, so inherit them rather than spreading: only Segmenter goes.
+    vi.stubGlobal(
+      'Intl',
+      Object.assign(Object.create(Intl) as typeof Intl, { Segmenter: undefined }),
+    )
+    try {
+      expect(limitSearch(`${'x'.repeat(98)}🚗🚗`)).toBe(`${'x'.repeat(98)}🚗`)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
-  it('never cuts a multi-part emoji, and counts code points like the server', () => {
-    const family = '👨‍👩‍👧' // 5 code points: three people joined by zero-width joiners
-    expect(limitSearch(`${'x'.repeat(97)}${family}`)).toBe('x'.repeat(97))
-    expect(limitSearch(`${'x'.repeat(95)}${family}`)).toBe(`${'x'.repeat(95)}${family}`)
+  it('limits search text in UTF-16 units, like the search box, at whole characters', () => {
+    expect(parseInventoryQuery(new URLSearchParams({ q: 'x'.repeat(150) })).q).toHaveLength(100)
+    const car = '🚗' // 2 UTF-16 units
+    expect(limitSearch(`${'x'.repeat(99)}${car}`)).toBe('x'.repeat(99))
+    const family = '👨‍👩‍👧' // 8 UTF-16 units: three people joined by zero-width joiners
+    expect(limitSearch(`${'x'.repeat(93)}${family}`)).toBe('x'.repeat(93))
+    expect(limitSearch(`${'x'.repeat(92)}${family}`)).toBe(`${'x'.repeat(92)}${family}`)
   })
 
   it('trims whitespace before applying the limit', () => {
@@ -90,11 +96,5 @@ describe('URL values the API would reject', () => {
       new URLSearchParams({ q: `${' '.repeat(10)}${'x'.repeat(100)}` }),
     )
     expect(query.q).toBe('x'.repeat(100))
-  })
-
-  it('still limits search text where Intl.Segmenter is missing', () => {
-    vi.stubGlobal('Intl', { ...Intl, Segmenter: undefined })
-    expect(limitSearch(`${'x'.repeat(99)}🚗🚗`)).toBe(`${'x'.repeat(99)}🚗`)
-    vi.unstubAllGlobals()
   })
 })

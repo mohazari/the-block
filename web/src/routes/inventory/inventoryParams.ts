@@ -38,30 +38,34 @@ export const SORTS: { value: SortOrder; label: string }[] = [
 ]
 
 export const PAGE_SIZE = 24
-/** The API's limit on `q` (InventoryQuery.q max_length), counted as Python counts: code points. */
+/**
+ * Search text limit, in UTF-16 units: what the input's maxLength counts. The API's limit (100) is
+ * in code points, and a string never has more code points than UTF-16 units, so text within this
+ * limit is always accepted — and the box and the URL parser agree.
+ */
 export const SEARCH_MAX_LENGTH = 100
 
 let segmenter: Intl.Segmenter | undefined
 
-/** Whole characters: graphemes where supported, else code points (older browsers). Created on
- * first use, so a browser without Intl.Segmenter can still load this module. */
-function characters(text: string): string[] {
-  if (typeof Intl.Segmenter !== 'function') return Array.from(text)
+/** Whole characters, lazily: graphemes where supported, else code points (older browsers). */
+function* characters(text: string): Generator<string> {
+  if (typeof Intl.Segmenter !== 'function') {
+    yield* text
+    return
+  }
   segmenter ??= new Intl.Segmenter(undefined, { granularity: 'grapheme' })
-  return Array.from(segmenter.segment(text), ({ segment }) => segment)
+  for (const { segment } of segmenter.segment(text)) yield segment
 }
 
 /**
- * Cut search text to the API's limit at the last whole character that fits — never inside a
- * surrogate pair or a multi-part emoji (flags, skin tones, families). For text that arrives
- * whole (a link); the search box itself refuses extra input with maxLength.
+ * Cut text to at most `limit` UTF-16 units at the last whole character that fits — never inside
+ * a surrogate pair or a multi-part emoji (flags, skin tones, families).
  */
-export function limitSearch(text: string): string {
+export function limitSearch(text: string, limit = SEARCH_MAX_LENGTH): string {
+  if (text.length <= limit) return text
   let kept = ''
-  let codePoints = 0
   for (const character of characters(text)) {
-    codePoints += Array.from(character).length
-    if (codePoints > SEARCH_MAX_LENGTH) break
+    if (kept.length + character.length > limit) break
     kept += character
   }
   return kept

@@ -379,7 +379,37 @@ def test_watcher_idles_when_nobody_is_connected(
             await task
 
     asyncio.run(run_for(0.1))
-    assert checks == 0  # no streams, no requests: no database reads
-    watcher.note_activity()
-    asyncio.run(run_for(0.1))
-    assert checks == 1  # one check for the request, then idle again
+    assert checks == 0  # no streams open: no database reads
+
+
+def test_first_request_after_idling_rechecks_before_answering(
+    client: TestClient, clock: FrozenClock
+) -> None:
+    """A response must never carry an epoch older than the data it was built from."""
+    watcher = client.app.state.epoch  # type: ignore[attr-defined]
+    engine = client.app.state.engine  # type: ignore[attr-defined]
+    reset(engine, DATA_PATH, clock.now() + timedelta(days=1))  # npm run reset-db, while idle
+    watcher._checked_at = 0  # idle for a long while
+    response = client.get("/api/vehicles", params={"page_size": 1})
+    assert response.headers["X-Data-Epoch"] == data_epoch(engine)
+
+
+def test_a_failing_stream_close_does_not_stop_the_watcher(
+    seeded_engine: Engine, clock: FrozenClock
+) -> None:
+    calls: list[str] = []
+
+    def failing(epoch: str) -> None:
+        calls.append(epoch)
+        raise RuntimeError("boom")
+
+    watcher = EpochWatcher(seeded_engine, on_change=failing)
+
+    async def scenario() -> None:
+        reset(seeded_engine, DATA_PATH, clock.now() + timedelta(days=1))
+        await watcher.refresh()  # logged, not raised
+        reset(seeded_engine, DATA_PATH, clock.now() + timedelta(days=2))
+        await watcher.refresh()
+
+    asyncio.run(scenario())
+    assert len(calls) == 2

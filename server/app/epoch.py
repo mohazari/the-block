@@ -9,6 +9,7 @@ and their hello carries the new epoch.
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 
 from sqlalchemy import Engine
@@ -30,30 +31,33 @@ class EpochWatcher:
     ) -> None:
         self._engine = engine
         self._on_change = on_change
-        # Idle when nobody would notice: no open streams and no API requests since the last check.
         self._listeners = listeners
-        self._active = False
+        self._lock = asyncio.Lock()  # concurrent requests share one check
         self.current = data_epoch(engine)
-
-    def note_activity(self) -> None:
-        """An API request arrived: keep checking while clients are around."""
-        self._active = True
+        self._checked_at = time.monotonic()
 
     def check(self) -> str | None:
         """The epoch now in the database if it differs from `current`, else None.
 
         Blocking, so it runs in a worker thread — and it only reads: `current` changes on the
-        event loop (see run), together with ending the streams.
+        event loop, together with ending the streams.
         """
         latest = data_epoch(self._engine)
         return latest if latest != self.current else None
 
-    async def run(self) -> None:
-        while True:
-            await asyncio.sleep(CHECK_EVERY_SECONDS)
-            if not (self._active or self._listeners()):
-                continue
-            self._active = False
+    def is_stale(self) -> bool:
+        """Not checked within the last interval (the loop idles when no stream is open).
+
+        So an epoch is at most CHECK_EVERY_SECONDS old, idle or not: a reseed shows up in the
+        first response after that. Checking on literally every request would put a database
+        read in front of each one, which this design exists to avoid.
+        """
+        return time.monotonic() - self._checked_at > CHECK_EVERY_SECONDS
+
+    async def refresh(self) -> None:
+        """Check now, off the event loop, and apply the result on it. Raises if the read fails
+        (nothing is marked checked, so the next caller tries again)."""
+        async with self._lock:
             check = asyncio.ensure_future(asyncio.to_thread(self.check))
             try:
                 latest = await asyncio.shield(check)
@@ -61,15 +65,31 @@ class EpochWatcher:
                 # Shutting down: let a read in progress finish before the engine is disposed.
                 await asyncio.gather(check, return_exceptions=True)
                 raise
+            self._checked_at = time.monotonic()
+            if latest is None:
+                return
+            logger.info("Data was reseeded: ending live streams so clients resync")
+            # Back to back on the event loop: no client can receive a hello with the new epoch
+            # and then have that same stream closed (it would resync twice).
+            self.current = latest
+            try:
+                self._on_change(latest)
+            except Exception:  # a failing callback must not stop future checks
+                logger.exception("Ending live streams after a reseed failed")
+
+    async def run(self) -> None:
+        """Keep open streams' clients current. With no stream open, do nothing: requests
+        refresh on demand instead (see DataEpochHeader)."""
+        while True:
+            await asyncio.sleep(CHECK_EVERY_SECONDS)
+            if not self._listeners():
+                continue
+            try:
+                await self.refresh()
+            except asyncio.CancelledError:
+                raise
             except Exception:  # a failed check must not stop future ones
                 logger.exception("Data epoch check failed")
-                continue
-            if latest is not None:
-                logger.info("Data was reseeded: ending live streams so clients resync")
-                # Back to back on the event loop: no client can receive a hello with the new
-                # epoch and then have that same stream closed (it would resync twice).
-                self.current = latest
-                self._on_change(latest)
 
 
 class DataEpochHeader:
@@ -88,10 +108,17 @@ class DataEpochHeader:
             await self.app(scope, receive, send)
             return
 
+        watcher = getattr(scope["app"].state, "epoch", None)
+        if watcher is not None and watcher.is_stale():
+            # The loop was idle: check before answering, so this response can't carry an epoch
+            # older than the data it's built from.
+            try:
+                await watcher.refresh()
+            except Exception:
+                logger.exception("Data epoch check failed")
+
         async def stamped(message: Message) -> None:
-            watcher = getattr(scope["app"].state, "epoch", None)
             if message["type"] == "http.response.start" and watcher is not None:
-                watcher.note_activity()
                 headers = list(message.get("headers", []))
                 headers.append((b"x-data-epoch", watcher.current.encode()))
                 message = {**message, "headers": headers}

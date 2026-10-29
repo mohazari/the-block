@@ -45,6 +45,7 @@ class BidRejection(StrEnum):
     BID_TOO_LOW = "bid_too_low"
     BID_TOO_HIGH = "bid_too_high"
     ALREADY_HIGH_BIDDER = "already_high_bidder"
+    USE_BUY_NOW = "use_buy_now"
 
 
 def bid_increment(price: int) -> int:
@@ -111,8 +112,11 @@ def validate_bid(
     minimum: int,
     bidder_id: str,
     high_bidder_id: str | None,
+    available_buy_now: int | None = None,
 ) -> BidRejection | None:
     """Return why a bid must be rejected, or None if it is acceptable.
+
+    `available_buy_now` is the Buy Now price while Buy Now is still offered, else None.
 
     Upcoming auctions accept pre-bids: the dataset already has bids on auctions that have not
     opened, which is how wholesale lanes work (proxy bids placed before the car runs).
@@ -127,4 +131,7 @@ def validate_bid(
         return BidRejection.BID_TOO_LOW
     if amount > max_allowed_bid(minimum):
         return BidRejection.BID_TOO_HIGH
+    # Bidding at or above the Buy Now price only leads the auction; the buyer should just buy it.
+    if available_buy_now is not None and amount >= available_buy_now:
+        return BidRejection.USE_BUY_NOW
     return None

@@ -37,10 +37,14 @@ def test_damage_classification_tiers() -> None:
         DamageSeverity.MECHANICAL
     )
     assert classify_damage("Worn brake rotors - due for replacement") is DamageSeverity.MECHANICAL
-    # Structural wins even when a mechanical keyword is also present.
-    assert classify_damage("Flood damage - electrical issues present") is (
-        DamageSeverity.STRUCTURAL
-    )
+    # Major wins even when a mechanical keyword is also present.
+    assert classify_damage("Flood damage - electrical issues present") is DamageSeverity.MAJOR
+    assert classify_damage("Water damage to rear cargo area carpet") is DamageSeverity.MAJOR
+
+
+def test_damage_keywords_match_whole_phrases_only() -> None:
+    assert classify_damage("Scratch on door frame trim") is DamageSeverity.COSMETIC
+    assert classify_damage("Engine bay cover cracked") is DamageSeverity.COSMETIC
 
 
 def test_worst_severity() -> None:

@@ -64,7 +64,7 @@ class Vehicle(Base):
     search_text: Mapped[str]
 
     bids: Mapped[list["Bid"]] = relationship(
-        back_populates="vehicle", order_by="Bid.placed_at.desc()"
+        back_populates="vehicle", order_by=lambda: (Bid.placed_at.desc(), Bid.id.desc())
     )
 
 

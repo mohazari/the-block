@@ -106,6 +106,10 @@ def test_valid_bid_at_exact_minimum() -> None:
     assert _validate() is None
 
 
+def test_bid_below_available_buy_now_is_fine() -> None:
+    assert _validate(amount=29_999, available_buy_now=30_000) is None
+
+
 def test_pre_bids_are_accepted_on_upcoming_auctions() -> None:
     assert _validate(status=AuctionStatus.UPCOMING) is None
 
@@ -117,6 +121,7 @@ def test_pre_bids_are_accepted_on_upcoming_auctions() -> None:
         ({"amount": 23_299}, BidRejection.BID_TOO_LOW),
         ({"amount": 23_300 * 3 + 1}, BidRejection.BID_TOO_HIGH),
         ({"high_bidder_id": "me"}, BidRejection.ALREADY_HIGH_BIDDER),
+        ({"amount": 30_000, "available_buy_now": 30_000}, BidRejection.USE_BUY_NOW),
     ],
 )
 def test_bid_rejections(overrides: dict[str, object], rejection: BidRejection) -> None:

@@ -8,10 +8,10 @@ from sqlalchemy.orm import Session
 
 from app.clock import FrozenClock
 from app.db import write_engine
-from app.domain.auction import AuctionStatus, auction_status
+from app.domain.auction import AuctionStatus, auction_status, min_next_bid
 from app.domain.bidders import RIVAL_BIDDER_IDS
 from app.domain.schedule import FIRST_CLOSE_LEAD
-from app.models import Bid, Vehicle
+from app.models import Bid, Meta, Vehicle
 from app.seed import ensure_seeded, needs_seed
 
 from .conftest import DATA_PATH
@@ -38,21 +38,26 @@ def test_seeded_schedule_has_live_and_upcoming_auctions(
     assert abs(first_close - (now + FIRST_CLOSE_LEAD)) < timedelta(minutes=1)
 
 
-def test_seeded_history_matches_dataset_bid_state(seeded_engine: Engine) -> None:
+def test_seeded_history_obeys_the_increment_ladder(seeded_engine: Engine) -> None:
     by_id = {record["id"]: record for record in DATASET}
+    truncated = 0
     with Session(seeded_engine) as session:
         for vehicle in session.scalars(select(Vehicle)):
             record = by_id[vehicle.id]
             amounts = [bid.amount for bid in reversed(vehicle.bids)]  # oldest first
-            assert len(amounts) == record["bid_count"]
+            assert vehicle.bid_count == len(amounts) <= record["bid_count"]
+            truncated += len(amounts) < record["bid_count"]
             if amounts:
                 assert amounts[-1] == record["current_bid"]
                 assert amounts[0] >= record["starting_bid"]
-                assert amounts == sorted(set(amounts)), "history must strictly increase"
+                for earlier, later in pairwise(amounts):
+                    assert later >= min_next_bid(record["starting_bid"], earlier)
                 assert vehicle.high_bidder_id == vehicle.bids[0].bidder_id
                 bidders = [bid.bidder_id for bid in vehicle.bids]
                 assert all(a != b for a, b in pairwise(bidders))
                 assert set(bidders) <= set(RIVAL_BIDDER_IDS)
+    # The dataset claims more bids than fit the ladder for these; see ladder_amounts().
+    assert truncated == 34
 
 
 def test_reserve_price_survives_seeding(seeded_engine: Engine) -> None:
@@ -116,7 +121,24 @@ def test_write_sessions_serialize_read_then_write(seeded_engine: Engine) -> None
     assert final == max(seen) + 1
 
 
-def test_bid_rows_are_linked(seeded_engine: Engine) -> None:
+def test_bid_count_matches_stored_bids(seeded_engine: Engine) -> None:
     with Session(seeded_engine) as session:
         total_bids = session.scalar(select(func.count()).select_from(Bid))
-    assert total_bids == sum(r["bid_count"] for r in DATASET)
+        total_count = session.scalar(select(func.sum(Vehicle.bid_count)))
+    assert total_bids == total_count
+
+
+def test_ensure_seeded_is_a_no_op_on_a_current_database(
+    seeded_engine: Engine, clock: FrozenClock
+) -> None:
+    assert ensure_seeded(seeded_engine, DATA_PATH, clock.now()) is False
+
+
+def test_reseeds_when_schema_version_changes(seeded_engine: Engine, clock: FrozenClock) -> None:
+    with Session(seeded_engine) as session, session.begin():
+        meta = session.get(Meta, "schema_version")
+        assert meta is not None
+        meta.value = "0"
+    assert ensure_seeded(seeded_engine, DATA_PATH, clock.now()) is True
+    with Session(seeded_engine) as session:
+        assert not needs_seed(session, clock.now())

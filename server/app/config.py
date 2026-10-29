@@ -19,6 +19,11 @@ class Settings:
     data_path: Path
     simulator_enabled: bool
 
+    def __post_init__(self) -> None:
+        # The engine setup (BEGIN IMMEDIATE, WAL, pragmas) is SQLite-specific by design.
+        if not self.database_url.startswith("sqlite"):
+            raise ValueError(f"Only SQLite is supported; got DATABASE_URL={self.database_url!r}")
+
     @classmethod
     def from_env(cls) -> "Settings":
         return cls(

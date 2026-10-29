@@ -1,8 +1,8 @@
 /**
  * Which copy of the server's data the cache came from. Bid counts order snapshots, but they
  * restart when the server reseeds (`npm run reset-db`, or the automatic reseed) — so a changed
- * epoch means "drop the cache", not "compare". The API client reports the epoch from every
- * response header and the live stream from every hello.
+ * epoch means "drop the cache", not "compare". It arrives with every hello: on a reseed the
+ * server ends all live streams, so even an idle tab reconnects and learns about it.
  */
 let known: string | undefined
 const listeners = new Set<() => void>()

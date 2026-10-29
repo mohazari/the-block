@@ -12,7 +12,6 @@ from fastapi.sse import EventSourceResponse, ServerSentEvent
 
 from app.deps import validate_bidder_id
 from app.events import EventBroker
-from app.seed import data_epoch
 
 router = APIRouter(prefix="/api", tags=["events"])
 
@@ -42,8 +41,7 @@ async def events(
         clock = request.app.state.clock
         # `epoch` changes when the data is reseeded: clients must then drop what they cached,
         # since bid counts restart and can no longer order old against new.
-        epoch = data_epoch(request.app.state.engine)
-        hello = {"server_time": clock.now().isoformat(), "epoch": epoch}
+        hello = {"server_time": clock.now().isoformat(), "epoch": request.app.state.epoch.current}
         yield ServerSentEvent(event="hello", data=hello, retry=_RETRY_MS)
         while True:
             event = await subscriber.queue.get()

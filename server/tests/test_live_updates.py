@@ -15,12 +15,15 @@ from app.clock import FrozenClock
 from app.db import write_engine
 from app.domain.auction import min_next_bid
 from app.domain.bidders import RIVAL_BIDDER_IDS
+from app.epoch import EpochWatcher
 from app.events import BidEvent, EventBroker
 from app.models import Vehicle
 from app.routers.events import events as events_endpoint
-from app.seed import data_epoch
+from app.seed import data_epoch, reset
 from app.services.bidding import BidResult, place_bid
 from app.simulator import HUMAN_LEAD_GRACE, RivalSimulator
+
+from .conftest import DATA_PATH
 
 ME = "browser-me-0001"
 OTHER = "browser-other-02"
@@ -141,7 +144,11 @@ def test_stream_says_hello_then_relays_personalized_bids(
         broker.bind(asyncio.get_running_loop())
         request = SimpleNamespace(
             app=SimpleNamespace(
-                state=SimpleNamespace(broker=broker, clock=clock, engine=seeded_engine)
+                state=SimpleNamespace(
+                    broker=broker,
+                    clock=clock,
+                    epoch=EpochWatcher(seeded_engine, on_change=lambda _epoch: None),
+                )
             )
         )
         stream = events_endpoint(request, bidder_id=ME)  # type: ignore[arg-type]
@@ -293,3 +300,24 @@ def test_publish_failures_never_fail_the_bid(
         headers={"X-Bidder-Id": ME},
     )
     assert response.status_code == 201
+
+
+def test_a_reseed_under_a_running_server_ends_every_stream(
+    seeded_engine: Engine, clock: FrozenClock
+) -> None:
+    """npm run reset-db from another process: idle tabs must still find out."""
+    watcher = EpochWatcher(seeded_engine, on_change=lambda _epoch: None)
+    assert watcher.check() is False
+
+    reset(seeded_engine, DATA_PATH, clock.now() + timedelta(days=1))
+    assert watcher.check() is True
+    assert watcher.current == data_epoch(seeded_engine)
+
+    async def scenario() -> Any:
+        broker = EventBroker()
+        broker.bind(asyncio.get_running_loop())
+        async with broker.subscribe(ME) as subscriber:
+            broker.close_all()
+            return await asyncio.wait_for(subscriber.queue.get(), timeout=1)
+
+    assert asyncio.run(scenario()) is None  # the stream ends; the browser reconnects

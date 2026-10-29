@@ -3,18 +3,18 @@ import contextlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI
 from sqlalchemy.orm import sessionmaker
 
 from app.clock import Clock, SystemClock
 from app.config import Settings
 from app.db import create_db_engine, write_engine
+from app.epoch import EpochWatcher
 from app.errors import install_error_handlers
 from app.events import EventBroker
 from app.routers import bids, events, me, vehicles
-from app.seed import data_epoch, ensure_seeded
+from app.seed import ensure_seeded
 from app.simulator import RivalSimulator
 
 logger = logging.getLogger(__name__)
@@ -35,32 +35,24 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
         app.state.write_sessions = sessionmaker(write_engine(engine), expire_on_commit=False)
         app.state.broker = broker = EventBroker()
         broker.bind(asyncio.get_running_loop())
+        app.state.epoch = epoch = EpochWatcher(engine, on_change=lambda _epoch: broker.close_all())
+        background = [asyncio.create_task(epoch.run())]
 
-        simulator_task = None
         if settings.simulator_enabled:
             simulator = RivalSimulator(
                 app.state.sessions, app.state.write_sessions, clock, on_bid=broker.publish
             )
-            simulator_task = asyncio.create_task(simulator.run())
+            background.append(asyncio.create_task(simulator.run()))
             logger.info("Rival bidder simulator running (SIMULATOR_ENABLED=0 to turn off)")
         yield
-        if simulator_task is not None:
-            simulator_task.cancel()
+        for task in background:
+            task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
-                await simulator_task
+                await task
         engine.dispose()
 
     app = FastAPI(title="The Block API", version="0.1.0", lifespan=lifespan)
     install_error_handlers(app)
-
-    @app.middleware("http")
-    async def stamp_data_epoch(request: Request, call_next: Any) -> Response:
-        # Read per request, not once at startup: `npm run reset-db` can reseed under a running
-        # server, and clients must learn that their cached bid counts no longer apply.
-        response: Response = await call_next(request)
-        if request.url.path.startswith("/api/") and hasattr(request.app.state, "engine"):
-            response.headers["X-Data-Epoch"] = data_epoch(request.app.state.engine)
-        return response
 
     app.include_router(vehicles.router)
     app.include_router(bids.router)

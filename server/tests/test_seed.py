@@ -1,9 +1,8 @@
 import json
 import threading
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from itertools import pairwise
 
-from fastapi.testclient import TestClient
 from sqlalchemy import Engine, func, select, text
 from sqlalchemy.orm import Session
 
@@ -13,7 +12,7 @@ from app.domain.auction import AuctionStatus, auction_status, min_next_bid
 from app.domain.bidders import RIVAL_BIDDER_IDS
 from app.domain.schedule import FIRST_CLOSE_LEAD
 from app.models import Base, Bid, Meta, Vehicle
-from app.seed import data_epoch, ensure_seeded, needs_seed, reset
+from app.seed import data_epoch, ensure_seeded, needs_seed
 from app.services.inventory import _ranges
 
 from .conftest import DATA_PATH
@@ -160,14 +159,6 @@ def test_data_epoch_changes_when_the_data_is_reseeded(
     clock.advance(timedelta(days=30))
     ensure_seeded(seeded_engine, DATA_PATH, clock.now())
     assert first and data_epoch(seeded_engine) != first
-
-
-def test_every_api_response_carries_the_current_data_epoch(client: TestClient) -> None:
-    first = client.get("/api/health").headers["X-Data-Epoch"]
-    engine = client.app.state.engine  # type: ignore[attr-defined]
-    reset(engine, DATA_PATH, datetime(2026, 11, 1, tzinfo=UTC))  # e.g. npm run reset-db
-    second = client.get("/api/vehicles", params={"page_size": 1}).headers["X-Data-Epoch"]
-    assert first and second != first
 
 
 def test_paddle_numbers_follow_first_bid_order(seeded_engine: Engine) -> None:

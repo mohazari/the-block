@@ -173,22 +173,4 @@ describe('live auction events', () => {
       vi.useRealTimers()
     }
   })
-
-  it('drops the cache when a response shows the data was reseeded under a running server', async () => {
-    let epoch = 'epoch-1'
-    let detail = vehicleDetail({ auction: auction({ bid_count: 16 }) })
-    vi.stubGlobal('fetch', async (input: string) => {
-      const url = new URL(input, 'http://test')
-      const body = url.pathname === '/api/vehicles/veh-1' ? detail : []
-      return new Response(JSON.stringify(body), { headers: { 'X-Data-Epoch': epoch } })
-    })
-    const { queryClient } = renderRoute('/vehicles/veh-1')
-    const bidding = await panel()
-
-    // npm run reset-db: same server process, no reconnect, fewer bids on the same car.
-    epoch = 'epoch-2'
-    detail = vehicleDetail({ auction: auction({ bid_count: 3, current_bid: 9000 }) })
-    act(() => void queryClient.invalidateQueries())
-    expect(await bidding.findByText('3 bids')).toBeInTheDocument()
-  })
 })

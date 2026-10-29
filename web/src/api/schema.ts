@@ -100,7 +100,7 @@ export interface AuctionSnapshot {
 export interface BidOut {
   amount: number
   /**
-   * Anonymous alias, e.g. "Bidder 4821".
+   * Per-lot label in order of first bid, e.g. "Bidder 3". Anonymous, and the same bidder may have a different number on another vehicle.
    */
   bidder: string
   id: number

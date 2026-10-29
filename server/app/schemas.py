@@ -113,7 +113,10 @@ class DamageNote(BaseModel):
 class BidOut(BaseModel):
     id: int
     amount: int
-    bidder: str = Field(description='Anonymous alias, e.g. "Bidder 4821".')
+    bidder: str = Field(
+        description='Per-lot label in order of first bid, e.g. "Bidder 3". Anonymous, and the '
+        "same bidder may have a different number on another vehicle."
+    )
     is_you: bool
     placed_at: datetime
 

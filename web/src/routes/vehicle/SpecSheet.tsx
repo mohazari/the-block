@@ -24,7 +24,7 @@ export function SpecSheet({ vehicle }: { vehicle: VehicleDetail }) {
   ]
   return (
     <section aria-labelledby="specs-heading">
-      <h2 id="specs-heading" className="font-display mb-3 text-2xl font-bold">
+      <h2 id="specs-heading" className="mb-3 text-lg font-semibold">
         Specs
       </h2>
       <dl className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">

@@ -16,7 +16,8 @@ export function ConnectionStatus() {
     >
       <span
         aria-hidden
-        className={cn('size-2 rounded-full', live ? 'bg-win' : 'bg-caution-bright animate-pulse')}
+        // Steady, not pulsing: the words already say it's reconnecting.
+        className={cn('size-2 rounded-full', live ? 'bg-win' : 'bg-caution-bright')}
       />
       {live ? 'Live' : connection === 'connecting' ? 'Connecting…' : 'Reconnecting…'}
     </span>

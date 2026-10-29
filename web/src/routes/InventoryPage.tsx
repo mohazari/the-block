@@ -2,6 +2,7 @@ import { Search } from 'lucide-react'
 import { useEffect, useEffectEvent, useId, useRef, useState, type ClipboardEvent } from 'react'
 import { useInventory } from '../api/queries'
 import { LightsLegend } from '../components/auction/ConditionLight'
+import { SelectField } from '../components/SelectField'
 import { plural } from '../lib/format'
 import { ActiveFilterChips, ChipButton } from './inventory/ActiveFilterChips'
 import { activeChips } from './inventory/activeChips'
@@ -33,15 +34,13 @@ export function InventoryPage() {
   return (
     <div className="lg:grid lg:grid-cols-[248px_minmax(0,1fr)] lg:gap-8">
       <aside aria-label="Filters" className="hidden lg:block">
-        <div className="sticky top-20 max-h-[calc(100dvh-6rem)] overflow-y-auto pr-2 pb-6">
+        {/* A scrolling box clips anything past its edges, focus rings included: the 4px of
+            padding (taken back by the negative margin) keeps them whole. */}
+        <div className="sticky top-20 -mx-1 max-h-[calc(100dvh-6rem)] overflow-y-auto px-1 pt-1 pr-3 pb-6">
           <div className="mb-4 flex items-baseline justify-between">
-            <h2 className="font-display text-xl font-bold">Filters</h2>
+            <h2 className="text-lg font-semibold">Filters</h2>
             {filterCount > 0 && (
-              <button
-                type="button"
-                onClick={clearAll}
-                className="text-action hover:text-action-hover text-sm font-semibold"
-              >
+              <button type="button" onClick={clearAll} className="link-action text-sm">
                 Clear all
               </button>
             )}
@@ -53,7 +52,7 @@ export function InventoryPage() {
       <section aria-labelledby="inventory-heading" className="min-w-0">
         <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
           <div>
-            <h1 id="inventory-heading" className="font-display text-3xl font-bold tracking-tight">
+            <h1 id="inventory-heading" className="text-2xl font-semibold tracking-tight">
               Run list
             </h1>
             <p className="text-ink-muted text-sm" aria-live="polite">
@@ -63,7 +62,8 @@ export function InventoryPage() {
           <LightsLegend />
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+        {/* Phones: search on its own row, then Filters and Sort sharing the next one. */}
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:items-center lg:gap-3">
           <SearchBox value={query.q ?? ''} onSearch={(q) => update({ q }, { replace: true })} />
           <FilterSheet activeCount={filterCount} total={data?.total} onClear={clearAll}>
             <FilterPanel query={query} data={data} update={update} clearCount={clearCount} />
@@ -181,7 +181,7 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
   }
 
   return (
-    <div className="relative min-w-0 flex-1 basis-full sm:basis-64">
+    <div className="relative col-span-2 min-w-0 sm:flex-1">
       <label htmlFor={id} className="sr-only">
         Search inventory
       </label>
@@ -199,7 +199,7 @@ function SearchBox({ value, onSearch }: { value: string; onSearch: (q: string) =
         placeholder="Make, model, VIN, lot or city"
         // Typing past the limit is refused in place; pastes are cut at a whole character.
         maxLength={SEARCH_MAX_LENGTH}
-        className="border-line-strong bg-surface placeholder:text-ink-faint h-10 w-full rounded-[var(--radius-control)] border pr-3 pl-10 text-sm"
+        className="field pl-10"
       />
     </div>
   )
@@ -214,22 +214,22 @@ function SortSelect({
 }) {
   const id = useId()
   return (
-    <div className="flex items-center gap-2">
-      <label htmlFor={id} className="text-ink-muted text-sm max-sm:sr-only">
-        Sort
+    <div className="flex min-w-0 items-center gap-2">
+      <label htmlFor={id} className="text-ink-muted shrink-0 text-sm max-sm:sr-only">
+        Sort by
       </label>
-      <select
+      <SelectField
         id={id}
         value={value}
         onChange={(event) => onChange(event.target.value as (typeof SORTS)[number]['value'])}
-        className="border-line-strong bg-surface h-10 rounded-[var(--radius-control)] border px-2 text-sm"
+        className="min-w-0 flex-1 sm:w-48 sm:flex-none"
       >
         {SORTS.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>
         ))}
-      </select>
+      </SelectField>
     </div>
   )
 }
@@ -246,7 +246,7 @@ function EmptyResults({
   const chips = activeChips(query)
   return (
     <div className="border-line bg-surface rounded-[var(--radius-panel)] border px-6 py-12 text-center">
-      <h2 className="font-display text-2xl font-bold">No vehicles match</h2>
+      <h2 className="text-lg font-semibold">No vehicles match</h2>
       {chips.length > 0 ? (
         <>
           <p className="text-ink-muted mt-1">Try removing a filter:</p>
@@ -255,11 +255,7 @@ function EmptyResults({
               <ChipButton key={chip.key} chip={chip} onRemove={onRemove} />
             ))}
           </div>
-          <button
-            type="button"
-            onClick={onClearAll}
-            className="text-action hover:text-action-hover mt-4 text-sm font-semibold"
-          >
+          <button type="button" onClick={onClearAll} className="link-action mt-4 text-sm">
             Clear all filters
           </button>
         </>
@@ -286,13 +282,9 @@ function Notice({
       role={role}
       className="border-line bg-surface rounded-[var(--radius-panel)] border px-6 py-12 text-center"
     >
-      <h2 className="font-display text-2xl font-bold">{title}</h2>
+      <h2 className="text-lg font-semibold">{title}</h2>
       <p className="text-ink-muted mt-1">{body}</p>
-      <button
-        type="button"
-        onClick={action.onClick}
-        className="bg-action text-action-ink hover:bg-action-hover mt-4 h-10 rounded-[var(--radius-control)] px-4 text-sm font-semibold"
-      >
+      <button type="button" onClick={action.onClick} className="btn btn-primary mt-4">
         {action.label}
       </button>
     </div>
@@ -332,12 +324,7 @@ function PageButton({
   children: string
 }) {
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className="border-line-strong bg-surface h-10 rounded-[var(--radius-control)] border px-4 text-sm font-semibold disabled:opacity-40"
-    >
+    <button type="button" disabled={disabled} onClick={onClick} className="btn btn-plain">
       {children}
     </button>
   )

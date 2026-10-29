@@ -55,7 +55,7 @@ export function VehicleRow({ vehicle, note }: { vehicle: VehicleSummary; note?: 
         <p className="text-ink-faint tabular truncate text-xs">
           Lot {vehicle.lot} <span aria-hidden>/</span> {vehicle.city}, {vehicle.province}
         </p>
-        <h3 className="font-display truncate text-xl leading-tight font-semibold">
+        <h3 className="truncate text-base leading-snug font-semibold">
           {/* Stretched link: the whole row opens the vehicle, with one link for screen readers. */}
           <Link
             to={`/vehicles/${vehicle.id}`}
@@ -84,7 +84,7 @@ export function VehicleRow({ vehicle, note }: { vehicle: VehicleSummary; note?: 
       <div className="col-span-2 flex flex-wrap items-baseline justify-between gap-x-3 sm:col-span-1 sm:col-start-2 lg:col-start-auto lg:block lg:text-right">
         <div>
           <p className="text-ink-faint text-xs">{hasBids ? 'Current bid' : 'Starting bid'}</p>
-          <p className="font-display tabular text-2xl leading-none font-bold">
+          <p className="tabular text-xl leading-none font-bold">
             {formatMoney(auction.current_bid ?? auction.starting_bid)}
           </p>
         </div>
@@ -113,7 +113,7 @@ function WatchButton({ vehicle, name }: { vehicle: VehicleSummary; name: string 
       aria-label={vehicle.watching ? `Stop watching ${name}` : `Watch ${name}`}
       onClick={() => watch.mutate({ vehicleId: vehicle.id, watching: !vehicle.watching })}
       className={cn(
-        'absolute top-2 right-2 z-10 grid size-10 place-items-center rounded-[var(--radius-control)] lg:relative lg:top-auto lg:right-auto',
+        'absolute top-2 right-2 z-10 grid size-10 place-items-center rounded-full lg:relative lg:top-auto lg:right-auto',
         vehicle.watching ? 'text-action' : 'text-ink-faint hover:text-ink',
       )}
     >

@@ -47,7 +47,7 @@ export function Toaster() {
                   <Link
                     to={toast.link.to}
                     onClick={() => dismissToast(toast.id)}
-                    className="text-action hover:text-action-hover mt-2 inline-block text-sm font-semibold"
+                    className="link-action mt-2 inline-block text-sm"
                   >
                     {toast.link.label}
                   </Link>

@@ -11,8 +11,9 @@ import { cn } from '../lib/cn'
 
 const navLink = ({ isActive }: { isActive: boolean }) =>
   cn(
-    'rounded-[var(--radius-control)] px-3 py-2 text-sm font-semibold transition-colors',
-    isActive ? 'bg-action-soft text-action' : 'text-ink-muted hover:text-ink',
+    'rounded-full px-3 py-2 text-sm font-semibold transition-colors',
+    // The current page is a neutral pill: blue is kept for things you can act on.
+    isActive ? 'bg-surface-sunk text-ink' : 'text-ink-muted hover:text-ink',
   )
 
 export function AppShell() {
@@ -27,12 +28,11 @@ export function AppShell() {
       >
         Skip to content
       </a>
-      <header className="border-line bg-surface/95 sticky top-0 z-30 border-b backdrop-blur">
+      <header className="border-line bg-surface sticky top-0 z-30 border-b">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 sm:gap-4">
-          <NavLink to="/" className="mr-auto flex items-baseline gap-2" aria-label="The Block home">
-            <span className="font-display text-2xl leading-none font-bold tracking-tight">
-              The Block
-            </span>
+          <NavLink to="/" className="mr-auto flex items-center gap-2.5" aria-label="The Block home">
+            <BlockMark />
+            <span className="text-lg leading-none font-semibold tracking-tight">The Block</span>
             <span className="text-ink-faint hidden text-xs sm:inline">Live dealer auctions</span>
           </NavLink>
           <nav aria-label="Main" className="flex items-center gap-1">
@@ -49,7 +49,7 @@ export function AppShell() {
             type="button"
             onClick={toggleTheme}
             aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-            className="text-ink-muted hover:bg-surface-sunk hover:text-ink grid size-10 place-items-center rounded-[var(--radius-control)]"
+            className="text-ink-muted hover:bg-surface-sunk hover:text-ink grid size-10 place-items-center rounded-full"
           >
             {theme === 'dark' ? <Sun size={18} aria-hidden /> : <Moon size={18} aria-hidden />}
           </button>
@@ -77,5 +77,17 @@ function AttentionBadge() {
       {count}
       <span className="sr-only"> outbid</span>
     </span>
+  )
+}
+
+/** The product's mark: a run list (three lots, the first one up) in OPENLANE Blue. */
+function BlockMark() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden className="size-6 shrink-0">
+      <rect width="24" height="24" rx="6" fill="var(--action)" />
+      <rect x="5" y="6" width="14" height="3" rx="1.5" fill="var(--action-ink)" />
+      <rect x="5" y="10.5" width="10" height="3" rx="1.5" fill="var(--action-ink)" opacity="0.7" />
+      <rect x="5" y="15" width="7" height="3" rx="1.5" fill="var(--action-ink)" opacity="0.45" />
+    </svg>
   )
 }

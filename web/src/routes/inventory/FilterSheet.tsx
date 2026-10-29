@@ -23,7 +23,7 @@ export function FilterSheet({
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Trigger className="border-line-strong bg-surface inline-flex h-10 items-center gap-2 rounded-[var(--radius-control)] border px-3 text-sm font-semibold lg:hidden">
+      <Dialog.Trigger className="btn btn-plain px-4 lg:hidden">
         <SlidersHorizontal size={16} aria-hidden />
         Filters{activeCount > 0 && ` (${activeCount})`}
       </Dialog.Trigger>
@@ -47,10 +47,10 @@ export function FilterSheet({
                 transition={{ type: 'spring', bounce: 0, duration: 0.35 }}
               >
                 <div className="border-line flex items-center justify-between border-b px-4 py-3">
-                  <Dialog.Title className="font-display text-xl font-bold">Filters</Dialog.Title>
+                  <Dialog.Title className="text-lg font-semibold">Filters</Dialog.Title>
                   <Dialog.Close
                     aria-label="Close filters"
-                    className="hover:bg-surface-sunk grid size-10 place-items-center rounded-[var(--radius-control)]"
+                    className="hover:bg-surface-sunk grid size-10 place-items-center rounded-full"
                   >
                     <X size={20} aria-hidden />
                   </Dialog.Close>
@@ -61,11 +61,11 @@ export function FilterSheet({
                     type="button"
                     onClick={onClear}
                     disabled={activeCount === 0}
-                    className="text-ink-muted h-11 rounded-[var(--radius-control)] px-4 text-sm font-semibold disabled:opacity-40"
+                    className="btn text-ink-muted h-11"
                   >
                     Clear all
                   </button>
-                  <Dialog.Close className="bg-action text-action-ink hover:bg-action-hover h-11 flex-1 rounded-[var(--radius-control)] text-sm font-semibold">
+                  <Dialog.Close className="btn btn-primary h-11 flex-1">
                     {total === undefined ? 'Show vehicles' : `Show ${plural(total, 'vehicle')}`}
                   </Dialog.Close>
                 </div>

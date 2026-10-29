@@ -28,7 +28,7 @@ function VehicleDetailContent({ vehicleId }: { vehicleId: string }) {
     const missing = query.error instanceof ApiError && query.error.status === 404
     return (
       <section className="mx-auto max-w-md py-16 text-center" role="alert">
-        <h1 className="font-display text-3xl font-bold">
+        <h1 className="text-2xl font-semibold tracking-tight">
           {missing ? 'This vehicle isn’t on the run list' : 'Couldn’t load this vehicle'}
         </h1>
         <p className="text-ink-muted mt-2">
@@ -36,18 +36,11 @@ function VehicleDetailContent({ vehicleId }: { vehicleId: string }) {
         </p>
         <div className="mt-6 flex justify-center gap-3">
           {!missing && (
-            <button
-              type="button"
-              onClick={() => void query.refetch()}
-              className="bg-action text-action-ink h-10 rounded-[var(--radius-control)] px-4 font-semibold"
-            >
+            <button type="button" onClick={() => void query.refetch()} className="btn btn-primary">
               Try again
             </button>
           )}
-          <Link
-            to="/"
-            className="border-line-strong h-10 content-center rounded-[var(--radius-control)] border px-4 font-semibold"
-          >
+          <Link to="/" className="btn btn-plain">
             Back to the run list
           </Link>
         </div>
@@ -122,7 +115,7 @@ function Header({ vehicle }: { vehicle: VehicleDetail }) {
         <p className="text-ink-faint tabular text-sm">Lot {vehicle.lot}</p>
         <h1
           id="vehicle-heading"
-          className="font-display text-4xl leading-tight font-bold tracking-tight"
+          className="text-2xl leading-tight font-semibold tracking-tight lg:text-[1.75rem]"
         >
           {name}
         </h1>
@@ -135,8 +128,8 @@ function Header({ vehicle }: { vehicle: VehicleDetail }) {
         aria-pressed={vehicle.watching}
         onClick={() => watch.mutate({ vehicleId: vehicle.id, watching: !vehicle.watching })}
         className={cn(
-          'inline-flex h-10 items-center gap-2 rounded-[var(--radius-control)] border px-3 text-sm font-semibold',
-          vehicle.watching ? 'border-action bg-action-soft text-action' : 'border-line-strong',
+          'btn px-4',
+          vehicle.watching ? 'border-action bg-action-soft text-ink' : 'btn-plain',
         )}
       >
         <Star size={16} aria-hidden fill={vehicle.watching ? 'currentColor' : 'none'} />
@@ -149,7 +142,7 @@ function Header({ vehicle }: { vehicle: VehicleDetail }) {
 function Seller({ vehicle }: { vehicle: VehicleDetail }) {
   return (
     <section aria-labelledby="seller-heading">
-      <h2 id="seller-heading" className="font-display mb-3 text-2xl font-bold">
+      <h2 id="seller-heading" className="mb-3 text-lg font-semibold">
         Seller
       </h2>
       <div className="border-line bg-surface rounded-[var(--radius-panel)] border p-4">
@@ -168,19 +161,16 @@ function MobileBidBar({ vehicle }: { vehicle: VehicleDetail }) {
   const { auction } = vehicle
   const open = statusAt(auction, useServerNow()) !== 'ended'
   return (
-    <div className="border-line bg-surface/95 fixed inset-x-0 bottom-0 z-20 border-t px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur lg:hidden">
+    <div className="border-line bg-surface fixed inset-x-0 bottom-0 z-20 border-t px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:hidden">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
         <div>
-          <p className="font-display tabular text-2xl leading-none font-bold">
+          <p className="tabular text-xl leading-none font-bold">
             {formatMoney(auction.current_bid ?? auction.starting_bid)}
           </p>
           <AuctionClock auction={auction} className="text-sm" />
         </div>
         {open && (
-          <a
-            href="#bid"
-            className="bg-action text-action-ink inline-flex h-11 items-center rounded-[var(--radius-control)] px-5 font-semibold"
-          >
+          <a href="#bid" className="btn btn-primary h-11 px-6 text-base">
             Bid
           </a>
         )}
@@ -191,7 +181,8 @@ function MobileBidBar({ vehicle }: { vehicle: VehicleDetail }) {
 
 function DetailSkeleton() {
   return (
-    <div aria-busy="true" aria-label="Loading vehicle" className="animate-pulse">
+    // The final layout in flat grey: no shimmer, and nothing moves when the data lands.
+    <div aria-busy="true" aria-label="Loading vehicle">
       <div className="bg-surface-sunk h-4 w-24 rounded" />
       <div className="bg-surface-sunk mt-4 h-9 w-72 rounded" />
       <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px]">

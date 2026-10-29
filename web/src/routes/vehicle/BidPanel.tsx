@@ -37,7 +37,7 @@ export function BidPanel({ vehicle }: { vehicle: VehicleDetail }) {
         <p className="text-ink-muted mt-4 text-sm">{hasBids ? 'Current bid' : 'Starting bid'}</p>
         <AnimatedPrice
           value={auction.current_bid ?? auction.starting_bid}
-          className="font-display block text-5xl leading-none font-bold"
+          className="block text-4xl leading-none font-bold"
         />
         <p className="text-ink-muted mt-2 flex flex-wrap gap-x-3 text-sm">
           <span>{hasBids ? plural(auction.bid_count, 'bid') : 'No bids yet'}</span>
@@ -87,7 +87,7 @@ export function BidPanel({ vehicle }: { vehicle: VehicleDetail }) {
 function StatusPill({ status }: { status: ReturnType<typeof statusAt> }) {
   const styles = {
     live: 'bg-win-soft text-win',
-    upcoming: 'bg-action-soft text-action',
+    upcoming: 'bg-action-soft text-ink', // blue text on Blue 50 is under 4.5:1
     ended: 'bg-surface-sunk text-ink-muted',
   }
   const text = { live: 'Live', upcoming: 'Upcoming', ended: 'Auction ended' }
@@ -217,9 +217,9 @@ function BidForm({
               onClick={() => edit(String(value))}
               aria-pressed={amount === value}
               className={cn(
-                'tabular h-10 rounded-[var(--radius-control)] border text-sm font-semibold',
+                'tabular h-10 rounded-full border text-sm font-semibold transition-colors',
                 amount === value
-                  ? 'border-action bg-action-soft text-action'
+                  ? 'border-action bg-action-soft text-ink'
                   : 'border-line-strong hover:border-ink-faint',
               )}
             >
@@ -232,8 +232,8 @@ function BidForm({
       <label htmlFor={inputId} className="text-ink-muted mt-4 mb-1 block text-sm">
         Or enter an amount
       </label>
-      <div className="border-line-strong bg-surface focus-within:border-action flex h-12 items-center rounded-[var(--radius-control)] border">
-        <span className="text-ink-faint pl-3">$</span>
+      <div className="border-line-strong bg-surface focus-within:border-action flex h-12 items-center rounded-[var(--radius-control)] border focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--focus)]">
+        <span className="text-ink-faint tabular pl-3 text-xl font-semibold">$</span>
         <input
           id={inputId}
           type="number"
@@ -244,7 +244,7 @@ function BidForm({
           onChange={(event) => edit(event.target.value)}
           aria-invalid={Boolean(problem)}
           aria-describedby={errorId}
-          className="font-display tabular h-full min-w-0 flex-1 bg-transparent px-1 text-2xl font-semibold outline-none"
+          className="tabular h-full min-w-0 flex-1 bg-transparent px-1 text-xl font-semibold outline-none"
         />
       </div>
       <p id={errorId} className="text-outbid mt-1 min-h-5 text-sm" aria-live="polite">
@@ -267,7 +267,7 @@ function BidForm({
           <button
             type="button"
             onClick={() => setConfirming(null)}
-            className="text-ink-muted hover:text-ink h-12 rounded-[var(--radius-control)] px-4 text-sm font-semibold"
+            className="btn text-ink-muted hover:text-ink h-12"
           >
             Cancel
           </button>
@@ -276,10 +276,8 @@ function BidForm({
           type="submit"
           disabled={Boolean(problem) || placeBid.isPending}
           className={cn(
-            'h-12 flex-1 rounded-[var(--radius-control)] text-base font-semibold transition-colors disabled:opacity-50',
-            confirming
-              ? 'bg-ink text-lane hover:bg-ink/90'
-              : 'bg-action text-action-ink hover:bg-action-hover',
+            'btn h-12 flex-1 text-base',
+            confirming ? 'bg-ink text-lane hover:bg-ink/90' : 'btn-primary',
           )}
         >
           {placeBid.isPending
@@ -333,7 +331,7 @@ function BuyNow({ vehicleId, price }: { vehicleId: string; price: number }) {
               setConfirmKey(null)
               buyNow.reset()
             }}
-            className="text-ink-muted hover:text-ink h-10 px-3 text-sm font-semibold"
+            className="btn text-ink-muted hover:text-ink"
           >
             Cancel
           </button>
@@ -342,12 +340,7 @@ function BuyNow({ vehicleId, price }: { vehicleId: string; price: number }) {
           type="button"
           onClick={click}
           disabled={buyNow.isPending}
-          className={cn(
-            'h-10 flex-1 rounded-[var(--radius-control)] border text-sm font-semibold disabled:opacity-50',
-            confirmKey
-              ? 'border-ink bg-ink text-lane'
-              : 'border-line-strong hover:border-ink-faint',
-          )}
+          className={cn('btn flex-1', confirmKey ? 'border-ink bg-ink text-lane' : 'btn-plain')}
         >
           {buyNow.isPending
             ? 'Buying…'

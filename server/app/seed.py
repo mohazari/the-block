@@ -10,6 +10,7 @@ import os
 import random
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -200,19 +201,28 @@ def reset(engine: Engine, data_path: Path, now: datetime) -> None:
     logger.info("Seeded %d vehicles from %s", count, data_path)
 
 
-def reset_running_server(url: str) -> bool:
-    """Ask a running dev server to reseed itself. Returns False if no server is listening."""
-    request = urllib.request.Request(url, method="POST")
+def reset_running_server(url: str, database_url: str) -> bool:
+    """Ask a running dev server to reseed itself, if it uses `database_url`.
+
+    Returns False when no server is listening or it uses another database: the caller then
+    resets the file directly.
+    """
+    query = urllib.parse.urlencode({"database_url": database_url})
+    request = urllib.request.Request(f"{url}?{query}", method="POST")
     try:
         with urllib.request.urlopen(request, timeout=30):
             return True
     except urllib.error.HTTPError as error:
+        if error.code == 409:  # a server on another database: this one isn't in use
+            return False
         if error.code == 404:
             raise SystemExit(
                 "A server is running without dev reset enabled. Stop it first, or start it "
                 "with `npm run dev`."
             ) from None
-        raise
+        raise SystemExit(
+            f"Couldn't ask the server at {url} to reset (HTTP {error.code})."
+        ) from None
     except (urllib.error.URLError, ConnectionError):
         return False
 
@@ -229,13 +239,12 @@ def main() -> None:
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
+    settings = Settings.from_env()
     if args.reset and args.live:
         port = os.environ.get("API_PORT", "8000")
-        if reset_running_server(f"http://127.0.0.1:{port}/api/dev/reset"):
+        if reset_running_server(f"http://127.0.0.1:{port}/api/dev/reset", settings.database_url):
             logger.info("The running server reseeded its data; open tabs resync automatically.")
             return
-
-    settings = Settings.from_env()
     engine = create_db_engine(settings.database_url)
     now = SystemClock().now()
     if args.reset:

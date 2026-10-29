@@ -37,6 +37,7 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
         # Identifies this copy of the data; sent with every hello (see routers/dev.py).
         app.state.data_epoch = data_epoch(engine)
         app.state.data_path = settings.data_path
+        app.state.database_url = settings.database_url
         background: list[asyncio.Task[None]] = []
 
         if settings.simulator_enabled:

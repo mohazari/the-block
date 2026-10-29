@@ -56,6 +56,27 @@ def test_dev_reset_reseeds_in_process_and_ends_streams(tmp_path: Path, clock: Fr
         assert after["bid_count"] == vehicle["auction"]["bid_count"]  # the new bid is gone
 
 
+def test_dev_reset_leaves_a_different_database_alone(tmp_path: Path, clock: FrozenClock) -> None:
+    with _client(tmp_path, clock, dev_reset=True) as client:
+        app: Any = client.app
+        epoch = app.state.data_epoch
+        other = client.post("/api/dev/reset", params={"database_url": "sqlite:///other.db"})
+        assert other.status_code == 409
+        assert app.state.data_epoch == epoch
+        own = client.post("/api/dev/reset", params={"database_url": app.state.database_url})
+        assert own.status_code == 204
+
+
+def test_cli_resets_the_file_itself_when_the_server_uses_another_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def conflict(*_args: object, **_kwargs: object) -> None:
+        raise urllib.error.HTTPError(URL, 409, "Conflict", None, None)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(urllib.request, "urlopen", conflict)
+    assert reset_running_server(URL, "sqlite:///other.db") is False
+
+
 class _Accepted:
     def __enter__(self) -> "_Accepted":
         return self
@@ -72,7 +93,7 @@ def test_cli_asks_a_running_server_to_reseed(monkeypatch: pytest.MonkeyPatch) ->
         return _Accepted()
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
-    assert reset_running_server(URL) is True
+    assert reset_running_server(URL, "sqlite:///dev.db") is True
     assert methods == ["POST"]
 
 
@@ -81,7 +102,7 @@ def test_cli_falls_back_when_no_server_is_running(monkeypatch: pytest.MonkeyPatc
         raise urllib.error.URLError(ConnectionRefusedError())
 
     monkeypatch.setattr(urllib.request, "urlopen", refused)
-    assert reset_running_server(URL) is False
+    assert reset_running_server(URL, "sqlite:///dev.db") is False
 
 
 def test_cli_refuses_a_server_without_dev_reset(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -90,4 +111,4 @@ def test_cli_refuses_a_server_without_dev_reset(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr(urllib.request, "urlopen", not_found)
     with pytest.raises(SystemExit, match="without dev reset"):
-        reset_running_server(URL)
+        reset_running_server(URL, "sqlite:///dev.db")

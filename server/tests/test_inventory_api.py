@@ -144,5 +144,45 @@ def test_bidder_id_is_validated_and_rivals_cannot_be_impersonated(client: TestCl
         assert response.json()["error"]["code"] == "invalid_bidder_id"
 
 
-def test_watching_filter_without_a_bidder_is_empty(client: TestClient) -> None:
-    assert _list(client, watching=True)["total"] == 0
+def test_watching_filter_requires_a_bidder(client: TestClient) -> None:
+    response = client.get("/api/vehicles", params={"watching": True})
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "bidder_id_required"
+
+
+def test_selected_facet_values_survive_zero_matches(client: TestClient) -> None:
+    body = _list(client, make=["Tesla"], q="no-such-vehicle")
+    assert body["total"] == 0
+    assert {"value": "Tesla", "count": 0} in body["facets"]["make"]
+
+
+def test_ending_soon_orders_live_then_upcoming_then_recently_ended(
+    client: TestClient, clock: FrozenClock
+) -> None:
+    items = _all_items(client)
+    statuses = [item["auction"]["status"] for item in items]
+    assert statuses == sorted(statuses, key=["live", "upcoming"].index)
+    live = [i["auction"]["ends_at"] for i in items if i["auction"]["status"] == "live"]
+    upcoming = [i["auction"]["starts_at"] for i in items if i["auction"]["status"] == "upcoming"]
+    assert live == sorted(live) and upcoming == sorted(upcoming)
+
+    clock.advance(timedelta(hours=6))
+    ended = _all_items(client, status="ended")
+    assert len(ended) > 1
+    ended_at = [i["auction"]["ends_at"] for i in ended]
+    assert ended_at == sorted(ended_at, reverse=True)
+
+
+def test_inverted_ranges_are_rejected(client: TestClient) -> None:
+    response = client.get("/api/vehicles", params={"price_min": 50_000, "price_max": 5_000})
+    assert response.status_code == 422
+    assert "price_min must not exceed price_max" in response.text
+
+
+def test_framework_errors_use_the_envelope(client: TestClient) -> None:
+    missing = client.get("/api/no-such-route")
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "not_found"
+    wrong_method = client.delete("/api/vehicles")
+    assert wrong_method.status_code == 405
+    assert wrong_method.json()["error"]["code"] == "method_not_allowed"

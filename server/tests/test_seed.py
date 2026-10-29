@@ -11,8 +11,9 @@ from app.db import write_engine
 from app.domain.auction import AuctionStatus, auction_status, min_next_bid
 from app.domain.bidders import RIVAL_BIDDER_IDS
 from app.domain.schedule import FIRST_CLOSE_LEAD
-from app.models import Bid, Meta, Vehicle
+from app.models import Base, Bid, Meta, Vehicle
 from app.seed import ensure_seeded, needs_seed
+from app.services.inventory import _ranges
 
 from .conftest import DATA_PATH
 
@@ -142,3 +143,10 @@ def test_reseeds_when_schema_version_changes(seeded_engine: Engine, clock: Froze
     assert ensure_seeded(seeded_engine, DATA_PATH, clock.now()) is True
     with Session(seeded_engine) as session:
         assert not needs_seed(session, clock.now())
+
+
+def test_ranges_tolerate_an_empty_inventory(engine: Engine) -> None:
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        ranges = _ranges(session)
+    assert ranges.price.min == ranges.price.max == 0

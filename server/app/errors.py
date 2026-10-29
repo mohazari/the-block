@@ -4,11 +4,16 @@ Clients branch on the stable `code`, show `message`, and can use details such as
 snapshot to recover (e.g. "you were outbid while confirming — new minimum is $23,800").
 """
 
+import logging
+from http import HTTPStatus
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+logger = logging.getLogger(__name__)
 
 
 class ApiError(Exception):
@@ -20,16 +25,16 @@ class ApiError(Exception):
         self.details = details
 
 
-def _body(code: str, message: str, **details: Any) -> dict[str, Any]:
-    return {"error": {"code": code, "message": message, **details}}
+def _response(status: int, code: str, message: str, **details: Any) -> JSONResponse:
+    return JSONResponse(
+        status_code=status, content={"error": {"code": code, "message": message, **details}}
+    )
 
 
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def _api_error(_request: Request, exc: ApiError) -> JSONResponse:
-        return JSONResponse(
-            status_code=exc.status, content=_body(exc.code, exc.message, **exc.details)
-        )
+        return _response(exc.status, exc.code, exc.message, **exc.details)
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -37,7 +42,15 @@ def install_error_handlers(app: FastAPI) -> None:
             {"field": ".".join(str(part) for part in err["loc"][1:]), "message": err["msg"]}
             for err in exc.errors()
         ]
-        return JSONResponse(
-            status_code=422,
-            content=_body("invalid_request", "Some fields are invalid.", issues=issues),
-        )
+        return _response(422, "invalid_request", "Some fields are invalid.", issues=issues)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _http_error(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        # Framework-level errors: unknown route (404), wrong method (405), …
+        code = HTTPStatus(exc.status_code).phrase.lower().replace(" ", "_")
+        return _response(exc.status_code, code, str(exc.detail))
+
+    @app.exception_handler(Exception)
+    async def _unexpected(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+        return _response(500, "internal_error", "Something went wrong on our side.")

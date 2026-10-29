@@ -9,6 +9,7 @@ from fastapi import Depends, Header, Request
 from sqlalchemy.orm import Session
 
 from app.clock import Clock
+from app.db import session_scope
 from app.domain.bidders import RIVAL_BIDDER_IDS
 from app.errors import ApiError
 
@@ -31,8 +32,11 @@ def get_session(request: Request) -> Iterator[Session]:
 
 
 def get_write_session(request: Request) -> Iterator[Session]:
-    """Session whose transaction starts with BEGIN IMMEDIATE (see app/db.py)."""
-    with request.app.state.write_sessions() as session:
+    """Session whose transaction starts with BEGIN IMMEDIATE (see app/db.py).
+
+    Commits when the endpoint returns, rolls back if it raises.
+    """
+    with session_scope(request.app.state.write_sessions) as session:
         yield session
 
 

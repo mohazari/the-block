@@ -4,7 +4,7 @@ from collections.abc import Collection
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ColumnElement, Select, case, false, func, select
+from sqlalchemy import ColumnElement, Select, case, func, select
 from sqlalchemy.orm import Session
 
 from app.domain.auction import (
@@ -19,6 +19,7 @@ from app.domain.auction import (
 )
 from app.domain.bidders import bidder_alias
 from app.domain.damage import classify_damage, worst_severity
+from app.errors import ApiError
 from app.models import Bid, Vehicle, WatchlistEntry
 from app.schemas import (
     AuctionSnapshot,
@@ -97,12 +98,12 @@ def _condition_groups(
     if query.buy_now:
         rest.append(Vehicle.buy_now_price.is_not(None))
     if query.watching:
+        if bidder_id is None:
+            raise ApiError(400, "bidder_id_required", "Send an X-Bidder-Id header to filter.")
         rest.append(
             Vehicle.id.in_(
                 select(WatchlistEntry.vehicle_id).where(WatchlistEntry.bidder_id == bidder_id)
             )
-            if bidder_id
-            else false()
         )
     groups["_"] = rest
     return groups
@@ -115,11 +116,19 @@ def _where(
 
 
 def _order_by(sort: SortOrder, now: datetime) -> list[Any]:
-    ended_last = case((Vehicle.ends_at <= now, 1), else_=0)
+    status = _status(now)
+    status_rank = case(
+        (status == AuctionStatus.LIVE.value, 0),
+        (status == AuctionStatus.UPCOMING.value, 1),
+        else_=2,
+    )
+    # Live by soonest close, then upcoming by soonest open, then ended with the most recent first.
+    next_moment = case(
+        (status == AuctionStatus.LIVE.value, Vehicle.ends_at),
+        (status == AuctionStatus.UPCOMING.value, Vehicle.starts_at),
+    )
     orders: dict[SortOrder, list[Any]] = {
-        # Live auctions always close before upcoming ones open + 4 days, so ends_at alone gives
-        # "closing soonest" across both.
-        SortOrder.ENDING_SOON: [ended_last, Vehicle.ends_at],
+        SortOrder.ENDING_SOON: [status_rank, next_moment, Vehicle.ends_at.desc()],
         SortOrder.PRICE_ASC: [_price()],
         SortOrder.PRICE_DESC: [_price().desc()],
         SortOrder.YEAR_DESC: [Vehicle.year.desc(), Vehicle.odometer_km],
@@ -131,7 +140,10 @@ def _order_by(sort: SortOrder, now: datetime) -> list[Any]:
 
 
 def _facet_counts(
-    session: Session, groups: dict[str, list[ColumnElement[bool]]], now: datetime
+    session: Session,
+    groups: dict[str, list[ColumnElement[bool]]],
+    query: InventoryQuery,
+    now: datetime,
 ) -> dict[str, list[FacetValue]]:
     facets: dict[str, list[FacetValue]] = {}
     columns: dict[str, Any] = {**FACET_COLUMNS, "status": _status(now)}
@@ -142,13 +154,18 @@ def _facet_counts(
             .group_by(column)
             .order_by(func.count().desc(), column)
         )
-        facets[name] = [
-            FacetValue(value=value, count=count) for value, count in session.execute(stmt)
-        ]
+        values = [FacetValue(value=value, count=count) for value, count in session.execute(stmt)]
+        # A selected value can drop to zero under other filters; keep it so the UI can still
+        # show it as active and let the buyer clear it.
+        present = {facet.value for facet in values}
+        selected = [str(value) for value in getattr(query, name)]
+        values += [FacetValue(value=v, count=0) for v in selected if v not in present]
+        facets[name] = values
     return facets
 
 
 def _ranges(session: Session) -> InventoryRanges:
+    """Whole-inventory bounds for the filter sliders (deliberately not narrowed by filters)."""
     row = session.execute(
         select(
             func.min(Vehicle.year),
@@ -159,17 +176,27 @@ def _ranges(session: Session) -> InventoryRanges:
             func.max(Vehicle.odometer_km),
         )
     ).one()
+    year_min, year_max, price_min, price_max, km_min, km_max = (value or 0 for value in row)
     return InventoryRanges(
-        year=NumericRange(min=row[0], max=row[1]),
-        price=NumericRange(min=row[2], max=row[3]),
-        odometer_km=NumericRange(min=row[4], max=row[5]),
+        year=NumericRange(min=year_min, max=year_max),
+        price=NumericRange(min=price_min, max=price_max),
+        odometer_km=NumericRange(min=km_min, max=km_max),
     )
 
 
-def _ids_for_bidder(session: Session, bidder_id: str | None, model: Any) -> set[str]:
-    if not bidder_id:
+def ids_for_bidder(
+    session: Session, bidder_id: str | None, model: Any, vehicle_ids: Collection[str]
+) -> set[str]:
+    """Which of `vehicle_ids` the bidder has a row for in `model` (Bid or WatchlistEntry)."""
+    if not bidder_id or not vehicle_ids:
         return set()
-    return set(session.scalars(select(model.vehicle_id).where(model.bidder_id == bidder_id)))
+    return set(
+        session.scalars(
+            select(model.vehicle_id)
+            .where(model.bidder_id == bidder_id, model.vehicle_id.in_(vehicle_ids))
+            .distinct()
+        )
+    )
 
 
 def snapshot(
@@ -185,7 +212,9 @@ def snapshot(
         current_bid=vehicle.current_bid,
         bid_count=vehicle.bid_count,
         min_next_bid=minimum,
-        increment=bid_increment(vehicle.current_bid or vehicle.starting_bid),
+        increment=bid_increment(
+            vehicle.current_bid if vehicle.current_bid is not None else vehicle.starting_bid
+        ),
         max_bid=max_allowed_bid(minimum),
         reserve_status=reserve_status(vehicle.reserve_price, vehicle.current_bid),
         buy_now_price=vehicle.buy_now_price,
@@ -252,14 +281,15 @@ def search_inventory(
         .limit(query.page_size)
     ).all()
 
-    watching_ids = _ids_for_bidder(session, bidder_id, WatchlistEntry)
-    bid_vehicle_ids = _ids_for_bidder(session, bidder_id, Bid)
+    page_ids = [vehicle.id for vehicle in vehicles]
+    watching_ids = ids_for_bidder(session, bidder_id, WatchlistEntry, page_ids)
+    bid_vehicle_ids = ids_for_bidder(session, bidder_id, Bid, page_ids)
     return VehicleList(
         items=[summarize(v, now, bidder_id, watching_ids, bid_vehicle_ids) for v in vehicles],
         total=total,
         page=query.page,
         page_size=query.page_size,
-        facets=_facet_counts(session, groups, now),
+        facets=_facet_counts(session, groups, query, now),
         ranges=_ranges(session),
         server_time=now,
     )
@@ -268,11 +298,14 @@ def search_inventory(
 def vehicle_detail(
     session: Session, vehicle: Vehicle, now: datetime, bidder_id: str | None
 ) -> VehicleDetail:
-    watching = bool(
-        bidder_id
-        and session.get(WatchlistEntry, {"bidder_id": bidder_id, "vehicle_id": vehicle.id})
+    watching = bool(ids_for_bidder(session, bidder_id, WatchlistEntry, [vehicle.id]))
+    has_bid = bool(ids_for_bidder(session, bidder_id, Bid, [vehicle.id]))
+    recent_bids = session.scalars(
+        select(Bid)
+        .where(Bid.vehicle_id == vehicle.id)
+        .order_by(Bid.placed_at.desc(), Bid.id.desc())
+        .limit(RECENT_BIDS_LIMIT)
     )
-    has_bid = bidder_id is not None and any(bid.bidder_id == bidder_id for bid in vehicle.bids)
     return VehicleDetail(
         **_summary_fields(vehicle),
         watching=watching,
@@ -282,6 +315,6 @@ def vehicle_detail(
         condition_report=vehicle.condition_report,
         damage=[DamageNote(note=n, severity=classify_damage(n)) for n in vehicle.damage_notes],
         images=vehicle.images,
-        recent_bids=[bid_out(bid, bidder_id) for bid in vehicle.bids[:RECENT_BIDS_LIMIT]],
+        recent_bids=[bid_out(bid, bidder_id) for bid in recent_bids],
         server_time=now,
     )

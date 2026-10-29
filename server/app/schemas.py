@@ -6,8 +6,9 @@ raw bidder ids private: they simply have no field here.
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.domain.auction import AuctionOutcome, AuctionStatus, ReserveStatus
 from app.domain.damage import DamageSeverity
@@ -50,6 +51,14 @@ class InventoryQuery(BaseModel):
     sort: SortOrder = SortOrder.ENDING_SOON
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=24, ge=1, le=100)
+
+    @model_validator(mode="after")
+    def _ranges_are_ordered(self) -> Self:
+        for low, high in (("year_min", "year_max"), ("price_min", "price_max")):
+            low_value, high_value = getattr(self, low), getattr(self, high)
+            if low_value is not None and high_value is not None and low_value > high_value:
+                raise ValueError(f"{low} must not exceed {high}")
+        return self
 
 
 class AuctionSnapshot(BaseModel):

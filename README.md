@@ -38,9 +38,10 @@ The API's interactive docs are at **http://localhost:8000/docs**.
 
 - **Run list.** Dense rows, not a card grid, the way auction run lists are read. Each row shows
   the vehicle, key specs, a **condition light**, price, a live countdown, and your standing.
-  Search (make, model, trim, VIN, lot, city, dealer), multi-select filters with live counts,
-  sorting, and pagination all live in the URL. Filters sit in a rail on desktop and a bottom
-  sheet on phones.
+  From 1280px it's a table with aligned columns, and wider monitors add columns (odometer,
+  reserve, location) instead of empty space. Search (make, model, trim, VIN, lot, city, dealer),
+  multi-select filters with live counts (searchable for makes and provinces), sorting, and
+  pagination all live in the URL. Filters sit in a rail on desktop and a bottom sheet on phones.
 - **Vehicle detail.** Illustrated views in the car's real paint colour, a condition report that
   leads with what matters (branded-title warning, a 1–5 grade meter, damage grouped **major →
   mechanical → cosmetic**), specs with VIN copy, and the selling dealer.
@@ -110,7 +111,7 @@ that shaped the product:
 - **API: 126 pytest tests.** Auction rules, schedule normalization, seeding invariants, search
   and facets, every bid rejection, idempotency, soft close, Buy Now, the concurrency race, SSE
   personalization and backpressure, and simulator behaviour. Warnings are errors.
-- **Web: 133 Vitest tests.** Formatting and rules, the API client, the clock sync, URL filter
+- **Web: 136 Vitest tests.** Formatting and rules, the API client, the clock sync, URL filter
   state, the run list, the bid flow (two-step confirm, outbid recovery, amount pinning), live
   events through a fake `EventSource`, toasts, and My bids.
 - **End to end: 4 Playwright tests** on desktop and a phone viewport. They find a car, bid,
@@ -142,7 +143,11 @@ Design references: the
 [ui-ux-pro-max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) skill (its auction
 colour semantics and accessibility rules were used; its serif body font and dark-first theme were
 rejected for a data-dense tool) and [Motion](https://github.com/motiondivision/motion) for
-animation.
+animation. A later design refresh used the
+[taste-skill](https://github.com/Leonxlnx/taste-skill)'s rules for app screens and its
+real-browser inspector, and took colours and type from OPENLANE itself: its published palette
+and Poppins, with tabular figures from Barlow for prices and countdowns. The decisions are in
+[DECISIONS.md](DECISIONS.md#design-refresh).
 
 ## Time spent
 

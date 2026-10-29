@@ -1,7 +1,7 @@
 import { screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { MyBid, VehicleSummary } from '../api/types'
-import { auction, stubApi, vehicle } from '../test/fixtures'
+import { auction, stubApi, vehicle, vehicleList } from '../test/fixtures'
 import { renderRoute } from '../test/render'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -43,6 +43,25 @@ describe('MyBidsPage', () => {
       await screen.findByRole('heading', { name: 'No bids or watched vehicles yet' }),
     ).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Browse the run list' })).toHaveAttribute('href', '/')
+  })
+
+  it('suggests the auctions closing first when there is nothing to show', async () => {
+    const api = stubApi((url) =>
+      url.pathname === '/api/vehicles'
+        ? vehicleList([vehicle({ id: 'soon', model: 'Ranger' })])
+        : url.pathname.startsWith('/api/me/')
+          ? []
+          : undefined,
+    )
+    vi.stubGlobal('fetch', api.fetch)
+    renderRoute('/my-bids')
+    const section = (await screen.findByRole('heading', { name: 'Ending soonest' })).closest(
+      'section',
+    )!
+    expect(within(section).getByRole('article', { name: '2023 Ford Ranger' })).toBeInTheDocument()
+    const query = api.calls.find((url) => url.pathname === '/api/vehicles')!.searchParams
+    expect(query.get('sort')).toBe('ending_soon')
+    expect(query.getAll('status')).toEqual(['live'])
   })
 
   it('loads watched cars from the watchlist endpoint, not the inventory search', async () => {

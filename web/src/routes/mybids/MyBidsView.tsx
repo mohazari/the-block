@@ -1,5 +1,5 @@
 import { Link } from 'react-router'
-import { useMyBids, useWatchlist } from '../../api/queries'
+import { useInventory, useMyBids, useWatchlist } from '../../api/queries'
 import type { VehicleSummary } from '../../api/types'
 import { formatMoney } from '../../lib/format'
 import { useServerNow } from '../../lib/serverClock'
@@ -43,13 +43,7 @@ export function MyBidsView() {
       </p>
 
       {empty ? (
-        <div className="border-line bg-surface mt-8 rounded-[var(--radius-panel)] border px-6 py-12 text-center">
-          <h2 className="text-lg font-semibold">No bids or watched vehicles yet</h2>
-          <p className="text-ink-muted mt-1">Bid on a vehicle or tap its star to follow it here.</p>
-          <Link to="/" className="btn btn-primary mt-4">
-            Browse the run list
-          </Link>
-        </div>
+        <NothingYet />
       ) : (
         <div className="mt-6 space-y-10">
           <Group
@@ -111,5 +105,45 @@ function Group({
         ))}
       </div>
     </section>
+  )
+}
+
+/**
+ * A first visit: one line saying what this page will hold, then the auctions closing first, so
+ * the screen offers the next thing to do instead of a box in an empty page.
+ */
+function NothingYet() {
+  const ending = useInventory({ status: ['live'], sort: 'ending_soon', page_size: 5 })
+  const vehicles = ending.data?.items ?? []
+  return (
+    <>
+      <div className="border-line bg-surface mt-6 flex flex-wrap items-center justify-between gap-4 rounded-[var(--radius-panel)] border px-5 py-4">
+        <div>
+          <h2 className="text-lg font-semibold">No bids or watched vehicles yet</h2>
+          <p className="text-ink-muted text-sm">
+            Bid on a vehicle or tap its star to follow it here.
+          </p>
+        </div>
+        <Link to="/" className="btn btn-primary">
+          Browse the run list
+        </Link>
+      </div>
+      {vehicles.length > 0 && (
+        <section aria-labelledby="ending-soonest" className="mt-10">
+          <h2 id="ending-soonest" className="text-lg font-semibold">
+            Ending soonest
+          </h2>
+          <p className="text-ink-muted mb-3 text-sm">
+            Live now and closing first. Star one to follow it here.
+          </p>
+          <div className="border-line overflow-clip rounded-[var(--radius-panel)] border">
+            <VehicleRowHeader />
+            {vehicles.map((vehicle) => (
+              <VehicleRow key={vehicle.id} vehicle={vehicle} />
+            ))}
+          </div>
+        </section>
+      )}
+    </>
   )
 }

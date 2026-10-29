@@ -1,13 +1,22 @@
 """Development entrypoint: `python -m app.serve [--reload] [--port 8000]`.
 
-Logging is configured here rather than on import, so importing the app (tests, tools) has no
-side effects.
+Logging goes through uvicorn's own config, so it also applies to the worker process that
+`--reload` spawns (a plain `basicConfig` here would only configure the watcher process).
 """
 
 import argparse
-import logging
+import copy
+from typing import Any
 
 import uvicorn
+from uvicorn.config import LOGGING_CONFIG
+
+
+def log_config() -> dict[str, Any]:
+    """uvicorn's defaults, plus our `app.*` loggers (seeding, simulator) in the same format."""
+    config: dict[str, Any] = copy.deepcopy(LOGGING_CONFIG)
+    config["loggers"]["app"] = {"handlers": ["default"], "level": "INFO", "propagate": False}
+    return config
 
 
 def main() -> None:
@@ -17,13 +26,14 @@ def main() -> None:
     parser.add_argument("--reload", action="store_true")
     args = parser.parse_args()
 
-    # uvicorn only configures its own loggers; surface ours (seeding, simulator) next to them.
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s - %(message)s")
     uvicorn.run(
         "app.main:app",
         host=args.host,
         port=args.port,
         reload=args.reload,
+        # Watch only the code: the SQLite files next to it change on every bid.
+        reload_dirs=["app"] if args.reload else None,
+        log_config=log_config(),
         # Open SSE streams never finish on their own; don't let them block Ctrl-C or a reload.
         timeout_graceful_shutdown=2,
     )

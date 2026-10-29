@@ -27,23 +27,34 @@ class EpochWatcher:
         self._on_change = on_change
         self.current = data_epoch(engine)
 
-    def check(self) -> bool:
-        """Re-read the epoch; returns whether it changed. Blocking: run it off the event loop."""
+    def check(self) -> str | None:
+        """The epoch now in the database if it differs from `current`, else None.
+
+        Blocking, so it runs in a worker thread — and it only reads: `current` changes on the
+        event loop (see run), together with ending the streams.
+        """
         latest = data_epoch(self._engine)
-        if latest == self.current:
-            return False
-        logger.info("Data was reseeded: ending live streams so clients resync")
-        self.current = latest
-        return True
+        return latest if latest != self.current else None
 
     async def run(self) -> None:
         while True:
             await asyncio.sleep(CHECK_EVERY_SECONDS)
+            check = asyncio.ensure_future(asyncio.to_thread(self.check))
             try:
-                if await asyncio.to_thread(self.check):
-                    self._on_change(self.current)
+                latest = await asyncio.shield(check)
+            except asyncio.CancelledError:
+                # Shutting down: let a read in progress finish before the engine is disposed.
+                await asyncio.gather(check, return_exceptions=True)
+                raise
             except Exception:  # a failed check must not stop future ones
                 logger.exception("Data epoch check failed")
+                continue
+            if latest is not None:
+                logger.info("Data was reseeded: ending live streams so clients resync")
+                # Back to back on the event loop: no client can receive a hello with the new
+                # epoch and then have that same stream closed (it would resync twice).
+                self.current = latest
+                self._on_change(latest)
 
 
 class DataEpochHeader:

@@ -307,11 +307,12 @@ def test_a_reseed_under_a_running_server_ends_every_stream(
 ) -> None:
     """npm run reset-db from another process: idle tabs must still find out."""
     watcher = EpochWatcher(seeded_engine, on_change=lambda _epoch: None)
-    assert watcher.check() is False
+    before = watcher.current
+    assert watcher.check() is None
 
     reset(seeded_engine, DATA_PATH, clock.now() + timedelta(days=1))
-    assert watcher.check() is True
-    assert watcher.current == data_epoch(seeded_engine)
+    assert watcher.check() == data_epoch(seeded_engine)
+    assert watcher.current == before  # the thread only reads; run() updates it on the loop
 
     async def scenario() -> Any:
         broker = EventBroker()
@@ -329,3 +330,25 @@ def test_api_responses_carry_the_epoch_from_memory(client: TestClient) -> None:
     watcher.current = "2099-01-01T00:00:00+00:00"  # as if the watcher just noticed a reseed
     response = client.get("/api/vehicles", params={"page_size": 1})
     assert response.headers["X-Data-Epoch"] == "2099-01-01T00:00:00+00:00"
+
+
+def test_watcher_updates_the_epoch_and_ends_streams_together(
+    seeded_engine: Engine, clock: FrozenClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.epoch.CHECK_EVERY_SECONDS", 0.01)
+    seen_at_close: list[str] = []
+    watcher = EpochWatcher(
+        seeded_engine, on_change=lambda _epoch: seen_at_close.append(watcher.current)
+    )
+    reset(seeded_engine, DATA_PATH, clock.now() + timedelta(days=1))
+
+    async def scenario() -> None:
+        task = asyncio.create_task(watcher.run())
+        while not seen_at_close:
+            await asyncio.sleep(0.01)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(scenario())
+    assert seen_at_close == [data_epoch(seeded_engine)]

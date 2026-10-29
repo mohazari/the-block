@@ -17,7 +17,8 @@ const RECONNECT_MS = 3_000
 // connection died without telling us (e.g. a proxy holding it open after the server went away).
 const MISSED_PINGS = 3
 const DEFAULT_HEARTBEAT_MS = 10_000
-const HEARTBEAT_LIMITS_MS = [1_000, 600_000] as const // ignore nonsense from a misbehaving proxy
+// An announced heartbeat that isn't a positive number is ignored; extremes are clamped.
+const HEARTBEAT_LIMITS_MS = [1_000, 600_000] as const
 // A timer that fires far too late means the tab was asleep or frozen, not the stream dead:
 // buffered events may still be on their way, so give them a moment first.
 const WOKE_UP_LATE_MS = 5_000
@@ -111,9 +112,10 @@ export function useAuctionEvents(): void {
           run: string
           heartbeat_seconds?: number
         }
-        noteStreamUp()
+        // Only a hello naming its run proves which server the stream is connected to.
+        if (run && epoch != null) noteStreamUp()
         const [shortest, longest] = HEARTBEAT_LIMITS_MS
-        if (heartbeat_seconds) {
+        if (typeof heartbeat_seconds === 'number' && heartbeat_seconds > 0) {
           heartbeatMs = Math.min(Math.max(heartbeat_seconds * 1000, shortest), longest)
         }
         expectMore()

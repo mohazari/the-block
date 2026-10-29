@@ -1,6 +1,6 @@
 import { bidderId } from '../lib/bidder'
 import { syncServerTime } from '../lib/serverClock'
-import { noteServerRun, reseedCount } from './dataEpoch'
+import { helloCount, isCurrentRun, noteServerRun, reseedCount } from './dataEpoch'
 import { waitForStream } from './streamGate'
 import type { AuctionSnapshot } from './types'
 
@@ -60,6 +60,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   if (method === 'GET') await waitForStream()
   const sentAt = Date.now()
   const reseedsBefore = reseedCount()
+  const hellosBefore = helloCount()
   let response: Response
   try {
     response = await fetch(`/api${path}${search}`, {
@@ -74,14 +75,12 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   }
 
   const receivedAt = Date.now()
-  noteServerRun(
-    response.headers.get('X-Server-Run'),
-    response.headers.get('X-Data-Epoch'),
-    'response',
-  )
-  if (method === 'GET' && reseedCount() !== reseedsBefore) {
+  const run = response.headers.get('X-Server-Run')
+  noteServerRun(run, response.headers.get('X-Data-Epoch'), 'response', hellosBefore)
+  if (method === 'GET' && (reseedCount() !== reseedsBefore || !isCurrentRun(run))) {
     // The data was reset while this read was in flight (a hello said so, or this very response
-    // did): it may describe the old data, which must not refill the fresh cache. resetQueries
+    // did), or it was answered by a server run this tab isn't on (a late straggler): it may
+    // describe other data, which must not refill the cache. resetQueries
     // aborts most such reads; this also covers one already past its headers. Queries retry
     // status 0, so it is simply read again.
     throw new ApiError(0, 'data_reset', 'The auction data was just reset. Please try again.')

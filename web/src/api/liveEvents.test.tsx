@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { auction, stubApi, vehicleDetail } from '../test/fixtures'
 import { FakeEventSource } from '../test/fakeEventSource'
 import { renderRoute } from '../test/render'
-import { api as api_get } from './client'
+import { api } from './client'
 import { resetStreamGate } from './streamGate'
 import type { AuctionEvent } from './types'
 
@@ -232,14 +232,14 @@ describe('live auction events', () => {
   })
 
   it('reconnects when a response shows its stream is connected to a server that is gone', async () => {
-    const api = stubApi((url) =>
+    const stub = stubApi((url) =>
       url.pathname === '/api/vehicles/veh-1'
         ? vehicleDetail()
         : url.pathname === '/api/me/bids'
           ? []
           : undefined,
     )
-    vi.stubGlobal('fetch', api.fetch)
+    vi.stubGlobal('fetch', stub.fetch)
     renderRoute('/vehicles/veh-1')
     await panel()
     const hello = { server_time: new Date().toISOString(), epoch: 'e', run: 'run-1' }
@@ -254,9 +254,24 @@ describe('live auction events', () => {
           }),
       ),
     )
-    await act(() => api_get('/vehicles'))
+    await act(() => api('/vehicles'))
     expect(FakeEventSource.instances).toHaveLength(2)
     expect(FakeEventSource.instances[0]!.closed).toBe(true)
+  })
+
+  it('ignores an announced heartbeat that is not a positive number', async () => {
+    serveDetail()
+    renderRoute('/vehicles/veh-1')
+    await panel()
+    vi.useFakeTimers()
+    try {
+      const hello = { server_time: new Date().toISOString(), epoch: 'e', run: 'run-1' }
+      act(() => FakeEventSource.latest().emit('hello', { ...hello, heartbeat_seconds: 'x' }))
+      act(() => vi.advanceTimersByTime(25_000)) // still the default 3 x 10s
+      expect(FakeEventSource.instances).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('sizes its watchdog from the heartbeat the server announces', async () => {

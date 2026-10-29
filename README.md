@@ -73,8 +73,7 @@ docs/     Original challenge brief and screenshots
 
 ## Notable decisions
 
-The full log, with the reason for each decision, is in **[DECISIONS.md](DECISIONS.md)**. The ones
-that shaped the product:
+The ones that shaped the product:
 
 - **Time made relative to now.** The dataset's auction dates are all in the past. The schedule
   keeps their relative spacing, shifted so the first auction closes 20 minutes after startup.
@@ -146,8 +145,7 @@ rejected for a data-dense tool) and [Motion](https://github.com/motiondivision/m
 animation. A later design refresh used the
 [taste-skill](https://github.com/Leonxlnx/taste-skill)'s rules for app screens and its
 real-browser inspector, and took colours and type from OPENLANE itself: its published palette
-and Poppins, with tabular figures from Barlow for prices and countdowns. The decisions are in
-[DECISIONS.md](DECISIONS.md#design-refresh).
+and Poppins, with tabular figures from Barlow for prices and countdowns.
 
 ## Time spent
 

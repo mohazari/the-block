@@ -25,3 +25,6 @@ playwright-report/
 
 # taste-skill inspector output (screenshots, reports)
 .taste-skill/
+
+# Private working notes, kept local
+DECISIONS.md

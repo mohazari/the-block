@@ -2,6 +2,7 @@ import sqlite3
 import threading
 from collections.abc import Callable
 from datetime import datetime, timedelta
+from itertools import pairwise
 from typing import Any
 
 import pytest
@@ -385,3 +386,32 @@ def test_watchlist_endpoint_lists_every_watched_vehicle(
     assert all(item["watching"] for item in watched)
     assert watched[-1]["auction"]["status"] == "ended"  # open auctions first
     assert client.get("/api/me/watchlist", headers=RIVAL).json() == []
+
+
+def test_bidders_are_numbered_per_lot_in_order_of_first_bid(client: TestClient) -> None:
+    vehicle = _find(
+        client,
+        lambda v: (
+            v["auction"]["current_bid"] is None
+            and not v["auction"]["buy_now_available"]
+            and v["auction"]["reserve_status"] == "not_met"
+        ),
+        status="live",
+    )
+    mine = _bid(client, vehicle["id"], vehicle["auction"]["min_next_bid"]).json()
+    theirs = _bid(client, vehicle["id"], mine["auction"]["min_next_bid"], headers=RIVAL).json()
+    again = _bid(client, vehicle["id"], theirs["auction"]["min_next_bid"]).json()
+
+    assert (mine["bid"]["bidder"], theirs["bid"]["bidder"], again["bid"]["bidder"]) == (
+        "Bidder 1",
+        "Bidder 2",
+        "Bidder 1",
+    )
+
+
+def test_distinct_bidders_never_share_a_label(client: TestClient) -> None:
+    for item in _vehicles(client, sort="most_bids", page_size=20):
+        detail = client.get(f"/api/vehicles/{item['id']}").json()
+        labels = [bid["bidder"] for bid in detail["recent_bids"]]
+        # Consecutive bids always come from different bidders, so they must read differently.
+        assert all(a != b for a, b in pairwise(labels)), labels

@@ -48,10 +48,10 @@ class BidEvent:
             vehicle_id=result.vehicle.id,
             vehicle_title=result.vehicle.title,
             auction=snapshot(result.vehicle, result.now, bidder_id=None, has_bid=False),
-            bid=bid_out(result.bid, bidder_id=None),
+            bid=bid_out(result.bid, bidder_id=None, labels=result.labels),
             bidder_id=result.bid.bidder_id,
             previous_high_bidder=result.previous_high_bidder,
-            bidders=result.bidders,
+            bidders=frozenset(result.labels),
             extended=result.extended,
         )
 

@@ -26,7 +26,7 @@ from app.domain.auction import (
 )
 from app.errors import ApiError
 from app.models import Bid, Vehicle
-from app.services.inventory import get_vehicle_or_404
+from app.services.inventory import bidder_labels, get_vehicle_or_404
 
 BidKind = Literal["bid", "buy_now"]
 
@@ -39,8 +39,9 @@ class BidResult:
     # Who led before this bid — the live-updates stream tells them they were outbid. None on
     # replays, which publish nothing.
     previous_high_bidder: str | None
-    # Everyone who has bid on this vehicle, so live events can say "you have bid" exactly.
-    bidders: frozenset[str]
+    # Everyone who has bid on this vehicle → their per-lot label ("Bidder 3"). The keys let live
+    # events say "you have bid" exactly; the values label bids for other buyers.
+    labels: dict[str, str]
     extended: bool
     replayed: bool  # an idempotent retry of an earlier request; nothing new was written
 
@@ -101,15 +102,9 @@ def _replay(
         vehicle=vehicle,
         now=now,
         previous_high_bidder=None,
-        bidders=frozenset(),
+        labels=bidder_labels(session, vehicle.id),
         extended=False,
         replayed=True,
-    )
-
-
-def _bidders(session: Session, vehicle_id: str) -> frozenset[str]:
-    return frozenset(
-        session.scalars(select(Bid.bidder_id).where(Bid.vehicle_id == vehicle_id).distinct())
     )
 
 
@@ -181,9 +176,9 @@ def place_bid(
     if new_end is not None:
         vehicle.ends_at = new_end
 
-    bidders = _bidders(session, vehicle.id)
+    labels = bidder_labels(session, vehicle.id)
     session.commit()
-    return BidResult(bid, vehicle, now, previous, bidders, extended=extended, replayed=False)
+    return BidResult(bid, vehicle, now, previous, labels, extended=extended, replayed=False)
 
 
 def buy_now(
@@ -229,6 +224,6 @@ def buy_now(
     vehicle.starts_at = min(vehicle.starts_at, now)
     vehicle.ends_at = now
 
-    bidders = _bidders(session, vehicle.id)
+    labels = bidder_labels(session, vehicle.id)
     session.commit()
-    return BidResult(bid, vehicle, now, previous, bidders, extended=False, replayed=False)
+    return BidResult(bid, vehicle, now, previous, labels, extended=False, replayed=False)

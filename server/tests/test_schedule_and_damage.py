@@ -1,6 +1,5 @@
 from datetime import UTC, datetime, timedelta
 
-from app.domain.bidders import bidder_alias
 from app.domain.damage import DamageSeverity, classify_damage, worst_severity
 from app.domain.schedule import (
     AUCTION_DURATION,
@@ -50,10 +49,3 @@ def test_damage_keywords_match_whole_phrases_only() -> None:
 def test_worst_severity() -> None:
     assert worst_severity([]) is None
     assert worst_severity(["Dent on tailgate", "Check engine light"]) is DamageSeverity.MECHANICAL
-
-
-def test_bidder_alias_is_stable_and_anonymous() -> None:
-    alias = bidder_alias("3f1c-some-browser-id")
-    assert alias == bidder_alias("3f1c-some-browser-id")
-    assert alias.startswith("Bidder ")
-    assert "3f1c" not in alias

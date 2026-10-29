@@ -5,7 +5,7 @@ import { bidderId } from '../lib/bidder'
 import { formatMoney } from '../lib/format'
 import { syncServerTime } from '../lib/serverClock'
 import { applyAuction } from './bidding'
-import { noteDataEpoch, onDataEpochChange } from './dataEpoch'
+import { noteDataEpoch } from './dataEpoch'
 import { streamLive } from './streamGate'
 import type { AuctionEvent } from './types'
 
@@ -75,10 +75,17 @@ export function useAuctionEvents(): void {
           epoch: string
         }
         syncServerTime(server_time)
-        noteDataEpoch(epoch) // a reseed resets the cache (see the subscription below)
-        // Initial reads waited for this hello (streamGate), so they can't have missed a bid. Only
-        // data read before subscribing — on a reconnect, or if the wait was capped — is refetched.
-        if (streamLive()) void queryClient.invalidateQueries()
+        const reseeded = noteDataEpoch(epoch)
+        // Initial reads waited for this hello (streamGate), so they can't have missed a bid.
+        const readBeforeSubscribing = streamLive()
+        if (reseeded) {
+          // Cached snapshots would wrongly look newer than fresh ones: drop them (this refetches
+          // what's on screen, so no separate refetch).
+          void queryClient.resetQueries()
+        } else if (readBeforeSubscribing) {
+          // A reconnect, or the initial wait was capped: refetch what may have missed bids.
+          void queryClient.invalidateQueries()
+        }
         connectedBefore = true
         setConnection('live')
       })
@@ -95,12 +102,8 @@ export function useAuctionEvents(): void {
       }
     }
 
-    // The server reseeded: cached snapshots would wrongly look newer than fresh ones.
-    const stopWatchingEpoch = onDataEpochChange(() => void queryClient.resetQueries())
-
     connect()
     return () => {
-      stopWatchingEpoch()
       clearTimeout(retry)
       source?.close()
     }

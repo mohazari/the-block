@@ -173,4 +173,19 @@ describe('live auction events', () => {
       vi.useRealTimers()
     }
   })
+
+  it('refetches once, not twice, when a reconnect brings a new epoch', async () => {
+    const api = serveDetail()
+    renderRoute('/vehicles/veh-1')
+    await panel()
+    const source = FakeEventSource.latest()
+    act(() => source.emit('hello', { server_time: new Date().toISOString(), epoch: 'epoch-1' }))
+    await waitFor(() =>
+      expect(api.calls.filter((u) => u.pathname === '/api/vehicles/veh-1').length).toBe(2),
+    )
+
+    act(() => source.emit('hello', { server_time: new Date().toISOString(), epoch: 'epoch-2' }))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(api.calls.filter((u) => u.pathname === '/api/vehicles/veh-1')).toHaveLength(3)
+  })
 })

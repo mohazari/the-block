@@ -5,18 +5,12 @@
  * server ends all live streams, so even an idle tab reconnects and learns about it.
  */
 let known: string | undefined
-const listeners = new Set<() => void>()
 
-export function noteDataEpoch(epoch: string | null | undefined): void {
-  if (!epoch) return
-  const changed = known !== undefined && epoch !== known
+/** Records the epoch from a hello; returns whether the data was reseeded since the last one. */
+export function noteDataEpoch(epoch: string): boolean {
+  const reseeded = known !== undefined && epoch !== known
   known = epoch
-  if (changed) listeners.forEach((listener) => listener())
-}
-
-export function onDataEpochChange(listener: () => void): () => void {
-  listeners.add(listener)
-  return () => listeners.delete(listener)
+  return reseeded
 }
 
 /** Test hook. */

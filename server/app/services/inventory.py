@@ -273,6 +273,19 @@ COPIED_SUMMARY_FIELDS = tuple(
 )
 
 
+def check_copied_fields(fields: tuple[str, ...]) -> None:
+    """Fail at import, not on every request, if the schema and the model disagree."""
+    unknown = sorted(set(fields) - set(Vehicle.__table__.columns.keys()))
+    if unknown:
+        raise RuntimeError(
+            f"VehicleSummary fields {unknown} are not Vehicle columns: add them to the model, or "
+            "to COMPUTED_SUMMARY_FIELDS if the server works them out."
+        )
+
+
+check_copied_fields(COPIED_SUMMARY_FIELDS)
+
+
 def _summary_fields(vehicle: Vehicle) -> dict[str, Any]:
     return {
         **{name: getattr(vehicle, name) for name in COPIED_SUMMARY_FIELDS},

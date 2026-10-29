@@ -2,11 +2,12 @@ import json
 from datetime import datetime, timedelta
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.clock import FrozenClock
 from app.models import Vehicle
-from app.services.inventory import COPIED_SUMMARY_FIELDS
+from app.services.inventory import COPIED_SUMMARY_FIELDS, check_copied_fields
 
 from .conftest import DATA_PATH
 
@@ -221,3 +222,8 @@ def test_every_copied_summary_field_exists_on_the_vehicle_model() -> None:
     columns = set(Vehicle.__table__.columns.keys())
     assert set(COPIED_SUMMARY_FIELDS) <= columns
     assert "reserve_price" not in COPIED_SUMMARY_FIELDS  # the privacy boundary still holds
+
+
+def test_a_schema_field_missing_from_the_model_fails_loudly() -> None:
+    with pytest.raises(RuntimeError, match=r"\['mpg'\] are not Vehicle columns"):
+        check_copied_fields((*COPIED_SUMMARY_FIELDS, "mpg"))

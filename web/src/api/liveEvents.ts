@@ -6,6 +6,7 @@ import { formatMoney } from '../lib/format'
 import { syncServerTime } from '../lib/serverClock'
 import { applyAuction } from './bidding'
 import { noteDataEpoch, onDataEpochChange } from './dataEpoch'
+import { streamLive } from './streamGate'
 import type { AuctionEvent } from './types'
 
 export type Connection = 'connecting' | 'live' | 'reconnecting'
@@ -35,8 +36,8 @@ export const useConnection = (): Connection =>
 /**
  * One app-wide subscription to /api/events. Each bid is written straight into every cached copy
  * of that vehicle (run list, detail page, My bids), so prices move everywhere without refetching.
- * The server sends `hello` on every (re)connect. Anything fetched before it may have missed
- * events, so everything on screen is refetched — on first connect too.
+ * The server sends `hello` on every (re)connect. Initial reads wait for the first one
+ * (subscribe, then read); after a reconnect, everything on screen is refetched.
  */
 export function useAuctionEvents(): void {
   const queryClient = useQueryClient()
@@ -75,9 +76,9 @@ export function useAuctionEvents(): void {
         }
         syncServerTime(server_time)
         noteDataEpoch(epoch) // a reseed resets the cache (see the subscription below)
-        // Every hello, the first included: data fetched before the stream connected may have
-        // missed bids committed in between (on a reconnect, while it was down).
-        void queryClient.invalidateQueries()
+        // Initial reads waited for this hello (streamGate), so they can't have missed a bid. Only
+        // data read before subscribing — on a reconnect, or if the wait was capped — is refetched.
+        if (streamLive()) void queryClient.invalidateQueries()
         connectedBefore = true
         setConnection('live')
       })

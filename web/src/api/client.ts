@@ -1,6 +1,7 @@
 import { bidderId } from '../lib/bidder'
 import { syncServerTime } from '../lib/serverClock'
 import { noteDataEpoch } from './dataEpoch'
+import { waitForStream } from './streamGate'
 import type { AuctionSnapshot } from './types'
 
 /** The server's error envelope: `{"error": {"code", "message", ...details}}`. */
@@ -55,6 +56,8 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey
 
+  // Reads wait for the live stream (see streamGate); writes never do.
+  if (method === 'GET') await waitForStream()
   const sentAt = Date.now()
   let response: Response
   try {

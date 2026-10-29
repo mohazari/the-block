@@ -3,11 +3,15 @@ import { cleanup } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
 import { resetDataEpoch } from '../api/dataEpoch'
 import { resetConnection } from '../api/liveEvents'
+import { openStreamGate, resetStreamGate } from '../api/streamGate'
 import { clearToasts } from '../components/toasts/toastStore'
 import { resetServerClock } from '../lib/serverClock'
 import { FakeEventSource } from './fakeEventSource'
 
 beforeEach(() => {
+  // Most tests don't drive the live stream: let reads through. Gate tests reset it themselves.
+  resetStreamGate()
+  openStreamGate()
   FakeEventSource.instances = []
   vi.stubGlobal('EventSource', FakeEventSource)
 })

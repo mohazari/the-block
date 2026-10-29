@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { auction, stubApi, vehicleDetail } from '../test/fixtures'
 import { FakeEventSource } from '../test/fakeEventSource'
 import { renderRoute } from '../test/render'
+import { resetStreamGate } from './streamGate'
 import type { AuctionEvent } from './types'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -141,22 +142,36 @@ describe('live auction events', () => {
     expect(await bidding.findByText('3 bids')).toBeInTheDocument()
   })
 
-  it('refetches once connected, so bids placed before the stream opened are not missed', async () => {
+  it('holds initial reads until the stream is live, then reads once', async () => {
+    resetStreamGate()
     const api = serveDetail()
     renderRoute('/vehicles/veh-1')
-    await panel()
-    const before = api.calls.filter((url) => url.pathname === '/api/vehicles/veh-1').length
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(api.calls.filter((url) => url.pathname === '/api/vehicles/veh-1')).toHaveLength(0)
+
     act(() =>
       FakeEventSource.latest().emit('hello', {
         server_time: new Date().toISOString(),
         epoch: 'epoch-1',
       }),
     )
-    await waitFor(() =>
-      expect(api.calls.filter((url) => url.pathname === '/api/vehicles/veh-1').length).toBe(
-        before + 1,
-      ),
-    )
+    await panel()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    // Subscribed before reading: nothing could be missed, so no second fetch.
+    expect(api.calls.filter((url) => url.pathname === '/api/vehicles/veh-1')).toHaveLength(1)
+  })
+
+  it('does not stall the page when the stream never connects', async () => {
+    resetStreamGate()
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      serveDetail()
+      renderRoute('/vehicles/veh-1')
+      act(() => vi.advanceTimersByTime(1500))
+      expect(await screen.findByRole('complementary', { name: 'Bidding' })).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('drops the cache when a response shows the data was reseeded under a running server', async () => {

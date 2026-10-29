@@ -356,5 +356,6 @@ def vehicle_detail(
         damage=[DamageNote(note=n, severity=classify_damage(n)) for n in vehicle.damage_notes],
         images=vehicle.images,
         recent_bids=[bid_out(bid, bidder_id) for bid in recent_bids],
+        recent_bids_limit=RECENT_BIDS_LIMIT,
         server_time=now,
     )

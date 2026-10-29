@@ -53,4 +53,20 @@ describe('applyAuction', () => {
     const bids = queryClient.getQueryData<VehicleDetail>(key)!.recent_bids
     expect(bids.map((b) => b.amount)).toEqual([24000, 23500])
   })
+
+  it("caps the history at the server's limit", () => {
+    const queryClient = createQueryClient()
+    const key = queryKeys.vehicle('veh-1')
+    const old = {
+      id: 1,
+      amount: 100,
+      bidder: 'Bidder 1',
+      is_you: false,
+      placed_at: '2026-10-28T12:00:00Z',
+    }
+    queryClient.setQueryData(key, vehicleDetail({ recent_bids: [old], recent_bids_limit: 1 }))
+    const latest = { ...old, id: 2, amount: 200, placed_at: '2026-10-28T12:01:00Z' }
+    applyAuction(queryClient, 'veh-1', auction({ bid_count: 99 }), latest)
+    expect(queryClient.getQueryData<VehicleDetail>(key)!.recent_bids.map((b) => b.id)).toEqual([2])
+  })
 })

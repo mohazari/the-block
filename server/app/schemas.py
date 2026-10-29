@@ -125,6 +125,7 @@ class VehicleDetail(VehicleSummary):
     damage: list[DamageNote]
     images: list[str]
     recent_bids: list[BidOut]
+    recent_bids_limit: int = Field(description="How many recent bids the history keeps.")
     server_time: datetime
 
 

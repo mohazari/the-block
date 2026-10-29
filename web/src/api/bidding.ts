@@ -20,7 +20,11 @@ export function applyAuction(
   if (bid) {
     queryClient.setQueryData<VehicleDetail>(
       queryKeys.vehicle(vehicleId),
-      (detail) => detail && { ...detail, recent_bids: mergeBid(detail.recent_bids, bid) },
+      (detail) =>
+        detail && {
+          ...detail,
+          recent_bids: mergeBid(detail.recent_bids, bid, detail.recent_bids_limit),
+        },
     )
   }
 }
@@ -29,11 +33,11 @@ export function applyAuction(
  * Add a bid to the history in time order. Bids can arrive out of order (a rival's live event
  * before the response to your own), so position comes from when it was placed, not arrival.
  */
-function mergeBid(bids: BidOut[], bid: BidOut): BidOut[] {
+function mergeBid(bids: BidOut[], bid: BidOut, limit: number): BidOut[] {
   if (bids.some((existing) => existing.id === bid.id)) return bids
   return [bid, ...bids]
     .sort((a, b) => Date.parse(b.placed_at) - Date.parse(a.placed_at) || b.id - a.id)
-    .slice(0, 10)
+    .slice(0, limit) // the server's limit, so a refetch shows the same list
 }
 
 interface PlaceBid {

@@ -145,7 +145,7 @@ def test_detail_has_severity_tagged_damage_and_recent_bids(client: TestClient) -
     assert {d["severity"] for d in body["damage"]} <= {"cosmetic", "mechanical", "major"}
     assert body["images"] == record["images"]
     bids = body["recent_bids"]
-    assert len(bids) <= 10
+    assert len(bids) <= body["recent_bids_limit"] == 10
     assert [b["amount"] for b in bids] == sorted((b["amount"] for b in bids), reverse=True)
     assert all(b["bidder"].startswith("Bidder ") and not b["is_you"] for b in bids)
     datetime.fromisoformat(body["server_time"])

@@ -273,6 +273,10 @@ export interface VehicleDetail {
   odometer_km: number
   province: string
   recent_bids: BidOut[]
+  /**
+   * How many recent bids the history keeps.
+   */
+  recent_bids_limit: number
   selling_dealership: string
   server_time: string
   title_status: string

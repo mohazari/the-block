@@ -29,7 +29,7 @@ export function AppShell() {
         Skip to content
       </a>
       <header className="border-line bg-surface sticky top-0 z-30 border-b">
-        <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 sm:gap-4">
+        <div className="frame flex h-14 items-center gap-2 sm:gap-4">
           <NavLink to="/" className="mr-auto flex items-center gap-2.5" aria-label="The Block home">
             <BlockMark />
             <span className="text-lg leading-none font-semibold tracking-tight">The Block</span>
@@ -55,12 +55,15 @@ export function AppShell() {
           </button>
         </div>
       </header>
-      <main id="main" className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">
+      <main id="main" className="frame flex-1 py-6">
         <Outlet />
       </main>
       <Toaster />
-      <footer className="border-line text-ink-faint border-t py-4 text-center text-xs">
-        Prototype for the OPENLANE coding challenge. Vehicles, bids and rival dealers are simulated.
+      <footer className="border-line text-ink-faint border-t text-xs">
+        <p className="frame py-4">
+          Prototype for the OPENLANE coding challenge. Vehicles, bids and rival dealers are
+          simulated.
+        </p>
       </footer>
     </div>
   )

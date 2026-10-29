@@ -36,7 +36,7 @@ export function MyBidsView() {
   const empty = bids.data.length === 0 && groups.watching.length === 0
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <h1 className="text-2xl font-semibold tracking-tight">My bids</h1>
       <p className="text-ink-muted text-sm">
         Auctions you've bid on or are watching, sorted by what needs your attention.

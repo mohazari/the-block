@@ -10,7 +10,7 @@ let memoryFallback: string | undefined
  * A v4 UUID. `crypto.randomUUID` only exists in secure contexts, so a phone testing the dev
  * server over plain http on a LAN address would otherwise get no id at all.
  */
-function newId(): string {
+export function newId(): string {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   const bytes = crypto.getRandomValues(new Uint8Array(16))
   bytes[6] = (bytes[6]! & 0x0f) | 0x40

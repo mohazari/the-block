@@ -1,4 +1,7 @@
-/** Each dataset "photo" maps to a view of the illustration: a crop of its 400×170 viewBox. */
+/**
+ * Each dataset "photo" maps to a view of the illustration: a crop of its 400×170 viewBox. Frames
+ * use the drawing's own 40:17 ratio so the side views are never cropped.
+ */
 export const VIEWS = {
   driver: { label: 'Driver side', viewBox: '0 0 400 170', mirror: false },
   passenger: { label: 'Passenger side', viewBox: '0 0 400 170', mirror: true },

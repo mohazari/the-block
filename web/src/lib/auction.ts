@@ -1,5 +1,11 @@
 import type { AuctionSnapshot, AuctionStatus, Standing } from '../api/types'
 
+export const RESERVE_TEXT = {
+  met: 'Reserve met',
+  not_met: 'Reserve not met',
+  no_reserve: 'No reserve',
+} as const
+
 /** Under this, a live countdown turns amber. */
 export const ENDING_SOON_MS = 15 * 60_000
 

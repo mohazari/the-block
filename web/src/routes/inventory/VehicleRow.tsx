@@ -6,17 +6,11 @@ import { AuctionClock } from '../../components/auction/AuctionClock'
 import { ConditionLight } from '../../components/auction/ConditionLight'
 import { StandingTag } from '../../components/auction/StandingTag'
 import { CarIllustration } from '../../components/CarIllustration'
-import { standingAt, statusAt } from '../../lib/auction'
+import { RESERVE_TEXT, standingAt, statusAt } from '../../lib/auction'
 import { cn } from '../../lib/cn'
 import { formatKm, formatMoney, label, plural } from '../../lib/format'
 import { useServerNow } from '../../lib/serverClock'
 import { vehicleName } from '../../lib/vehicle'
-
-const RESERVE_TEXT = {
-  met: 'Reserve met',
-  not_met: 'Reserve not met',
-  no_reserve: 'No reserve',
-} as const
 
 const EDGE = {
   leading: 'before:bg-win',
@@ -51,7 +45,7 @@ export function VehicleRow({ vehicle }: { vehicle: VehicleSummary }) {
         <CarIllustration
           bodyStyle={vehicle.body_style}
           paint={vehicle.exterior_color}
-          className="aspect-[2/1] w-full"
+          className="aspect-[40/17] w-full"
         />
       </div>
 
@@ -64,6 +58,7 @@ export function VehicleRow({ vehicle }: { vehicle: VehicleSummary }) {
           {/* Stretched link: the whole row opens the vehicle, with one link for screen readers. */}
           <Link
             to={`/vehicles/${vehicle.id}`}
+            state={{ fromRunList: true }}
             className="after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-offset-[-2px] focus-visible:after:outline-[var(--focus)]"
           >
             {name}

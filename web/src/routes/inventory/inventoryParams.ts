@@ -49,16 +49,19 @@ const STATUSES: readonly AuctionStatus[] = ['live', 'upcoming', 'ended']
  */
 export const NUMBER_RULES: Record<NumberFilter, { valid: (n: number) => boolean; hint: string }> = {
   year_min: {
-    valid: (n) => Number.isInteger(n) && n >= 1900 && n <= 2100,
+    valid: (n) => Number.isSafeInteger(n) && n >= 1900 && n <= 2100,
     hint: 'Enter a year like 2020.',
   },
   year_max: {
-    valid: (n) => Number.isInteger(n) && n >= 1900 && n <= 2100,
+    valid: (n) => Number.isSafeInteger(n) && n >= 1900 && n <= 2100,
     hint: 'Enter a year like 2020.',
   },
-  price_min: { valid: (n) => Number.isInteger(n) && n >= 0, hint: 'Enter whole dollars.' },
-  price_max: { valid: (n) => Number.isInteger(n) && n >= 0, hint: 'Enter whole dollars.' },
-  odometer_max: { valid: (n) => Number.isInteger(n) && n >= 0, hint: 'Enter whole kilometres.' },
+  price_min: { valid: (n) => Number.isSafeInteger(n) && n >= 0, hint: 'Enter whole dollars.' },
+  price_max: { valid: (n) => Number.isSafeInteger(n) && n >= 0, hint: 'Enter whole dollars.' },
+  odometer_max: {
+    valid: (n) => Number.isSafeInteger(n) && n >= 0,
+    hint: 'Enter whole kilometres.',
+  },
   grade_min: { valid: (n) => n >= 1 && n <= 5, hint: 'Grades run from 1 to 5.' },
 }
 

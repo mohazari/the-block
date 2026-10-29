@@ -67,4 +67,10 @@ describe('URL values the API would reject', () => {
     const query = parseInventoryQuery(new URLSearchParams({ q: 'x'.repeat(150) }))
     expect(query.q).toHaveLength(100)
   })
+
+  it('drops numbers too large to send as plain integers', () => {
+    // 1e21 is an "integer" to JavaScript but would be sent as "1e+21", which the API rejects.
+    const query = parseInventoryQuery(new URLSearchParams('price_min=1e21&odometer_max=1e21'))
+    expect(query).toEqual({ page_size: 24 })
+  })
 })

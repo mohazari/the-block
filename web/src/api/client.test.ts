@@ -96,4 +96,16 @@ describe('api', () => {
     answer(new Response('{"ok": true}', { status: 201 }))
     await expect(bid).resolves.toEqual({ ok: true }) // the outcome is shown, not thrown away
   })
+
+  it('learns of a reseed from any response, and rereads what that response held', async () => {
+    noteDataEpoch('old')
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(new Response('{"items": []}', { headers: { 'X-Data-Epoch': 'new' } })),
+    )
+    await expect(api('/vehicles')).rejects.toMatchObject({ code: 'data_reset', status: 0 })
+    await expect(api('/vehicles')).resolves.toEqual({ items: [] }) // now current
+  })
 })

@@ -1,16 +1,19 @@
 /**
  * Which copy of the server's data the cache came from. Bid counts order snapshots, but they
  * restart when the data is reseeded — so a different epoch means "drop the cache", not
- * "compare". It arrives with every hello: the server ends all live streams when it reseeds
- * (and a restarted server starts new ones), so every tab reconnects and hears about it. One
- * stream delivers hellos in order, so any change is a reseed.
+ * "compare". The server performs every reseed itself and nothing else can reset its database,
+ * so its epoch is exact; it arrives with every hello (the server ends all streams when it
+ * reseeds, so every tab reconnects) and on every API response (for a tab whose stream is down).
+ * Any change is a reseed. In one rare race — a stream opening as a reset happens — a hello with
+ * the old epoch can arrive after the new one; that causes one extra reset, and it converges,
+ * since everything the server sends afterwards carries the new epoch.
  */
 let known: string | undefined
 let reseeds = 0
 const listeners = new Set<() => void>()
 
-/** Records a hello's epoch; returns whether the data was reseeded since the last one. */
-export function noteDataEpoch(epoch: string): boolean {
+/** Records an epoch; returns whether the data was reseeded since the last one. */
+export function noteDataEpoch(epoch: string | null | undefined): boolean {
   if (!epoch || epoch === known) return false
   const reseeded = known !== undefined
   known = epoch

@@ -1,20 +1,27 @@
 /**
  * Which copy of the server's data the cache came from. Bid counts order snapshots, but they
  * restart when the data is reseeded — so a different epoch means "drop the cache", not
- * "compare". The server performs every reseed itself and nothing else can reset its database,
- * so its epoch is exact; it arrives with every hello (the server ends all streams when it
- * reseeds, so every tab reconnects) and on every API response (for a tab whose stream is down).
- * Any change is a reseed. In one rare race — a stream opening as a reset happens — a hello with
- * the old epoch can arrive after the new one; that causes one extra reset, and it converges,
- * since everything the server sends afterwards carries the new epoch.
+ * "compare". The data only changes between server runs (reset-db refuses while a server is up),
+ * and each run's epoch arrives with every hello and on every API response (for a tab whose
+ * stream is down).
+ *
+ * A hello is authoritative: any change is a reseed, even to an older epoch (a restored backup).
+ * A response may be a late one from the previous run, so it can only move the epoch forward;
+ * epochs are the time the data was seeded.
  */
 let known: string | undefined
 let reseeds = 0
 const listeners = new Set<() => void>()
 
 /** Records an epoch; returns whether the data was reseeded since the last one. */
-export function noteDataEpoch(epoch: string | null | undefined): boolean {
+export function noteDataEpoch(
+  epoch: string | null | undefined,
+  from: 'hello' | 'response' = 'hello',
+): boolean {
   if (!epoch || epoch === known) return false
+  if (from === 'response' && known !== undefined && !(Date.parse(epoch) > Date.parse(known))) {
+    return false // older (or unreadable): a straggler from before; the next hello decides
+  }
   const reseeded = known !== undefined
   known = epoch
   if (reseeded) {

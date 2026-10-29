@@ -16,4 +16,13 @@ describe('data epoch', () => {
     expect(noteDataEpoch('')).toBe(false)
     expect(noteDataEpoch('a')).toBe(false) // still the first real one
   })
+
+  it('lets a response move the epoch only forward: a late one from before is ignored', () => {
+    const older = '2026-10-29T08:00:00+00:00'
+    const newer = '2026-10-29T09:00:00+00:00'
+    noteDataEpoch(older)
+    expect(noteDataEpoch(newer, 'response')).toBe(true)
+    expect(noteDataEpoch(older, 'response')).toBe(false) // straggler from the previous run
+    expect(noteDataEpoch(older)).toBe(true) // but a hello saying so (a restored backup) wins
+  })
 })

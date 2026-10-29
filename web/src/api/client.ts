@@ -74,7 +74,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   }
 
   const receivedAt = Date.now()
-  noteDataEpoch(response.headers.get('X-Data-Epoch'))
+  noteDataEpoch(response.headers.get('X-Data-Epoch'), 'response')
   if (method === 'GET' && reseedCount() !== reseedsBefore) {
     // The data was reset while this read was in flight (a hello said so, or this very response
     // did): it may describe the old data, which must not refill the fresh cache. resetQueries

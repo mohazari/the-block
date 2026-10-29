@@ -98,13 +98,9 @@ describe('api', () => {
   })
 
   it('learns of a reseed from any response, and rereads what that response held', async () => {
-    noteDataEpoch('old')
-    vi.stubGlobal(
-      'fetch',
-      vi
-        .fn()
-        .mockResolvedValue(new Response('{"items": []}', { headers: { 'X-Data-Epoch': 'new' } })),
-    )
+    noteDataEpoch('2026-10-29T08:00:00+00:00')
+    const headers = { 'X-Data-Epoch': '2026-10-29T09:00:00+00:00' } // reseeded since
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"items": []}', { headers })))
     await expect(api('/vehicles')).rejects.toMatchObject({ code: 'data_reset', status: 0 })
     await expect(api('/vehicles')).resolves.toEqual({ items: [] }) // now current
   })

@@ -1,3 +1,4 @@
+import { QueryObserver } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
 import { createQueryClient } from '../app/queryClient'
 import { auction, vehicle, vehicleDetail } from '../test/fixtures'
@@ -107,5 +108,35 @@ describe('applyAuction', () => {
     }
     applyAuction(queryClient, 'veh-1', auction({ bid_count: 17 }), mine)
     expect(queryClient.getQueryState(queryKeys.myBids)?.isInvalidated).toBe(true)
+  })
+
+  it('fetches My bids once for a first bid, even when the live echo also arrives', async () => {
+    const queryClient = createQueryClient()
+    let fetches = 0
+    let finish!: () => void
+    queryClient.setQueryData(queryKeys.myBids, [])
+    const observer = new QueryObserver(queryClient, {
+      queryKey: queryKeys.myBids,
+      queryFn: () => {
+        fetches++
+        return new Promise((resolve) => (finish = () => resolve([])))
+      },
+    })
+    const unsubscribe = observer.subscribe(() => {})
+    await Promise.resolve()
+    const before = fetches
+    const mine = {
+      id: 9,
+      amount: 23300,
+      bidder: 'Bidder 1',
+      is_you: true,
+      placed_at: '2026-10-28T12:05:00Z',
+    }
+
+    applyAuction(queryClient, 'veh-1', auction({ bid_count: 17 }), mine) // live echo
+    applyAuction(queryClient, 'veh-1', auction({ bid_count: 17 }), mine) // bid response
+    expect(fetches - before).toBe(1)
+    finish()
+    unsubscribe()
   })
 })

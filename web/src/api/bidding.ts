@@ -38,7 +38,9 @@ export function applyAuction(
 function recordOwnBid(queryClient: QueryClient, vehicleId: string, bid: BidOut): void {
   const bids = queryClient.getQueryData<MyBid[]>(queryKeys.myBids)
   if (!bids?.some((entry) => entry.id === vehicleId)) {
-    void queryClient.invalidateQueries({ queryKey: queryKeys.myBids })
+    // The response and the live echo both get here for a first bid. Whichever comes second must
+    // not abort and restart the refetch the first started: it began after the bid was committed.
+    void queryClient.invalidateQueries({ queryKey: queryKeys.myBids }, { cancelRefetch: false })
     return
   }
   queryClient.setQueryData<MyBid[]>(queryKeys.myBids, (entries) =>

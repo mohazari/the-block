@@ -110,7 +110,7 @@ that shaped the product:
 - **API: 126 pytest tests.** Auction rules, schedule normalization, seeding invariants, search
   and facets, every bid rejection, idempotency, soft close, Buy Now, the concurrency race, SSE
   personalization and backpressure, and simulator behaviour. Warnings are errors.
-- **Web: 129 Vitest tests.** Formatting and rules, the API client, the clock sync, URL filter
+- **Web: 131 Vitest tests.** Formatting and rules, the API client, the clock sync, URL filter
   state, the run list, the bid flow (two-step confirm, outbid recovery, amount pinning), live
   events through a fake `EventSource`, toasts, and My bids.
 - **End to end: 4 Playwright tests** on desktop and a phone viewport. They find a car, bid,

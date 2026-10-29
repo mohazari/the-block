@@ -159,6 +159,7 @@ def test_stream_says_hello_then_relays_personalized_bids(
     hello, bid = asyncio.run(scenario())
     assert hello.event == "hello" and hello.retry == 2000
     assert hello.data["epoch"] == "epoch-1" and hello.data["run"] == "run-1"
+    assert hello.data["heartbeat_seconds"] == 10.0
     assert bid.event == "bid" and bid.id is None  # events aren't replayable; no ids
     assert bid.data.outbid_you and bid.data.vehicle_id == vehicle_id
 

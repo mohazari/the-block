@@ -18,7 +18,7 @@ from sqlalchemy import make_url
 
 # How long a starting server waits for the lock: `reset-db` holds it for a second or so, and a
 # --reload worker can briefly overlap the one it replaces.
-WAIT_FOR_LOCK_SECONDS = 15.0
+WAIT_FOR_LOCK_SECONDS = 5.0
 LOCK_SUFFIX = ".server"
 
 
@@ -68,12 +68,13 @@ class DatabaseLock:
     def database_name(self) -> str:
         return self._path.name.removesuffix(LOCK_SUFFIX) if self._path else "the database"
 
-    def acquire(self, wait: float, give_up: threading.Event | None = None) -> None:
-        """Blocking (polls): call it off the event loop. `give_up` stops the wait early."""
+    def acquire(self, wait: float, give_up: threading.Event | None = None) -> bool:
+        """Blocking (polls): call it off the event loop. Returns False only if `give_up` stopped
+        the wait; raises if the lock stays busy for `wait` seconds."""
         deadline = time.monotonic() + wait
         while not self.try_acquire():
             if give_up is not None and give_up.is_set():
-                return
+                return False
             if time.monotonic() > deadline:
                 raise RuntimeError(
                     f"{self.database_name} is in use by another server or a reset still "
@@ -81,6 +82,7 @@ class DatabaseLock:
                     "one again."
                 )
             time.sleep(0.1)
+        return True
 
     def release(self) -> None:
         if self._file is not None:

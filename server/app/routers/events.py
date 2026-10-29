@@ -20,8 +20,9 @@ router = APIRouter(prefix="/api", tags=["events"])
 _RETRY_MS = 2_000
 # A quiet stream sends a `ping` event this often, so the client can tell "nothing happening"
 # from "connection silently dead" (a proxy holding it open after the server went away) and
-# reconnect. FastAPI's own keep-alive comments don't reach JavaScript.
-HEARTBEAT_SECONDS = 15.0
+# reconnect. FastAPI's own keep-alive comment doesn't reach JavaScript; it is sent after 15s
+# without data, so pinging more often than that replaces it instead of doubling it.
+HEARTBEAT_SECONDS = 10.0
 
 
 def _stream_bidder_id(
@@ -51,6 +52,7 @@ async def events(
             "server_time": clock.now().isoformat(),
             "epoch": request.app.state.data_epoch,
             "run": request.app.state.run_id,
+            "heartbeat_seconds": HEARTBEAT_SECONDS,  # clients size their watchdog from it
         }
         yield ServerSentEvent(event="hello", data=hello, retry=_RETRY_MS)
         while True:

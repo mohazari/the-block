@@ -39,13 +39,14 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
             asyncio.to_thread(database_lock.acquire, serverlock.WAIT_FOR_LOCK_SECONDS, give_up)
         )
         try:
-            await asyncio.shield(waiting)
+            acquired = await asyncio.shield(waiting)
         except asyncio.CancelledError:
             # Shut down while waiting: stop the thread, and let go if it got the lock meanwhile.
             give_up.set()
             await asyncio.gather(waiting, return_exceptions=True)
             database_lock.release()
             raise
+        assert acquired  # False only when give_up was set, i.e. on the path above
         try:
             async with _running(app):
                 yield

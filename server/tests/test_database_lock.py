@@ -1,6 +1,6 @@
 import asyncio
 import sys
-import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -114,17 +114,25 @@ def test_unexpected_errors_carry_the_epoch_too(
 def test_a_server_shut_down_while_waiting_for_the_lock_never_keeps_it(
     tmp_path: Path, clock: FrozenClock
 ) -> None:
+    """Cancels the real lifespan mid-wait: it must stop at once (not finish the wait in the
+    background, which also holds up shutdown) and must not end up holding the lock."""
     holder = DatabaseLock(lock_path(f"sqlite:///{tmp_path / 'dev.db'}"))
     assert holder.try_acquire()
-    waiter = DatabaseLock(lock_path(f"sqlite:///{tmp_path / 'dev.db'}"))
-    give_up = threading.Event()
+    app = create_app(_settings(tmp_path), clock)
 
     async def scenario() -> None:
-        waiting = asyncio.ensure_future(asyncio.to_thread(waiter.acquire, 30, give_up))
-        await asyncio.sleep(0.2)
-        give_up.set()  # what a cancelled startup does
-        await waiting
+        async def start() -> None:
+            async with app.router.lifespan_context(app):
+                raise AssertionError("started without the lock")
 
-    asyncio.run(scenario())
+        starting = asyncio.ensure_future(start())
+        await asyncio.sleep(0.3)  # waiting for the lock
+        starting.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await starting
+
+    started = time.monotonic()
+    asyncio.run(scenario())  # also waits for the waiting thread to finish
+    assert time.monotonic() - started < 2  # not the full WAIT_FOR_LOCK_SECONDS
     holder.release()
-    assert _lock_is_free(tmp_path)  # the waiter stopped instead of grabbing it later
+    assert _lock_is_free(tmp_path)

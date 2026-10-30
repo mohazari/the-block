@@ -54,8 +54,12 @@ async def lane_status(lane: Annotated[Lane | None, Depends(_lane_or_none)]) -> L
         raise _unavailable(exc) from exc
 
 
+# The sign-in routes change the stored ChatGPT login, so like bids they need the bidder header:
+# a custom header makes a browser ask before another site can send them (no CORS is allowed).
+
+
 @router.post("/sign-in")
-async def sign_in(lane: LaneDep) -> LaneSignIn:
+async def sign_in(lane: LaneDep, _: RequiredBidderId) -> LaneSignIn:
     """Start signing in with ChatGPT: open `auth_url`, then poll the status until it's done."""
     try:
         return LaneSignIn(auth_url=await lane.sign_in())
@@ -64,13 +68,13 @@ async def sign_in(lane: LaneDep) -> LaneSignIn:
 
 
 @router.post("/sign-in/cancel", status_code=status.HTTP_204_NO_CONTENT)
-async def cancel_sign_in(lane: LaneDep) -> Response:
+async def cancel_sign_in(lane: LaneDep, _: RequiredBidderId) -> Response:
     await lane.cancel_sign_in()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/sign-out", status_code=status.HTTP_204_NO_CONTENT)
-async def sign_out(lane: LaneDep) -> Response:
+async def sign_out(lane: LaneDep, _: RequiredBidderId) -> Response:
     try:
         await lane.sign_out()
     except CodexError as exc:

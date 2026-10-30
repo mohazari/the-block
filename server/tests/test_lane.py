@@ -183,7 +183,7 @@ def test_signing_in_and_out(lane_client: LaneClient) -> None:
     client = lane_client({"signed_in": False})
     assert client.get("/api/lane/status").json()["signed_in"] is False
 
-    started = client.post("/api/lane/sign-in")
+    started = client.post("/api/lane/sign-in", headers=ME)
     assert started.json() == {"auth_url": "https://auth.example/x"}
     for _ in range(50):  # the fake completes the browser sign-in shortly after
         status = client.get("/api/lane/status").json()
@@ -193,7 +193,7 @@ def test_signing_in_and_out(lane_client: LaneClient) -> None:
     assert status["signed_in"] is True
     assert status["signing_in"] is False
 
-    assert client.post("/api/lane/sign-out").status_code == 204
+    assert client.post("/api/lane/sign-out", headers=ME).status_code == 204
     assert client.get("/api/lane/status").json()["signed_in"] is False
 
 
@@ -206,9 +206,17 @@ def wait_for_status(client: TestClient, done: Callable[[dict[str, Any]], bool]) 
     raise AssertionError(f"status never settled: {status}")
 
 
+@pytest.mark.parametrize("path", ["sign-in", "sign-in/cancel", "sign-out"])
+def test_signing_in_or_out_needs_the_bidder_header(lane_client: LaneClient, path: str) -> None:
+    # Without a custom header, any website could post these from the buyer's browser.
+    response = lane_client().post(f"/api/lane/{path}")
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "bidder_id_required"
+
+
 def test_a_failed_sign_in_says_so(lane_client: LaneClient) -> None:
     client = lane_client({"signed_in": False, "sign_in": "fail"})
-    client.post("/api/lane/sign-in")
+    client.post("/api/lane/sign-in", headers=ME)
     status = wait_for_status(client, lambda s: not s["signing_in"])
     assert status["signed_in"] is False
     assert status["sign_in_error"] == "Sign-in didn't finish. Try again."
@@ -216,7 +224,7 @@ def test_a_failed_sign_in_says_so(lane_client: LaneClient) -> None:
 
 def test_a_sign_in_codex_can_no_longer_finish_is_dropped(lane_client: LaneClient) -> None:
     client = lane_client({"signed_in": False, "sign_in": "never"})
-    client.post("/api/lane/sign-in")
+    client.post("/api/lane/sign-in", headers=ME)
     assert client.get("/api/lane/status").json()["signing_in"] is True
     lane = client.app.state.lane  # type: ignore[attr-defined]
     lane._client._process.kill()
@@ -226,8 +234,8 @@ def test_a_sign_in_codex_can_no_longer_finish_is_dropped(lane_client: LaneClient
 
 def test_a_sign_in_can_be_cancelled(lane_client: LaneClient, log: Log) -> None:
     client = lane_client({"signed_in": False, "sign_in": "never"})
-    client.post("/api/lane/sign-in")
-    assert client.post("/api/lane/sign-in/cancel").status_code == 204
+    client.post("/api/lane/sign-in", headers=ME)
+    assert client.post("/api/lane/sign-in/cancel", headers=ME).status_code == 204
     assert client.get("/api/lane/status").json()["signing_in"] is False
     assert log.requests("account/login/cancel") == [{"loginId": "login-1"}]
 

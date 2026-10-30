@@ -1,9 +1,9 @@
 import { DEFAULT_HEARTBEAT_MS, announcedHeartbeat } from './heartbeat'
 
 /**
- * One live stream for every tab. Browsers allow about six open connections per site, and each
- * tab used to hold one /api/events stream for good: with enough tabs open, a new tab's requests
- * queued behind the streams and never ran ("Loading vehicles…" forever). The hub runs in a
+ * One live stream for every tab. Browsers allow about six open connections per site, and a
+ * stream per tab holds one for good: with enough tabs open, a new tab's requests would queue
+ * behind the streams and never run ("Loading vehicles…" forever). The hub runs in a
  * SharedWorker (liveStream.worker.ts), keeps one EventSource per URL, and relays it to the tabs
  * over their ports. Tabs keep all their own logic (watchdog, reconnects, reseeds): to them the
  * relay looks like an EventSource (sharedStream.ts).

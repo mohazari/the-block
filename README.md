@@ -134,9 +134,9 @@ The ones that shaped the product:
 - **Web: 146 Vitest tests.** Formatting and rules, the API client, the clock sync, URL filter
   state, the run list, the bid flow (two-step confirm, outbid recovery, amount pinning), live
   events through a fake `EventSource`, toasts, My bids, and Lane's panel.
-- **End to end: 5 Playwright tests** on desktop and a phone viewport. They find a car, bid,
+- **End to end: 6 Playwright tests** on desktop and a phone viewport. They find a car, bid,
   return to the filtered run list, and see the bid in My bids. They also cover the mobile filter
-  sheet, and asking Lane for a car and opening its pick.
+  sheet, asking Lane for a car and opening its pick, and where the vehicle page puts the condition report at each width.
 - **Manual QA in a real browser** (desktop, dark mode, 390px): found and fixed the search
   over-matching ("ford" matched "Oxford White"), filter checkboxes reordering under the cursor, a
   cropped illustration, and the animated price lingering on "$13,997". It also confirmed a real

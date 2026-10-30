@@ -14,8 +14,8 @@ from fastapi.testclient import TestClient
 from app.clock import FrozenClock
 from app.config import Settings
 from app.lane import agent as agent_module
-from app.lane.agent import parse_version, problem_for
-from app.lane.codex import DISABLED_FEATURES
+from app.lane.agent import problem_for
+from app.lane.codex import DISABLED_FEATURES, parse_version
 from app.lane.reply import MessageStream, parse_reply
 from app.lane.tools import ToolError, search_query
 from app.main import create_app
@@ -150,6 +150,22 @@ def test_an_old_codex_is_refused(lane_client: LaneClient) -> None:
     status = lane_client({"version": "0.150.2"}).get("/api/lane/status").json()
     assert status["available"] is False
     assert "0.163.0 or newer" in status["problem"]
+
+
+def test_a_codex_that_wont_start_points_to_its_output(
+    lane_client: LaneClient, tmp_path: Path
+) -> None:
+    status = lane_client({"exit_on_start": True}).get("/api/lane/status").json()
+    assert status["available"] is False
+    assert "installed but didn't start" in status["problem"]
+    log_file = tmp_path / "lane" / "app-server.log"
+    assert str(log_file) in status["problem"]
+    assert "Unknown feature flag" in log_file.read_text()
+
+
+def test_an_empty_codex_command_means_the_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LANE_CODEX_COMMAND", "")
+    assert Settings.from_env().lane_command == ("codex",)
 
 
 def test_lane_can_be_turned_off(lane_client: LaneClient) -> None:

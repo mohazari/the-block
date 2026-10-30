@@ -208,6 +208,12 @@ class Fake:
 
 
 async def main() -> None:
+    if "--version" in sys.argv:
+        print(f"codex-cli {SCENARIO.get('version', '0.163.0')}")
+        return
+    if SCENARIO.get("exit_on_start"):  # e.g. a config Codex rejects
+        sys.stderr.write("Error: Unknown feature flag: goals\n")
+        sys.exit(1)
     if log := os.environ.get("FAKE_CODEX_LOG"):
         with open(log, "a") as file:  # noqa: PTH123
             file.write(

@@ -37,6 +37,7 @@ class Settings:
             data_path=Path(os.environ.get("DATA_PATH", REPO_DIR / "data" / "vehicles.json")),
             simulator_enabled=_env_flag("SIMULATOR_ENABLED", default=True),
             lane_enabled=_env_flag("LANE_ENABLED", default=True),
-            lane_command=tuple(shlex.split(os.environ.get("LANE_CODEX_COMMAND", "codex"))),
+            # An empty value means the default, not "no command".
+            lane_command=tuple(shlex.split(os.environ.get("LANE_CODEX_COMMAND", ""))) or ("codex",),
             lane_home=Path(os.environ.get("LANE_HOME", SERVER_DIR / ".lane")),
         )

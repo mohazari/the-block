@@ -14,6 +14,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -49,6 +50,10 @@ DISABLED_FEATURES = (
 CONFIG_OVERRIDES = ('web_search="disabled"', "mcp_servers={}")
 
 REQUEST_TIMEOUT_SECONDS = 30.0
+# The app-server protocol Lane was built and tested against (dynamicTools, outputSchema, effort).
+MIN_CODEX_VERSION = (0, 163, 0)
+# Codex's own output (errors included) goes here: it's the first place to look when it won't run.
+LOG_NAME = "app-server.log"
 # Large enough for a model list or a long reply in one line.
 _LINE_LIMIT = 16 * 1024 * 1024
 
@@ -58,9 +63,18 @@ ServerRequestHandler = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]
 class CodexError(Exception):
     """Codex is missing, crashed, or answered a request with an error."""
 
-    def __init__(self, message: str, code: int | None = None) -> None:
-        super().__init__(message)
-        self.code = code
+
+class CodexMissingError(CodexError):
+    """The Codex command can't be run at all."""
+
+
+class CodexTooOldError(CodexError):
+    """Codex runs, but predates the protocol Lane needs."""
+
+
+def parse_version(text: str) -> tuple[int, ...] | None:
+    match = re.search(r"(\d+)\.(\d+)\.(\d+)", text)
+    return tuple(int(part) for part in match.groups()) if match else None
 
 
 class CodexClient:
@@ -79,7 +93,7 @@ class CodexClient:
         self._account_listeners: list[Callable[[str, dict[str, Any]], None]] = []
         self.handle_server_request: ServerRequestHandler | None = None
         self._answering: set[asyncio.Task[None]] = set()  # keeps running answers referenced
-        self.user_agent: str | None = None
+        self._version_checked = False
         # Which Codex process this is: threads live in one process and die with it.
         self.generation = 0
 
@@ -87,10 +101,17 @@ class CodexClient:
     def running(self) -> bool:
         return self._process is not None and self._process.returncode is None
 
+    @property
+    def log_path(self) -> Path:
+        return self._home / LOG_NAME
+
     async def ensure_started(self) -> None:
         async with self._start_lock:
             if self.running:
                 return
+            # Before any flags: an older Codex exits on a feature name it doesn't know, which
+            # would look like a crash rather than "too old".
+            await self._check_version()
             await self._spawn()
             try:
                 result = await self.request(
@@ -105,11 +126,32 @@ class CodexClient:
                         "capabilities": {"experimentalApi": True},
                     },
                 )
-            except CodexError:
+            except CodexError as exc:
                 await self.close()
-                raise
-            self.user_agent = str(result.get("userAgent", ""))
+                raise CodexError(f"Codex didn't start: {exc}") from exc
+            logger.info("Codex started: %s", result.get("userAgent", "?"))
             self._send({"method": "initialized"})
+
+    async def _check_version(self) -> None:
+        if self._version_checked:
+            return
+        try:
+            probe = await asyncio.create_subprocess_exec(
+                *self._command,
+                "--version",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            output, _ = await asyncio.wait_for(probe.communicate(), 10)
+        except (FileNotFoundError, PermissionError) as exc:
+            raise CodexMissingError(f"Can't run Codex ({self._command[0]}): {exc}") from exc
+        except TimeoutError:
+            probe.kill()
+            raise CodexError("`codex --version` didn't answer.") from None
+        version = parse_version(output.decode(errors="replace"))
+        if version is not None and version < MIN_CODEX_VERSION:
+            raise CodexTooOldError(f"Codex {'.'.join(map(str, version))} is too old.")
+        self._version_checked = True
 
     async def _spawn(self) -> None:
         self._home.mkdir(parents=True, exist_ok=True)
@@ -118,19 +160,23 @@ class CodexClient:
             args += ["-c", override]
         for feature in DISABLED_FEATURES:
             args += ["--disable", feature]
-        try:
-            self._process = await asyncio.create_subprocess_exec(
-                *args,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
-                env={**os.environ, "CODEX_HOME": str(self._home)},
-                limit=_LINE_LIMIT,
-            )
-        except (FileNotFoundError, PermissionError) as exc:
-            raise CodexError(f"Can't start Codex ({self._command[0]}): {exc}") from exc
+        with self.log_path.open("ab") as log:
+            log.write(b"\n--- app-server starting ---\n")
+            log.flush()
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    *args,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=log,  # the child keeps its own copy of the file
+                    env={**os.environ, "CODEX_HOME": str(self._home)},
+                    limit=_LINE_LIMIT,
+                )
+            except (FileNotFoundError, PermissionError) as exc:
+                raise CodexMissingError(f"Can't run Codex ({self._command[0]}): {exc}") from exc
+        self._process = process
         self.generation += 1
-        self._reader = asyncio.create_task(self._read(self._process))
+        self._reader = asyncio.create_task(self._read(process))
 
     async def close(self) -> None:
         process, self._process = self._process, None
@@ -205,10 +251,23 @@ class CodexClient:
                 except json.JSONDecodeError:
                     logger.warning("Ignoring a line from Codex that isn't JSON")
                     continue
-                self._dispatch(message)
+                if isinstance(message, dict):
+                    self._dispatch(message)
+        except Exception:
+            # A line past the limit, or a bug here: this process can't be read any more.
+            logger.exception("Lost the connection to Codex")
+            if process.returncode is None:
+                process.kill()
         finally:
-            if self._process is process:
+            if self._process is process:  # not closed by us: it stopped on its own
                 self._process = None
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(process.wait(), 1)
+                logger.warning(
+                    "Codex stopped (exit code %s); its output is in %s",
+                    process.returncode,
+                    self.log_path,
+                )
             self._fail_pending("Codex stopped unexpectedly.")
 
     def _dispatch(self, message: dict[str, Any]) -> None:

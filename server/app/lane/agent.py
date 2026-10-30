@@ -9,7 +9,6 @@ the database.
 import asyncio
 import contextlib
 import logging
-import re
 import tempfile
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable
@@ -22,7 +21,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.clock import Clock
-from app.lane.codex import CodexClient, CodexError
+from app.lane.codex import (
+    MIN_CODEX_VERSION,
+    CodexClient,
+    CodexError,
+    CodexMissingError,
+    CodexTooOldError,
+)
 from app.lane.reply import MAX_PICKS, REPLY_SCHEMA, MessageStream, parse_reply
 from app.lane.schemas import (
     LaneEffort,
@@ -48,8 +53,6 @@ from app.lane.tools import (
 
 logger = logging.getLogger(__name__)
 
-# The app-server protocol Lane was built and tested against.
-MIN_CODEX_VERSION = (0, 163, 0)
 # A turn that goes this long without any event from Codex is given up on.
 TURN_IDLE_SECONDS = 120.0
 # Conversations kept in memory; the oldest is dropped past this.
@@ -149,11 +152,6 @@ class SignIn:
     generation: int
 
 
-def parse_version(user_agent: str) -> tuple[int, ...] | None:
-    match = re.search(r"/(\d+)\.(\d+)\.(\d+)", user_agent)
-    return tuple(int(part) for part in match.groups()) if match else None
-
-
 def time_zone(name: str | None) -> tzinfo | None:
     try:
         return ZoneInfo(name) if name else None
@@ -210,16 +208,22 @@ class Lane:
         """Start Codex if needed. False (with self._problem set) when it can't run."""
         try:
             await self._client.ensure_started()
-        except CodexError as exc:
+        except CodexMissingError as exc:
             logger.info("Lane is unavailable: %s", exc)
             self._problem = (
                 "Lane needs the Codex CLI. Install it, then reopen Lane (see the README)."
             )
             return False
-        version = parse_version(self._client.user_agent or "")
-        if version is not None and version < MIN_CODEX_VERSION:
+        except CodexTooOldError as exc:
+            logger.warning("Lane is unavailable: %s", exc)
             wanted = ".".join(map(str, MIN_CODEX_VERSION))
             self._problem = f"Lane needs Codex {wanted} or newer. Update the Codex CLI."
+            return False
+        except CodexError as exc:
+            logger.warning("Lane is unavailable: %s", exc)
+            self._problem = (
+                f"Codex is installed but didn't start. Its output is in {self._client.log_path}."
+            )
             return False
         self._problem = None
         return True

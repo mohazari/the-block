@@ -20,10 +20,12 @@ export type Fresh = false | 'quiet' | 'stale'
 /**
  * Tab → hub. `id` names the tab's current stream object: a tab replaces it on every reconnect,
  * and the hub tags what it sends with the id it was meant for, so a message still in flight for
- * the old one is dropped instead of being taken for news about the new one.
+ * the old one is dropped instead of being taken for news about the new one. `run`: the server
+ * run the tab is on, so a stale report is checked against the stream's own run.
  */
 export type ToHub =
-  { type: 'open'; id: number; url: string; fresh: Fresh } | { type: 'close'; id: number }
+  | { type: 'open'; id: number; url: string; fresh: Fresh; run?: string }
+  | { type: 'close'; id: number }
 
 /**
  * Hub → tab: a server event, the stream's state after an error, or `unavailable`: the worker
@@ -83,8 +85,8 @@ interface Stream {
   heartbeatMs: number
   /** Each listening port, with the id of the tab stream it listens for. */
   ports: Map<Port, number>
-  /** The last hello and when it arrived: replayed to tabs that join an open stream. */
-  hello?: { data: string; at: number }
+  /** The last hello, its server run and when it arrived: replayed to tabs that join. */
+  hello?: { data: string; run?: string; at: number }
 }
 
 export class StreamHub {
@@ -113,22 +115,22 @@ export class StreamHub {
     // A tab rejoining its own stream keeps its place: leaving first would close the connection
     // whenever it's the only tab, only to open another.
     if (this.joined.get(port)?.url !== message.url) this.leave(port)
-    try {
-      this.join(port, message.id, message.url, message.fresh)
-    } catch {
-      this.leave(port)
-      port.postMessage({ type: 'unavailable', id: message.id })
-    }
+    this.join(port, message)
   }
 
-  private join(port: Port, id: number, url: string, fresh: Fresh): void {
+  private join(port: Port, message: Extract<ToHub, { type: 'open' }>): void {
+    const { id, url } = message
     let stream = this.streams.get(url)
     if (!stream) {
       stream = this.open(url)
-    } else if (this.isDead(stream) || this.isRestartWanted(stream, fresh)) {
-      this.restart(stream)
+    } else if (this.isDead(stream) || this.isRestartWanted(stream, message)) {
+      if (!this.restart(stream)) stream = undefined
     } else if (stream.source.readyState === OPEN && stream.hello) {
       port.postMessage({ type: 'event', id, name: 'hello', data: this.replay(stream.hello) })
+    }
+    if (!stream) {
+      port.postMessage({ type: 'unavailable', id })
+      return
     }
     stream.ports.set(port, id)
     this.joined.set(port, stream)
@@ -155,23 +157,37 @@ export class StreamHub {
   }
 
   /**
-   * Whether a tab's reason for a new stream holds for everyone. Stale: a response came from
-   * another server, so the connection is to the wrong one, unless it was only just made. Quiet:
-   * only if the stream really went quiet; otherwise the tab missed the events itself. While a
-   * connection is being made (and not hung), a restart would only start it over: the tab waits
-   * for the coming hello instead, so tabs asking at the same time share one restart.
+   * Whether a tab's reason for a new stream holds for everyone. Stale: the tab is on another
+   * server run than the stream (or, if either run is unknown, the stream isn't brand new).
+   * Quiet: only if the stream really went quiet; otherwise the tab missed the events itself.
+   * While a connection is being made (and not hung), a restart would only start it over: the
+   * tab waits for the coming hello instead, so tabs asking at the same time share one restart.
    */
-  private isRestartWanted(stream: Stream, fresh: Fresh): boolean {
+  private isRestartWanted(stream: Stream, { fresh, run }: { fresh: Fresh; run?: string }): boolean {
     if (!fresh || stream.source.readyState !== OPEN) return false
-    if (fresh === 'stale') return !stream.hello || this.now() - stream.hello.at >= JUST_CONNECTED_MS
+    if (fresh === 'stale') {
+      if (run && stream.hello?.run) return stream.hello.run !== run
+      return this.now() - (stream.hello?.at ?? stream.attemptAt) >= JUST_CONNECTED_MS
+    }
     const heard = stream.heardAt ?? stream.attemptAt
     return this.now() - heard >= stream.heartbeatMs * ALIVE_WITHIN_HEARTBEATS
   }
 
-  private open(url: string): Stream {
+  /** A new connection, or null if the worker can't make one (no EventSource in workers). */
+  private connectTo(url: string): Source | null {
+    try {
+      return this.createSource(url)
+    } catch {
+      return null
+    }
+  }
+
+  private open(url: string): Stream | undefined {
+    const source = this.connectTo(url)
+    if (!source) return undefined
     const stream: Stream = {
       url,
-      source: this.createSource(url),
+      source,
       attemptAt: this.now(),
       heartbeatMs: DEFAULT_HEARTBEAT_MS,
       ports: new Map(),
@@ -181,16 +197,25 @@ export class StreamHub {
     return stream
   }
 
-  private restart(stream: Stream): void {
+  /** Replaces the connection for every tab; false (and every tab told) if none can be made. */
+  private restart(stream: Stream): boolean {
     stream.source.onerror = null
     stream.source.close()
     stream.hello = undefined
     stream.heardAt = undefined
+    const source = this.connectTo(stream.url)
+    if (!source) {
+      this.broadcast(stream, (id) => ({ type: 'unavailable', id }))
+      stream.ports.forEach((_, port) => this.joined.delete(port))
+      this.streams.delete(stream.url)
+      return false
+    }
     // The tabs drop the stream as they would after a network blip; the new hello brings them back.
     this.broadcast(stream, (id) => ({ type: 'error', id, readyState: CONNECTING }))
-    stream.source = this.createSource(stream.url)
+    stream.source = source
     stream.attemptAt = this.now()
     this.wire(stream)
+    return true
   }
 
   private wire(stream: Stream): void {
@@ -200,8 +225,9 @@ export class StreamHub {
         if (stream.source !== source) return // a connection that was replaced since
         stream.heardAt = this.now()
         if (name === 'hello') {
-          stream.hello = { data: event.data, at: this.now() }
-          stream.heartbeatMs = heartbeatOf(event.data) ?? stream.heartbeatMs
+          const { run, heartbeatMs } = helloFacts(event.data)
+          stream.hello = { data: event.data, run, at: this.now() }
+          stream.heartbeatMs = heartbeatMs ?? stream.heartbeatMs
         }
         this.broadcast(stream, (id) => ({ type: 'event', id, name, data: event.data }))
       })
@@ -234,12 +260,15 @@ export class StreamHub {
   }
 }
 
-function heartbeatOf(data: string): number | undefined {
+/** What the hub needs from a hello: its server run and announced ping interval. */
+function helloFacts(data: string): { run?: string; heartbeatMs?: number } {
   try {
-    return announcedHeartbeat(
-      (JSON.parse(data) as { heartbeat_seconds?: unknown }).heartbeat_seconds,
-    )
+    const hello = JSON.parse(data) as { run?: unknown; heartbeat_seconds?: unknown }
+    return {
+      run: typeof hello.run === 'string' ? hello.run : undefined,
+      heartbeatMs: announcedHeartbeat(hello.heartbeat_seconds),
+    }
   } catch {
-    return undefined
+    return {}
   }
 }

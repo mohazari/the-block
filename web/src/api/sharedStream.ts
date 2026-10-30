@@ -1,5 +1,5 @@
 import type { Fresh, FromHub, Source, ToHub } from './streamHub'
-import { CLOSED, CONNECTING, OPEN } from './streamHub'
+import { CLOSED, CONNECTING, EVENT_NAMES, OPEN } from './streamHub'
 
 /**
  * The tab's side of the shared live stream (see streamHub.ts): an EventSource look-alike fed by
@@ -8,13 +8,16 @@ import { CLOSED, CONNECTING, OPEN } from './streamHub'
  * isn't stored: events are personalized per bidder, so tabs may only share a stream if they
  * share the id (it lives in localStorage).
  */
-export function openEventStream(url: string, { fresh = false }: { fresh?: Fresh } = {}): Source {
+export function openEventStream(
+  url: string,
+  { fresh = false, run }: { fresh?: Fresh; run?: string } = {},
+): Source {
   const port = sharedPort()
   if (!port) return new EventSource(url)
   // One stream per tab at a time: a newer one takes this tab's place in the hub.
   const stream = new SharedStream(port, url, ++lastId)
   current = stream
-  stream.join(fresh)
+  stream.join(fresh, run)
   return stream
 }
 
@@ -55,12 +58,13 @@ function sharedPort(): MessagePort | null {
   return port
 }
 
-/** The worker can't serve this tab: from now on it opens its own EventSource. */
+/** The worker can't serve this tab: from now on it opens its own EventSource, starting now. */
 function switchToOwnStream(): void {
+  port?.close()
   port = null
   const stream = current
   current = null
-  stream?.lost()
+  stream?.fallBack()
 }
 
 function storageWorks(): boolean {
@@ -74,9 +78,11 @@ function storageWorks(): boolean {
 }
 
 class SharedStream implements Source {
-  readyState = CONNECTING
   onerror: ((event: Event) => void) | null = null
   readonly id: number
+  private state = CONNECTING
+  /** Set if the worker can't serve the tab: this tab's own connection, behind the same face. */
+  private own?: EventSource
   private readonly url: string
   private readonly port: MessagePort
   private readonly listeners = new Map<string, Set<(event: MessageEvent<string>) => void>>()
@@ -87,44 +93,60 @@ class SharedStream implements Source {
     this.id = id
   }
 
+  get readyState(): number {
+    return this.own && this.state !== CLOSED ? this.own.readyState : this.state
+  }
+
   addEventListener(type: string, listener: (event: MessageEvent<string>) => void): void {
     if (!this.listeners.has(type)) this.listeners.set(type, new Set())
     this.listeners.get(type)!.add(listener)
   }
 
   close(): void {
-    this.readyState = CLOSED
-    // Even after an error left it closed: the hub still counts this tab in until it's told.
-    if (current === this) {
-      current = null
-      this.leave()
-    }
+    this.state = CLOSED
+    this.own?.close()
+    if (current !== this) return
+    current = null
+    // Leave the hub only if the tab isn't reconnecting: a reconnect opens the next stream right
+    // away, which takes this one's place, so the tab's connection survives if it's the only one.
+    queueMicrotask(() => {
+      if (current === null) this.leave()
+    })
   }
 
-  join(fresh: Fresh): void {
-    this.send({ type: 'open', id: this.id, url: this.url, fresh })
+  join(fresh: Fresh, run?: string): void {
+    this.send({ type: 'open', id: this.id, url: this.url, fresh, run })
   }
 
   leave(): void {
     this.send({ type: 'close', id: this.id })
   }
 
-  /** The shared connection is gone for good: the tab's retry will open its own. */
-  lost(): void {
-    this.readyState = CLOSED
-    this.onerror?.(new Event('error'))
+  /** Carries on over the tab's own EventSource; the live-update logic doesn't notice. */
+  fallBack(): void {
+    if (this.state === CLOSED) return
+    const own = new EventSource(this.url)
+    this.own = own
+    for (const name of EVENT_NAMES) {
+      own.addEventListener(name, (event) => this.dispatch(name, event.data))
+    }
+    own.onerror = () => this.onerror?.(new Event('error'))
   }
 
   receive(message: Exclude<FromHub, { type: 'unavailable' }>): void {
-    if (this.readyState === CLOSED) return
+    if (this.state === CLOSED) return
     if (message.type === 'event') {
-      this.readyState = OPEN
-      const event = new MessageEvent(message.name, { data: message.data })
-      this.listeners.get(message.name)?.forEach((listener) => listener(event))
+      this.state = OPEN
+      this.dispatch(message.name, message.data)
     } else {
-      this.readyState = message.readyState
+      this.state = message.readyState
       this.onerror?.(new Event('error'))
     }
+  }
+
+  private dispatch(name: string, data: string): void {
+    const event = new MessageEvent(name, { data })
+    this.listeners.get(name)?.forEach((listener) => listener(event))
   }
 
   private send(message: ToHub): void {

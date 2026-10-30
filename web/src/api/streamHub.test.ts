@@ -4,6 +4,7 @@ import {
   CLOSED,
   CONNECT_TIMEOUT_MS,
   CONNECTING,
+  OPEN,
   StreamHub,
   type Fresh,
   type FromHub,
@@ -229,6 +230,50 @@ describe('StreamHub', () => {
     reporter.close()
     reporter.open('stale')
     expect(FakeEventSource.instances).toHaveLength(2)
+  })
+
+  it("checks a stale report against the stream's server run when both are known", () => {
+    const watcher = tab()
+    watcher.open()
+    const reporter = tab()
+    reporter.open()
+    hello() // run 'r'
+    reporter.close()
+    reporter.send({ type: 'open', id: 9, url: URL_A, fresh: 'stale', run: 'r' })
+    expect(FakeEventSource.instances).toHaveLength(1) // already on that run: rejoin
+    reporter.send({ type: 'open', id: 10, url: URL_A, fresh: 'stale', run: 'r2' })
+    expect(FakeEventSource.instances).toHaveLength(2) // the stream is on the old run
+  })
+
+  it("doesn't restart an open connection that hasn't said hello yet", () => {
+    const first = tab()
+    first.open()
+    tab().open()
+    FakeEventSource.latest().readyState = OPEN // headers in, hello not yet
+    first.close()
+    first.open('stale')
+    expect(FakeEventSource.instances).toHaveLength(1)
+  })
+
+  it('tells every tab when a restart cannot open a new connection', () => {
+    let fail = false
+    hub = new StreamHub(
+      (url) => {
+        if (fail) throw new ReferenceError('EventSource is not defined')
+        return new FakeEventSource(url)
+      },
+      () => now,
+    )
+    const watcher = tab()
+    watcher.open()
+    const reporter = tab()
+    reporter.open()
+    FakeEventSource.latest().fail({ fatal: true })
+    fail = true
+    reporter.close()
+    reporter.open('quiet')
+    expect(watcher.received.at(-1)).toEqual({ type: 'unavailable', id: 1 })
+    expect(reporter.received.at(-1)).toEqual({ type: 'unavailable', id: 2 })
   })
 
   it("times a hung connection from the browser's own retry, not from the first connect", () => {

@@ -6,7 +6,7 @@ import { formatMoney } from '../lib/format'
 import { syncServerTime } from '../lib/serverClock'
 import { forgetSeen } from './auctionLedger'
 import { applyAuction, forgetOwnBidRefreshes } from './bidding'
-import { noteHello, noteStreamDown, onReseed, onStaleStream } from './dataEpoch'
+import { currentRunId, noteHello, noteStreamDown, onReseed, onStaleStream } from './dataEpoch'
 import { DEFAULT_HEARTBEAT_MS, announcedHeartbeat } from './heartbeat'
 import { openEventStream } from './sharedStream'
 import { streamLive } from './streamGate'
@@ -60,8 +60,7 @@ export function useAuctionEvents(): void {
     let connectedBefore = false
     let heartbeatMs = DEFAULT_HEARTBEAT_MS
 
-    // Why a new stream is needed: `quiet` (the watchdog heard nothing, which a sleeping tab can
-    // misjudge) or `stale` (a response came from a server this stream isn't connected to).
+    // `why`: see Fresh in streamHub.ts.
     const reconnect = (why: Exclude<Fresh, false>) => {
       clearTimeout(silence)
       clearTimeout(retry) // a pending retry would open a second stream next to this one
@@ -104,11 +103,12 @@ export function useAuctionEvents(): void {
       }
     }
 
-    // `fresh`: why this tab wants a new stream, for the shared one to decide whether to restart
-    // it for every tab or let this tab rejoin it (streamHub.ts).
+    // `fresh`: why this tab wants a new stream, and the server run it's on, for the shared
+    // stream to decide whether to restart for every tab or let this tab rejoin (streamHub.ts).
     const connect = ({ fresh = false }: { fresh?: Fresh } = {}) => {
       source = openEventStream(`/api/events?bidder_id=${encodeURIComponent(bidderId())}`, {
         fresh,
+        run: currentRunId(),
       })
       expectMore()
       source.addEventListener('ping', () => expectMore())
@@ -145,7 +145,8 @@ export function useAuctionEvents(): void {
         if (source?.readyState === CLOSED) {
           source.close()
           clearTimeout(silence)
-          retry = setTimeout(() => connect({ fresh: 'quiet' }), RECONNECT_MS)
+          // No reason needed: a stream the browser gave up on is restarted for whoever joins it.
+          retry = setTimeout(connect, RECONNECT_MS)
         }
       }
     }

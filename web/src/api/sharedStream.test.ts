@@ -11,6 +11,10 @@ class FakeWorkerPort {
     this.sent.push(message)
   }
   start() {}
+  closed = false
+  close() {
+    this.closed = true
+  }
   reply(message: FromHub) {
     this.onmessage?.(new MessageEvent('message', { data: message }))
   }
@@ -61,11 +65,14 @@ describe('openEventStream', () => {
     const old = openEventStream('/x')
     const oldId = lastId()
     old.close()
-    const fresh = openEventStream('/x', { fresh: 'quiet' })
-    expect(port.sent.slice(1)).toEqual([
-      { type: 'close', id: oldId },
-      { type: 'open', id: lastId(), url: '/x', fresh: 'quiet' },
-    ])
+    const fresh = openEventStream('/x', { fresh: 'stale', run: 'r2' })
+    expect(port.sent.at(-1)).toEqual({
+      type: 'open',
+      id: lastId(),
+      url: '/x',
+      fresh: 'stale',
+      run: 'r2',
+    })
     const heard = vi.fn()
     fresh.addEventListener('hello', heard)
     fresh.onerror = heard
@@ -76,29 +83,52 @@ describe('openEventStream', () => {
     expect(fresh.readyState).not.toBe(CLOSED)
   })
 
-  it('falls back to its own EventSource when the worker fails to load', () => {
+  it('leaves the hub when closed, but not when the tab reconnects at once', async () => {
+    const first = openEventStream('/x')
+    first.close()
+    openEventStream('/x', { fresh: 'quiet' }) // a reconnect takes its place: no goodbye
+    await Promise.resolve()
+    expect(port.sent.map((m) => m.type)).toEqual(['open', 'open'])
+
+    const last = openEventStream('/x')
+    const id = lastId()
+    last.close() // unmounting: nothing follows
+    await Promise.resolve()
+    expect(port.sent.at(-1)).toEqual({ type: 'close', id })
+  })
+
+  it('carries on over its own EventSource when the worker fails to load', () => {
+    const stream = openEventStream('/x')
+    const hellos: string[] = []
+    stream.addEventListener('hello', (event) => hellos.push(event.data))
+    worker.onerror?.()
+    expect(FakeEventSource.latest().url).toBe('/x')
+    FakeEventSource.latest().emit('hello', { run: 'r' })
+    expect(hellos).toEqual(['{"run":"r"}'])
+    expect(stream.readyState).toBe(OPEN)
+    openEventStream('/x') // and opens its own from then on
+    expect(FakeEventSource.instances).toHaveLength(2)
+    expect(port.sent).toHaveLength(1)
+    expect(port.closed).toBe(true) // the tab stops talking to the worker
+  })
+
+  it('carries on over its own EventSource when the worker cannot open one', () => {
     const stream = openEventStream('/x')
     const onerror = vi.fn()
     stream.onerror = onerror
-    worker.onerror?.()
-    expect(onerror).toHaveBeenCalledOnce()
-    expect(stream.readyState).toBe(CLOSED) // gone for good: the tab's retry opens a new one
-    openEventStream('/x', { fresh: 'quiet' })
-    expect(FakeEventSource.latest().url).toBe('/x')
-  })
-
-  it('falls back to its own EventSource when the worker says it cannot open one', () => {
-    const stream = openEventStream('/x')
     port.reply({ type: 'unavailable', id: lastId() })
-    expect(stream.readyState).toBe(CLOSED)
-    openEventStream('/x', { fresh: 'quiet' })
     expect(FakeEventSource.latest().url).toBe('/x')
+    FakeEventSource.latest().fail()
+    expect(onerror).toHaveBeenCalledOnce()
+    stream.close()
+    expect(FakeEventSource.latest().closed).toBe(true)
   })
 
-  it('still says goodbye when closed after the shared stream failed', () => {
+  it('still says goodbye when closed after the shared stream failed', async () => {
     const stream = openEventStream('/x')
     port.reply({ type: 'error', id: lastId(), readyState: CLOSED })
     stream.close()
+    await Promise.resolve()
     expect(port.sent.at(-1)).toEqual({ type: 'close', id: lastId() })
   })
 

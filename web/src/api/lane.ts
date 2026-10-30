@@ -45,6 +45,14 @@ export function useLaneSignIn() {
   })
 }
 
+export function useLaneCancelSignIn() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => send('/lane/sign-in/cancel', { method: 'POST' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: laneKeys.status }),
+  })
+}
+
 export function useLaneSignOut() {
   const queryClient = useQueryClient()
   return useMutation({

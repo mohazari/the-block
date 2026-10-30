@@ -13,7 +13,13 @@ import {
   type ReactNode,
 } from 'react'
 import { Link, useMatch } from 'react-router'
-import { useLaneModels, useLaneSignIn, useLaneSignOut, useLaneStatus } from '../../api/lane'
+import {
+  useLaneCancelSignIn,
+  useLaneModels,
+  useLaneSignIn,
+  useLaneSignOut,
+  useLaneStatus,
+} from '../../api/lane'
 import type { LaneStatus } from '../../api/types'
 import { cn } from '../../lib/cn'
 import { formatClockTime } from '../../lib/format'
@@ -220,6 +226,7 @@ function Notice({ title, children }: { title: string; children?: ReactNode }) {
 
 function SignIn({ status }: { status: LaneStatus }) {
   const signIn = useLaneSignIn()
+  const cancel = useLaneCancelSignIn()
 
   const start = () => {
     // Open the tab now, inside the click: opened after the request returns, it would be
@@ -227,6 +234,11 @@ function SignIn({ status }: { status: LaneStatus }) {
     const tab = window.open('', '_blank')
     signIn.mutate(undefined, {
       onSuccess: ({ auth_url }) => {
+        // Only ever navigate to a web page: never a javascript: URL in this origin.
+        if (!/^https:\/\//i.test(auth_url)) {
+          tab?.close()
+          return
+        }
         if (tab) {
           tab.opener = null
           tab.location.href = auth_url
@@ -248,9 +260,30 @@ function SignIn({ status }: { status: LaneStatus }) {
         Lane answers with your ChatGPT account. Sign in once; it stays signed in on this computer.
       </p>
       {status.signing_in ? (
-        <p role="status" className="bg-surface-sunk rounded-[var(--radius-control)] px-3 py-2">
-          Finish signing in on the ChatGPT tab that opened. This updates on its own.
-        </p>
+        <div className="space-y-3">
+          <p role="status" className="bg-surface-sunk rounded-[var(--radius-control)] px-3 py-2">
+            Finish signing in on the ChatGPT tab that opened. This updates on its own.
+          </p>
+          {/* A closed or lost tab would otherwise leave this waiting for good. */}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={start}
+              disabled={signIn.isPending}
+              className="btn btn-plain flex-1"
+            >
+              Open ChatGPT again
+            </button>
+            <button
+              type="button"
+              onClick={() => cancel.mutate()}
+              disabled={cancel.isPending}
+              className="btn text-ink-muted hover:text-ink"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       ) : (
         <button
           type="button"

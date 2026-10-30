@@ -143,7 +143,8 @@ class Conversation:
 @dataclass
 class SignIn:
     login_id: str
-    error: str | None = None
+    # The Codex process the login lives in: if Codex restarts, nobody will ever complete it.
+    generation: int
 
 
 def parse_version(user_agent: str) -> tuple[int, ...] | None:
@@ -238,7 +239,7 @@ class Lane:
             problem=None,
             signed_in=signed_in,
             plan=account.get("planType") if account else None,
-            signing_in=self._sign_in is not None,
+            signing_in=self._signing_in(),
             sign_in_error=self._sign_in_error,
             usage=await self._usage() if signed_in else None,
         )
@@ -268,9 +269,14 @@ class Lane:
                     "account/login/cancel", {"loginId": self._sign_in.login_id}
                 )
         result = await self._client.request("account/login/start", {"type": "chatgpt"})
-        self._sign_in = SignIn(login_id=str(result["loginId"]))
+        self._sign_in = SignIn(login_id=str(result["loginId"]), generation=self._client.generation)
         self._sign_in_error = None
         return str(result["authUrl"])
+
+    def _signing_in(self) -> bool:
+        if self._sign_in is not None and self._sign_in.generation != self._client.generation:
+            self._sign_in = None  # Codex restarted: that login can't finish any more
+        return self._sign_in is not None
 
     async def cancel_sign_in(self) -> None:
         sign_in, self._sign_in = self._sign_in, None
@@ -285,6 +291,9 @@ class Lane:
 
     def _account_event(self, method: str, params: dict[str, Any]) -> None:
         if method == "account/login/completed":
+            login_id = params.get("loginId")
+            if self._sign_in is None or (login_id and login_id != self._sign_in.login_id):
+                return  # a login that was cancelled or replaced since
             self._sign_in = None
             self._sign_in_error = (
                 None if params.get("success") else "Sign-in didn't finish. Try again."

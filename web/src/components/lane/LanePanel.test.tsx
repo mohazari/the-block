@@ -65,11 +65,17 @@ function eventStream(events: object[], hold = false) {
 
 interface Options {
   status?: LaneStatus
+  authUrl?: string
   reply?: () => Response
   onStop?: () => void
 }
 
-function serve({ status = SIGNED_IN, reply, onStop }: Options = {}) {
+function serve({
+  status = SIGNED_IN,
+  reply,
+  onStop,
+  authUrl = 'https://auth.example/start',
+}: Options = {}) {
   const sent: Record<string, unknown>[] = []
   const api = stubApi((url, init) => {
     switch (url.pathname) {
@@ -82,7 +88,7 @@ function serve({ status = SIGNED_IN, reply, onStop }: Options = {}) {
       case '/api/lane/models':
         return MODELS
       case '/api/lane/sign-in':
-        return { auth_url: 'https://auth.example/start' }
+        return { auth_url: authUrl }
       case '/api/lane/messages':
         sent.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
         return reply?.() ?? eventStream([]).response
@@ -119,6 +125,42 @@ describe('Lane', () => {
     await waitFor(() => expect(tab.location.href).toBe('https://auth.example/start'))
     expect(tab.opener).toBeNull()
     expect(lane.queryByRole('textbox', { name: 'Message Lane' })).not.toBeInTheDocument()
+  })
+
+  it('lets a buyer start a sign-in over, or cancel it, while it waits', async () => {
+    const tab = { opener: {}, location: { href: '' }, close: vi.fn() }
+    vi.stubGlobal(
+      'open',
+      vi.fn(() => tab),
+    )
+    const { api } = serve({
+      status: { ...SIGNED_IN, signed_in: false, signing_in: true, usage: null },
+    })
+    renderRoute('/')
+    const lane = await openLane()
+    await userEvent.click(await lane.findByRole('button', { name: 'Open ChatGPT again' }))
+    await waitFor(() => expect(tab.location.href).toBe('https://auth.example/start'))
+    await userEvent.click(lane.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() =>
+      expect(api.calls.some((url) => url.pathname === '/api/lane/sign-in/cancel')).toBe(true),
+    )
+  })
+
+  it("doesn't open a sign-in link that isn't a web page", async () => {
+    const tab = { opener: {}, location: { href: '' }, close: vi.fn() }
+    vi.stubGlobal(
+      'open',
+      vi.fn(() => tab),
+    )
+    serve({
+      status: { ...SIGNED_IN, signed_in: false, usage: null },
+      authUrl: 'javascript:alert(1)',
+    })
+    renderRoute('/')
+    const lane = await openLane()
+    await userEvent.click(await lane.findByRole('button', { name: 'Sign in with ChatGPT' }))
+    await waitFor(() => expect(tab.close).toHaveBeenCalled())
+    expect(tab.location.href).toBe('')
   })
 
   it("explains when Lane isn't set up", async () => {

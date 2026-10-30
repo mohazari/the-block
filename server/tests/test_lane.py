@@ -180,6 +180,41 @@ def test_signing_in_and_out(lane_client: LaneClient) -> None:
     assert client.get("/api/lane/status").json()["signed_in"] is False
 
 
+def wait_for_status(client: TestClient, done: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
+    for _ in range(100):
+        status: dict[str, Any] = client.get("/api/lane/status").json()
+        if done(status):
+            return status
+        time.sleep(0.02)
+    raise AssertionError(f"status never settled: {status}")
+
+
+def test_a_failed_sign_in_says_so(lane_client: LaneClient) -> None:
+    client = lane_client({"signed_in": False, "sign_in": "fail"})
+    client.post("/api/lane/sign-in")
+    status = wait_for_status(client, lambda s: not s["signing_in"])
+    assert status["signed_in"] is False
+    assert status["sign_in_error"] == "Sign-in didn't finish. Try again."
+
+
+def test_a_sign_in_codex_can_no_longer_finish_is_dropped(lane_client: LaneClient) -> None:
+    client = lane_client({"signed_in": False, "sign_in": "never"})
+    client.post("/api/lane/sign-in")
+    assert client.get("/api/lane/status").json()["signing_in"] is True
+    lane = client.app.state.lane  # type: ignore[attr-defined]
+    lane._client._process.kill()
+    # The first call can still meet the dying process (a 503); then Codex starts afresh.
+    wait_for_status(client, lambda s: s.get("available") is True and not s["signing_in"])
+
+
+def test_a_sign_in_can_be_cancelled(lane_client: LaneClient, log: Log) -> None:
+    client = lane_client({"signed_in": False, "sign_in": "never"})
+    client.post("/api/lane/sign-in")
+    assert client.post("/api/lane/sign-in/cancel").status_code == 204
+    assert client.get("/api/lane/status").json()["signing_in"] is False
+    assert log.requests("account/login/cancel") == [{"loginId": "login-1"}]
+
+
 def test_models_list_each_models_efforts(lane_client: LaneClient) -> None:
     models = lane_client().get("/api/lane/models").json()
     assert [m["id"] for m in models] == ["fake-large", "fake-small"]

@@ -62,6 +62,7 @@ class Fake:
     def __init__(self) -> None:
         self.signed_in = bool(SCENARIO.get("signed_in", True))
         self.turn_index = 0
+        self.logins = 0
         self.next_id = 1000
         self.waiting: dict[int, asyncio.Future[Any]] = {}
         self.interrupts: dict[str, asyncio.Event] = {}
@@ -108,8 +109,13 @@ class Fake:
             window = {"usedPercent": 12, "windowDurationMins": 300, "resetsAt": 1793330000}
             return {"rateLimits": {"primary": window}}
         if method == "account/login/start":
-            asyncio.get_running_loop().call_later(0.05, self.finish_login)
-            return {"type": "chatgpt", "loginId": "login-1", "authUrl": "https://auth.example/x"}
+            self.logins += 1
+            login_id = f"login-{self.logins}"
+            outcome = SCENARIO.get("sign_in", "succeed")  # succeed | fail | never
+            if outcome != "never":
+                success = outcome == "succeed"
+                asyncio.get_running_loop().call_later(0.05, self.finish_login, login_id, success)
+            return {"type": "chatgpt", "loginId": login_id, "authUrl": "https://auth.example/x"}
         if method in ("account/login/cancel", "account/logout"):
             if method == "account/logout":
                 self.signed_in = False
@@ -131,9 +137,9 @@ class Fake:
             return {}
         raise SystemExit(f"fake codex: unexpected {method}")
 
-    def finish_login(self) -> None:
-        self.signed_in = True
-        self.notify("account/login/completed", {"loginId": "login-1", "success": True})
+    def finish_login(self, login_id: str, success: bool) -> None:
+        self.signed_in = success
+        self.notify("account/login/completed", {"loginId": login_id, "success": success})
 
     async def play(self, thread_id: str, turn_id: str, steps: list[dict[str, Any]]) -> None:
         ids = {"threadId": thread_id, "turnId": turn_id}

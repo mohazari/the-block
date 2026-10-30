@@ -473,6 +473,7 @@ def test_a_conversation_survives_codex_restarting(lane_client: LaneClient, log: 
         if not client.app.state.lane._client.running:  # type: ignore[attr-defined]
             break
         time.sleep(0.02)
+    assert not client.app.state.lane._client.running  # type: ignore[attr-defined]
     assert final(ask(client, "after the crash"))[0] == "reply"
     assert len(log.requests("thread/start")) == 2  # a new thread in the new process
 
@@ -713,6 +714,21 @@ def test_a_conversation_belongs_to_one_buyer(lane_client: LaneClient) -> None:
     with client.stream("POST", "/api/lane/messages", json=body, headers=other) as response:
         lines = [line for line in response.iter_lines() if line.startswith("data:")]
     assert json.loads(lines[-1].removeprefix("data:"))["code"] == "lane_failed"
+
+
+def test_another_buyer_cant_stop_my_answer(lane_client: LaneClient, log: Log) -> None:
+    client = lane_client({"turns": [[{"sleep": 0.5}, {"text": "all yours"}]]})
+    events: list[tuple[str, Any]] = []
+    reader = ask_in_background(client, events)
+    wait_for_log(log, "turn/start")
+    other = {"X-Bidder-Id": "browser-other-0002"}
+    assert (
+        client.post(f"/api/lane/conversations/{CONVERSATION}/stop", headers=other).status_code
+        == 204
+    )
+    reader.join(5)
+    assert final(events)[1]["message"] == "all yours"
+    assert log.requests("turn/interrupt") == []
 
 
 # Units ----------------------------------------------------------------------------------------

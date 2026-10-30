@@ -176,7 +176,9 @@ class Fake:
                     text = step["text"]
                 elif step["reply"] == "first-found":
                     picks = [{"vehicle_id": found[0], "reason": "First match."}] if found else []
-                    text = json.dumps({"message": "Here's one to look at.", "picks": picks})
+                    kind = "recommend" if picks else "nothing_fits"
+                    reply = {"message": "Here's one to look at.", "kind": kind, "picks": picks}
+                    text = json.dumps(reply)
                 else:
                     text = json.dumps(step["reply"])
                 item = {"type": "agentMessage", "id": "msg-1", "text": ""}

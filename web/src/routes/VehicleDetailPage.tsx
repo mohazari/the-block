@@ -15,11 +15,12 @@ import { Gallery } from './vehicle/Gallery'
 import { SpecSheet } from './vehicle/SpecSheet'
 
 /**
- * The column about the car (photos, condition, specs, seller) shares one width, capped so a
- * wide monitor doesn't blow the picture up past the condition report: uncapped at 1920px, the
- * picture alone filled most of the first screen.
+ * Desktop columns, shared with the loading skeleton so nothing moves when the data lands. The
+ * column about the car (photos, condition, specs, seller) stops at 60rem, so a wide monitor
+ * doesn't blow the picture up past the condition report (uncapped at 1920px, the picture alone
+ * filled most of the first screen); the bid column keeps to the right edge, under Watch.
  */
-const DETAILS = 'min-w-0 max-w-[60rem] lg:col-start-1'
+const COLUMNS = 'lg:grid-cols-[minmax(0,60rem)_clamp(22rem,26vw,27.5rem)] lg:justify-between'
 
 export function VehicleDetailPage() {
   const { vehicleId = '' } = useParams()
@@ -64,8 +65,13 @@ function VehicleDetailContent({ vehicleId }: { vehicleId: string }) {
           desktop. Everything about the car reads down one column at every width: photos, then
           its condition, then specs and seller. The last row is 1fr: the tall bid column's extra
           height lands there, not as gaps between sections. */}
-      <div className="mt-6 grid items-start gap-x-8 gap-y-10 lg:grid-cols-[minmax(0,1fr)_clamp(22rem,26vw,27.5rem)] lg:grid-rows-[auto_auto_1fr] 2xl:gap-x-12">
-        <div className={cn(DETAILS, 'lg:row-start-1')}>
+      <div
+        className={cn(
+          'mt-6 grid items-start gap-x-8 gap-y-10 lg:grid-rows-[auto_auto_1fr] 2xl:gap-x-12',
+          COLUMNS,
+        )}
+      >
+        <div className="min-w-0 lg:col-start-1 lg:row-start-1">
           <Gallery vehicle={vehicle} />
         </div>
         <aside
@@ -77,10 +83,10 @@ function VehicleDetailContent({ vehicleId }: { vehicleId: string }) {
             <BidPanel vehicle={vehicle} />
           </div>
         </aside>
-        <div className={cn(DETAILS, 'lg:row-start-2')}>
+        <div className="min-w-0 lg:col-start-1 lg:row-start-2">
           <ConditionReport vehicle={vehicle} />
         </div>
-        <div className={cn(DETAILS, 'space-y-10 lg:row-start-3')}>
+        <div className="min-w-0 space-y-10 lg:col-start-1 lg:row-start-3">
           <SpecSheet vehicle={vehicle} />
           <Seller vehicle={vehicle} />
         </div>
@@ -196,7 +202,7 @@ function DetailSkeleton() {
     <div aria-busy="true" aria-label="Loading vehicle">
       <div className="bg-surface-sunk h-4 w-24 rounded" />
       <div className="bg-surface-sunk mt-4 h-9 w-72 rounded" />
-      <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_clamp(22rem,26vw,27.5rem)]">
+      <div className={cn('mt-6 grid gap-8 2xl:gap-x-12', COLUMNS)}>
         <div className="bg-surface-sunk aspect-[40/17] rounded-[var(--radius-panel)]" />
         <div className="bg-surface-sunk h-96 rounded-[var(--radius-panel)]" />
       </div>

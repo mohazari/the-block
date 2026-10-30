@@ -10,6 +10,7 @@ import { LaneButton, LanePanel } from './lane/LanePanel'
 import { LaneProvider } from './lane/LaneProvider'
 import { useLane } from './lane/laneState'
 import { Toaster } from './toasts/Toaster'
+import { MARK } from './blockMark'
 import { cn } from '../lib/cn'
 
 const navLink = ({ isActive }: { isActive: boolean }) =>
@@ -109,26 +110,20 @@ function AttentionBadge() {
 }
 
 /**
- * The product's mark, built the way OPENLANE builds its own: a closed shape with one part set
- * apart (their open "O"), here a block with its open side as a separate bar. On OPENLANE Blue,
- * as before. public/favicon.svg is the same drawing, so the tab and the header match.
+ * The product's mark (geometry in blockMark.ts). It follows the theme here; the tab's copy stays
+ * OPENLANE Blue, since a favicon can't see the app's theme.
  */
 function BlockMark() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden className="size-6 shrink-0">
-      <rect x="1" y="1" width="22" height="22" rx="6" fill="var(--action)" />
+    <svg viewBox={MARK.viewBox} aria-hidden className="size-6 shrink-0">
+      <rect width="24" height="24" rx={MARK.tileRadius} fill="var(--action)" />
+      <path d={MARK.block} stroke="var(--action-ink)" strokeWidth={MARK.stroke} fill="none" />
       <path
-        d="M10.5 6.75h3a3.5 3.5 0 0 1 3.5 3.5v3.5a3.5 3.5 0 0 1-3.5 3.5h-3"
+        d={MARK.bar}
         stroke="var(--action-ink)"
-        strokeWidth="2.75"
-        fill="none"
-      />
-      <path
-        d="M7 10v4"
-        stroke="var(--action-ink)"
-        strokeWidth="2.75"
+        strokeWidth={MARK.stroke}
         strokeLinecap="round"
-        opacity="0.7"
+        opacity={MARK.barOpacity}
       />
     </svg>
   )

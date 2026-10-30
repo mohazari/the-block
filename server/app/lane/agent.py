@@ -521,10 +521,12 @@ class Lane:
                 except TimeoutError:
                     finished = True
                     await self._interrupt(thread_id, turn_id)
+                    logger.warning("Lane turn %s went silent; interrupted it", turn_id)
                     yield LaneProblem(code="lane_failed", message="Lane took too long. Try again.")
                     return
                 if method == "lane/disconnected":
                     finished = True
+                    logger.warning("Lane turn %s ended: Codex stopped", turn_id)
                     yield LaneProblem(code=FAILED[0], message=FAILED[1])
                     return
                 # Only this turn's events: a stopped turn's completion can arrive after it.
@@ -561,6 +563,9 @@ class Lane:
                     if status == "interrupted":
                         yield LaneProblem(code="lane_stopped", message="Stopped.")
                     elif status == "failed":
+                        logger.warning(
+                            "Lane turn %s failed: %s", turn_id, turn.get("error") or error
+                        )
                         code, text = problem_for(turn.get("error") or error)
                         yield LaneProblem(code=code, message=text)
                     else:
@@ -585,6 +590,7 @@ class Lane:
         reply = parse_reply(text) if text else None
         message = (reply.message if reply else "") or streamed.strip()
         if not message:
+            logger.warning("Lane's reply had no message: %r", text[:200])
             yield LaneProblem(code=FAILED[0], message=FAILED[1])
             return
         picks = await self._resolve(conversation, reply.picks if reply else [])
@@ -680,6 +686,11 @@ class Lane:
             )
         except ToolError as exc:
             return {"success": False, "contentItems": [{"type": "inputText", "text": str(exc)}]}
+        except Exception:
+            # A bug or a database error: log it in full, and give the model nothing internal.
+            logger.exception("Lane's %s tool failed", name)
+            failed = "The tool failed. Try a different search."
+            return {"success": False, "contentItems": [{"type": "inputText", "text": failed}]}
         if name == "search_vehicles":
             query = search_query(arguments)
             conversation.last_search = query.model_dump(

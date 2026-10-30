@@ -13,6 +13,7 @@ import {
   type ReactNode,
 } from 'react'
 import { Link, useMatch } from 'react-router'
+import { ApiError } from '../../api/client'
 import {
   useLaneCancelSignIn,
   useLaneModels,
@@ -139,6 +140,7 @@ export function LanePanel() {
                   status={status.data}
                   loading={status.isPending}
                   failed={status.isError}
+                  reason={status.error instanceof ApiError ? status.error.message : undefined}
                   retry={() => void status.refetch()}
                 />
               </m.section>
@@ -187,11 +189,14 @@ function Body({
   status,
   loading,
   failed,
+  reason,
   retry,
 }: {
   status: LaneStatus | undefined
   loading: boolean
   failed: boolean
+  /** The server's own explanation, when it gave one (e.g. Codex didn't answer). */
+  reason?: string
   retry: () => void
 }) {
   if (loading) {
@@ -200,6 +205,7 @@ function Body({
   if (failed || !status) {
     return (
       <Notice title="Couldn't reach Lane">
+        {reason && <p>{reason}</p>}
         <button type="button" onClick={retry} className="btn btn-plain mt-3">
           Try again
         </button>

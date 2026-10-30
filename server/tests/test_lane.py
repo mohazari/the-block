@@ -464,6 +464,32 @@ def test_a_bad_tool_call_goes_back_to_the_model(lane_client: LaneClient, log: Lo
     assert "year_min must not exceed year_max" in invalid["contentItems"][0]["text"]
 
 
+def test_a_tool_that_crashes_is_logged_and_tells_the_model_nothing_internal(
+    lane_client: LaneClient,
+    log: Log,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def broken(*_: Any, **__: Any) -> Any:
+        raise RuntimeError("SELECT secret FROM vehicles")
+
+    monkeypatch.setattr(agent_module, "run_tool", broken)
+    client = lane_client({"turns": [[{"tool": "search_vehicles"}, {"text": "sorry"}]]})
+    ask(client)
+    [result] = log.tool_results()
+    assert result == {
+        "success": False,
+        "contentItems": [{"type": "inputText", "text": "The tool failed. Try a different search."}],
+    }
+    assert "Lane's search_vehicles tool failed" in caplog.text
+    assert "SELECT secret" in caplog.text  # the traceback is in the log, not sent to the model
+
+
+def test_a_failed_turn_is_logged(lane_client: LaneClient, caplog: pytest.LogCaptureFixture) -> None:
+    ask(lane_client({"turns": [[{"fail": "badRequest"}]]}))
+    assert "Lane turn turn-0 failed" in caplog.text
+
+
 @pytest.mark.parametrize(
     ("error", "code"),
     [

@@ -163,6 +163,32 @@ describe('Lane', () => {
     expect(tab.location.href).toBe('')
   })
 
+  it("shows the server's reason when Lane's status can't be read", async () => {
+    vi.stubGlobal(
+      'fetch',
+      stubApi((url) =>
+        url.pathname === '/api/lane/status'
+          ? new Response(
+              JSON.stringify({
+                error: {
+                  code: 'lane_unavailable',
+                  message: "Codex didn't answer account/read in time.",
+                },
+              }),
+              { status: 503 },
+            )
+          : url.pathname === '/api/vehicles'
+            ? vehicleList([vehicle()])
+            : undefined,
+      ).fetch,
+    )
+    renderRoute('/')
+    const lane = await openLane()
+    expect(
+      await lane.findByText("Codex didn't answer account/read in time.", {}, { timeout: 8000 }),
+    ).toBeInTheDocument()
+  }, 10_000)
+
   it("explains when Lane isn't set up", async () => {
     serve({
       status: { ...SIGNED_IN, available: false, signed_in: false, problem: 'Lane needs Codex.' },

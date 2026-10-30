@@ -6,8 +6,11 @@ import { formatMoney } from '../lib/format'
 import { syncServerTime } from '../lib/serverClock'
 import { forgetSeen } from './auctionLedger'
 import { applyAuction, forgetOwnBidRefreshes } from './bidding'
-import { noteHello, noteStreamDown, onReseed, onStaleStream } from './dataEpoch'
+import { currentRunId, noteHello, noteStreamDown, onReseed, onStaleStream } from './dataEpoch'
+import { DEFAULT_HEARTBEAT_MS, announcedHeartbeat } from './heartbeat'
+import { openEventStream } from './sharedStream'
 import { streamLive } from './streamGate'
+import { CLOSED, type Fresh, type Source } from './streamHub'
 import type { AuctionEvent } from './types'
 
 export type Connection = 'connecting' | 'live' | 'reconnecting'
@@ -16,9 +19,6 @@ const RECONNECT_MS = 3_000
 // The hello says how often the server pings a quiet stream; three missed in a row means the
 // connection died without telling us (e.g. a proxy holding it open after the server went away).
 const MISSED_PINGS = 3
-const DEFAULT_HEARTBEAT_MS = 10_000
-// An announced heartbeat that isn't a positive number is ignored; extremes are clamped.
-const HEARTBEAT_LIMITS_MS = [1_000, 600_000] as const
 // A timer that fires far too late means the tab was asleep or frozen, not the stream dead:
 // buffered events may still be on their way, so give them a moment first.
 const WOKE_UP_LATE_MS = 5_000
@@ -45,7 +45,7 @@ export const useConnection = (): Connection =>
   )
 
 /**
- * One app-wide subscription to /api/events. Each bid is written straight into every cached copy
+ * One app-wide subscription to /api/events, shared by all of the app's tabs (sharedStream.ts). Each bid is written straight into every cached copy
  * of that vehicle (run list, detail page, My bids), so prices move everywhere without refetching.
  * The server sends `hello` on every (re)connect. Initial reads wait for the first one
  * (subscribe, then read); after a reconnect, everything on screen is refetched.
@@ -54,18 +54,20 @@ export function useAuctionEvents(): void {
   const queryClient = useQueryClient()
 
   useEffect(() => {
-    let source: EventSource | undefined
+    let source: Source | undefined
     let retry: ReturnType<typeof setTimeout> | undefined
     let silence: ReturnType<typeof setTimeout> | undefined
     let connectedBefore = false
     let heartbeatMs = DEFAULT_HEARTBEAT_MS
 
-    const reconnect = () => {
+    // `why`: see Fresh in streamHub.ts.
+    const reconnect = (why: Exclude<Fresh, false>) => {
       clearTimeout(silence)
+      clearTimeout(retry) // a pending retry would open a second stream next to this one
       source?.close()
       noteStreamDown()
       setConnection(connectedBefore ? 'reconnecting' : 'connecting')
-      connect()
+      connect({ fresh: why })
     }
 
     // Every event (and the server's ping) proves the stream is alive; silence restarts it.
@@ -76,7 +78,7 @@ export function useAuctionEvents(): void {
       const due = Date.now() + within
       silence = setTimeout(() => {
         if (!graced && Date.now() - due > WOKE_UP_LATE_MS) expectMore(AFTER_WAKING_MS, true)
-        else reconnect()
+        else reconnect('quiet')
       }, within)
     }
 
@@ -101,8 +103,13 @@ export function useAuctionEvents(): void {
       }
     }
 
-    const connect = () => {
-      source = new EventSource(`/api/events?bidder_id=${encodeURIComponent(bidderId())}`)
+    // `fresh`: why this tab wants a new stream, and the server run it's on, for the shared
+    // stream to decide whether to restart for every tab or let this tab rejoin (streamHub.ts).
+    const connect = ({ fresh = false }: { fresh?: Fresh } = {}) => {
+      source = openEventStream(`/api/events?bidder_id=${encodeURIComponent(bidderId())}`, {
+        fresh,
+        run: currentRunId(),
+      })
       expectMore()
       source.addEventListener('ping', () => expectMore())
       source.addEventListener('hello', (message) => {
@@ -112,10 +119,7 @@ export function useAuctionEvents(): void {
           run?: string
           heartbeat_seconds?: number
         }
-        const [shortest, longest] = HEARTBEAT_LIMITS_MS
-        if (typeof heartbeat_seconds === 'number' && heartbeat_seconds > 0) {
-          heartbeatMs = Math.min(Math.max(heartbeat_seconds * 1000, shortest), longest)
-        }
+        heartbeatMs = announcedHeartbeat(heartbeat_seconds) ?? heartbeatMs
         expectMore()
         syncServerTime(server_time)
         // A run with different data resets the cache (see onReseed below), which also refetches.
@@ -138,9 +142,10 @@ export function useAuctionEvents(): void {
         setConnection(connectedBefore ? 'reconnecting' : 'connecting')
         // The browser retries dropped connections itself, but gives up for good on a bad
         // response (e.g. a 502 from a proxy). Then it's on us, or the page goes quietly stale.
-        if (source?.readyState === EventSource.CLOSED) {
+        if (source?.readyState === CLOSED) {
           source.close()
           clearTimeout(silence)
+          // No reason needed: a stream the browser gave up on is restarted for whoever joins it.
           retry = setTimeout(connect, RECONNECT_MS)
         }
       }
@@ -156,7 +161,7 @@ export function useAuctionEvents(): void {
     })
 
     // A response came from a server this stream isn't connected to: the stream is stale.
-    const stopWatchingStaleStream = onStaleStream(reconnect)
+    const stopWatchingStaleStream = onStaleStream(() => reconnect('stale'))
 
     connect()
     return () => {

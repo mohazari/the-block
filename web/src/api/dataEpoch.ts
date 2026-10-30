@@ -56,7 +56,10 @@ export interface SentWith {
 }
 export const sentWith = (): SentWith => ({ run: currentRun, reseeds })
 
-/** Test hook: the run this tab is on (responses are judged with sentWith/noteResponse). */
+/**
+ * The server run this tab is on. The live stream sends it with a stale report, so a shared
+ * stream is checked against it (streamHub.ts); tests read it too.
+ */
 export const currentRunId = (): string | undefined => currentRun
 
 export interface Verdict {

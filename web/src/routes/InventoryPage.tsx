@@ -98,7 +98,7 @@ export function InventoryPage() {
               // overflow-clip, not overflow-hidden: it rounds the corners without becoming a
               // scroll box, so the column header can still stick under the page header.
               <div
-                className="border-line overflow-clip rounded-[var(--radius-panel)] border transition-opacity"
+                className="border-line @container overflow-clip rounded-[var(--radius-panel)] border transition-opacity"
                 style={{ opacity: inventory.isPlaceholderData ? 0.6 : 1 }}
                 aria-busy={inventory.isPlaceholderData}
               >

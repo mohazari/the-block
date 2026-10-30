@@ -90,7 +90,7 @@ function Group({
         <span className="text-ink-faint tabular text-base">{vehicles.length}</span>
       </h2>
       <p className="text-ink-muted mb-3 text-sm">{hint}</p>
-      <div className="border-line overflow-clip rounded-[var(--radius-panel)] border">
+      <div className="border-line @container overflow-clip rounded-[var(--radius-panel)] border">
         <VehicleRowHeader />
         {vehicles.map((vehicle) => (
           <VehicleRow
@@ -136,7 +136,7 @@ function NothingYet() {
           <p className="text-ink-muted mb-3 text-sm">
             Live now and closing first. Star one to follow it here.
           </p>
-          <div className="border-line overflow-clip rounded-[var(--radius-panel)] border">
+          <div className="border-line @container overflow-clip rounded-[var(--radius-panel)] border">
             <VehicleRowHeader />
             {vehicles.map((vehicle) => (
               <VehicleRow key={vehicle.id} vehicle={vehicle} />

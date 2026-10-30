@@ -8,12 +8,20 @@ import json
 
 from pydantic import BaseModel
 
+from app.lane.schemas import LaneProblem, LaneReply, LaneStep, LaneText
 from app.main import create_app
 from app.schemas import AuctionEvent, InventoryQuery
 
-# Not reachable from a REST response, but the client needs them: SSE payloads, and the query
-# model behind the inventory filters.
-_EXTRA_MODELS: tuple[type[BaseModel], ...] = (AuctionEvent, InventoryQuery)
+# Not reachable from a REST response, but the client needs them: SSE payloads (live auction
+# updates, Lane's replies), and the query model behind the inventory filters.
+_EXTRA_MODELS: tuple[type[BaseModel], ...] = (
+    AuctionEvent,
+    InventoryQuery,
+    LaneStep,
+    LaneText,
+    LaneReply,
+    LaneProblem,
+)
 
 
 def api_schema() -> dict[str, object]:

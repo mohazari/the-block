@@ -207,6 +207,174 @@ export interface NumericRange {
 }
 /**
  * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "LaneEffort".
+ */
+export interface LaneEffort {
+  description: string
+  value: string
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "LaneMessage".
+ */
+export interface LaneMessage {
+  conversation_id: string
+  effort?: string | null
+  model?: string | null
+  text: string
+  /**
+   * The buyer's IANA zone, e.g. "America/Toronto".
+   */
+  time_zone?: string | null
+  /**
+   * The car the buyer is looking at, if any.
+   */
+  vehicle_id?: string | null
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "LaneModel".
+ */
+export interface LaneModel {
+  default_effort: string
+  description: string
+  efforts: LaneEffort[]
+  id: string
+  is_default: boolean
+  name: string
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "LanePick".
+ */
+export interface LanePick {
+  reason: string
+  vehicle: VehicleSummary
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "VehicleSummary".
+ */
+export interface VehicleSummary {
+  auction: AuctionSnapshot
+  body_style: string
+  city: string
+  condition_grade: number
+  damage_count: number
+  drivetrain: string
+  exterior_color: string
+  fuel_type: string
+  id: string
+  image_count: number
+  lot: string
+  make: string
+  model: string
+  odometer_km: number
+  province: string
+  selling_dealership: string
+  title_status: string
+  transmission: string
+  trim: string
+  vin: string
+  watching: boolean
+  worst_damage: DamageSeverity | null
+  year: number
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "LaneProblem".
+ */
+export interface LaneProblem {
+  code: string
+  message: string
+  type?: 'problem'
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "LaneReply".
+ */
+export interface LaneReply {
+  /**
+   * The whole message: replaces the streamed text.
+   */
+  message: string
+  picks: LanePick[]
+  /**
+   * The run-list filters behind the picks, to open them as a list.
+   */
+  search: {
+    [k: string]: string | number | boolean | string[] | undefined
+  } | null
+  type?: 'reply'
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "LaneSignIn".
+ */
+export interface LaneSignIn {
+  /**
+   * Open in a browser tab to sign in with ChatGPT.
+   */
+  auth_url: string
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "LaneStatus".
+ */
+export interface LaneStatus {
+  /**
+   * Codex is installed and running.
+   */
+  available: boolean
+  /**
+   * ChatGPT plan, e.g. "plus".
+   */
+  plan: string | null
+  /**
+   * Why Lane isn't available, for the buyer.
+   */
+  problem: string | null
+  sign_in_error: string | null
+  signed_in: boolean
+  /**
+   * A browser sign-in is waiting to finish.
+   */
+  signing_in: boolean
+  usage: LaneUsage | null
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "LaneUsage".
+ */
+export interface LaneUsage {
+  resets_at: string | null
+  /**
+   * Share of the plan's current usage window used.
+   */
+  used_percent: number
+  window_minutes: number | null
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "LaneStep".
+ */
+export interface LaneStep {
+  /**
+   * What Lane is doing, e.g. "Searching the run list".
+   */
+  label: string
+  type?: 'step'
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "LaneText".
+ */
+export interface LaneText {
+  delta: string
+  type?: 'text'
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
  * via the `definition` "MyBid".
  */
 export interface MyBid {
@@ -301,33 +469,4 @@ export interface VehicleList {
   ranges: InventoryRanges
   server_time: string
   total: number
-}
-/**
- * This interface was referenced by `Api`'s JSON-Schema
- * via the `definition` "VehicleSummary".
- */
-export interface VehicleSummary {
-  auction: AuctionSnapshot
-  body_style: string
-  city: string
-  condition_grade: number
-  damage_count: number
-  drivetrain: string
-  exterior_color: string
-  fuel_type: string
-  id: string
-  image_count: number
-  lot: string
-  make: string
-  model: string
-  odometer_km: number
-  province: string
-  selling_dealership: string
-  title_status: string
-  transmission: string
-  trim: string
-  vin: string
-  watching: boolean
-  worst_damage: DamageSeverity | null
-  year: number
 }

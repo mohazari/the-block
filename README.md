@@ -34,6 +34,20 @@ first start. Rival dealers start bidding a few seconds later.
 
 The API's interactive docs are at **http://localhost:8000/docs**.
 
+### Lane, the car-finding assistant (optional)
+
+Lane answers with your own ChatGPT account, through the
+[Codex CLI](https://developers.openai.com/codex/cli) (version 0.163 or newer):
+
+```bash
+npm install -g @openai/codex   # or: brew install --cask codex
+```
+
+Then click **Ask Lane** in the app and **Sign in with ChatGPT**. Lane stays signed in on this
+computer (in `server/.lane/`, separate from your own Codex settings) and uses your ChatGPT plan's
+usage. It's meant for local demos. The rest of the app works without it; `LANE_ENABLED=0` turns
+it off.
+
 ## What I built
 
 - **Run list.** Dense rows, not a card grid, the way auction run lists are read. Each row shows
@@ -53,6 +67,12 @@ The API's interactive docs are at **http://localhost:8000/docs**.
   toast** with a "Bid again" link. The header shows when the connection drops.
 - **My bids.** Outbid → Winning → Watching → Finished, with a nav badge counting the auctions you
   need to act on.
+- **Lane, the car-finding assistant.** Describe what you want in plain words ("an SUV under
+  $30,000 with low kilometres, closing today") and Lane picks up to four cars from the run list,
+  each with its live price, countdown and the reason it fits, plus a link that opens the same
+  search in the run list. It knows which car you're looking at, can't bid for you, and only
+  recommends cars that exist. You choose the model and effort. On wide screens it docks beside
+  the page; the run list then switches to its narrower layout.
 
 ## Stack
 
@@ -107,15 +127,16 @@ The ones that shaped the product:
 
 ## Testing
 
-- **API: 126 pytest tests.** Auction rules, schedule normalization, seeding invariants, search
+- **API: 155 pytest tests.** Auction rules, schedule normalization, seeding invariants, search
   and facets, every bid rejection, idempotency, soft close, Buy Now, the concurrency race, SSE
-  personalization and backpressure, and simulator behaviour. Warnings are errors.
-- **Web: 136 Vitest tests.** Formatting and rules, the API client, the clock sync, URL filter
+  personalization and backpressure, and simulator behaviour. Lane's tests run against a fake
+  Codex (`server/tests/fake_codex.py`), so they never need an account. Warnings are errors.
+- **Web: 144 Vitest tests.** Formatting and rules, the API client, the clock sync, URL filter
   state, the run list, the bid flow (two-step confirm, outbid recovery, amount pinning), live
-  events through a fake `EventSource`, toasts, and My bids.
-- **End to end: 4 Playwright tests** on desktop and a phone viewport. They find a car, bid,
+  events through a fake `EventSource`, toasts, My bids, and Lane's panel.
+- **End to end: 5 Playwright tests** on desktop and a phone viewport. They find a car, bid,
   return to the filtered run list, and see the bid in My bids. They also cover the mobile filter
-  sheet.
+  sheet, and asking Lane for a car and opening its pick.
 - **Manual QA in a real browser** (desktop, dark mode, 390px): found and fixed the search
   over-matching ("ford" matched "Oxford White"), filter checkboxes reordering under the cursor, a
   cropped illustration, and the animated price lingering on "$13,997". It also confirmed a real

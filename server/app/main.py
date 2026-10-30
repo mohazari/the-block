@@ -16,7 +16,9 @@ from app.db import create_db_engine, write_engine
 from app.epoch import DataEpochHeader
 from app.errors import install_error_handlers
 from app.events import EventBroker
-from app.routers import bids, events, me, vehicles
+from app.lane.agent import Lane
+from app.lane.codex import CodexClient
+from app.routers import bids, events, lane, me, vehicles
 from app.seed import data_epoch, ensure_seeded
 from app.serverlock import DatabaseLock, lock_path
 from app.simulator import RivalSimulator
@@ -68,6 +70,16 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
             # Identifies this copy of the data (see epoch.py). It can only change between runs.
             app.state.data_epoch = data_epoch(engine)
             app.state.run_id = secrets.token_hex(8)
+            # Lane starts Codex on first use, so the API runs fine without it installed.
+            app.state.lane = (
+                Lane(
+                    CodexClient(settings.lane_command, settings.lane_home, app.version),
+                    app.state.sessions,
+                    clock,
+                )
+                if settings.lane_enabled
+                else None
+            )
             background: list[asyncio.Task[None]] = []
 
             if settings.simulator_enabled:
@@ -83,6 +95,8 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
                     task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await task
+                if app.state.lane is not None:
+                    await app.state.lane.close()
         finally:
             engine.dispose()
 
@@ -94,6 +108,7 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
     app.include_router(bids.router)
     app.include_router(me.router)
     app.include_router(events.router)
+    app.include_router(lane.router)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test('a buyer finds a vehicle, bids on it, and tracks it in My bids', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Run list' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Inventory' })).toBeVisible()
   await expect(page.getByText('200 vehicles')).toBeVisible()
 
   // Search narrows the list and lands in the URL.
@@ -32,8 +32,8 @@ test('a buyer finds a vehicle, bids on it, and tracks it in My bids', async ({ p
   await expect(panel.getByText("You're the high bidder.")).toBeVisible()
   await expect(panel.getByRole('listitem').first()).toContainText('You')
 
-  // Back returns to the filtered run list, where the row now shows the lead.
-  await page.getByRole('link', { name: 'Run list' }).click()
+  // Back returns to the filtered inventory, where the row now shows the lead.
+  await page.getByRole('link', { name: 'Back to inventory' }).click()
   await expect(page).toHaveURL(/status=live/)
   await expect(rows.filter({ hasText: title }).first()).toContainText("You're winning")
 

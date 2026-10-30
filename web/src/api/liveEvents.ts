@@ -46,7 +46,7 @@ export const useConnection = (): Connection =>
 
 /**
  * One app-wide subscription to /api/events, shared by all of the app's tabs (sharedStream.ts).
- * Each bid is written straight into every cached copy of that vehicle (run list, detail page,
+ * Each bid is written straight into every cached copy of that vehicle (inventory, detail page,
  * My bids), so prices move everywhere without refetching.
  * The server sends `hello` on every (re)connect. Initial reads wait for the first one
  * (subscribe, then read); after a reconnect, everything on screen is refetched.

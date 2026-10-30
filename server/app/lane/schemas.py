@@ -63,7 +63,7 @@ class LaneMessage(BaseModel):
 
 class LaneStep(BaseModel):
     type: Literal["step"] = "step"
-    label: str = Field(description='What Lane is doing, e.g. "Searching the run list".')
+    label: str = Field(description='What Lane is doing, e.g. "Searching the inventory".')
 
 
 class LaneText(BaseModel):
@@ -81,7 +81,7 @@ class LaneReply(BaseModel):
     message: str = Field(description="The whole message: replaces the streamed text.")
     picks: list[LanePick]
     search: dict[str, str | int | float | bool | list[str]] | None = Field(
-        description="The run-list filters behind the picks, to open them as a list."
+        description="The inventory filters behind the picks, to open them as a list."
     )
 
 

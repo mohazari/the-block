@@ -75,7 +75,7 @@ const STATUSES: readonly AuctionStatus[] = ['live', 'upcoming', 'ended']
 
 /**
  * What the API accepts for each number filter (mirrors InventoryQuery on the server). Anything
- * else is dropped from the query: one bad value must not turn the whole run list into a 422.
+ * else is dropped from the query: one bad value must not turn the whole inventory into a 422.
  */
 export interface NumberRule {
   valid: (n: number) => boolean

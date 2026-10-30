@@ -81,7 +81,7 @@ describe('InventoryPage', () => {
     expect(router.state.location.search).toBe('?buy_now=true')
   })
 
-  it('offers a retry when the run list fails to load', async () => {
+  it('offers a retry when the inventory fails to load', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -94,7 +94,7 @@ describe('InventoryPage', () => {
       ),
     )
     renderRoute('/')
-    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load the run list")
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load the inventory")
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
   })
 

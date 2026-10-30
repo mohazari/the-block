@@ -300,7 +300,7 @@ export interface LaneReply {
   message: string
   picks: LanePick[]
   /**
-   * The run-list filters behind the picks, to open them as a list.
+   * The inventory filters behind the picks, to open them as a list.
    */
   search: {
     [k: string]: string | number | boolean | string[] | undefined
@@ -360,7 +360,7 @@ export interface LaneUsage {
  */
 export interface LaneStep {
   /**
-   * What Lane is doing, e.g. "Searching the run list".
+   * What Lane is doing, e.g. "Searching the inventory".
    */
   label: string
   type?: 'step'

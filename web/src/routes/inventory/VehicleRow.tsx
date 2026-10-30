@@ -22,10 +22,10 @@ const EDGE = {
 
 /*
  * Rows lay out by the width of their list, not the window's (container queries, sizes in
- * index.css), so they fit wherever they are: the run list beside the filters, My bids, or a page
- * narrowed by Lane's panel. From about 940px of list the run list is a table, and wider lists add
+ * index.css), so they fit wherever they are: the inventory beside the filters, My bids, or a page
+ * narrowed by Lane's panel. From about 940px of list the inventory is a table, and wider lists add
  * columns instead of stretching the gaps: odometer from about 1210px, location from about 1460px
- * (what the run list gets on 1280, 1600 and 1900px screens). Header and rows share these.
+ * (what the inventory gets on 1280, 1600 and 1900px screens). Header and rows share these.
  *
  * Only the vehicle column stretches; every other column is sized to its content, with the same
  * 32px between all of them. Text columns (condition, location) sit left and figures (odometer,
@@ -40,7 +40,7 @@ const EDGE = {
 const TABLE_COLUMNS =
   '@row-table:grid-cols-[8rem_minmax(0,1fr)_7.5rem_7rem_9rem_2.5rem] @row-table:gap-x-8 @row-wide:grid-cols-[8rem_minmax(0,1fr)_7.5rem_6.5rem_7rem_9rem_2.5rem] @row-widest:grid-cols-[8rem_minmax(0,1fr)_7.5rem_9rem_6.5rem_7rem_9rem_2.5rem]'
 
-/** Column labels over the run list's table layout (wide lists only). */
+/** Column labels over the inventory's table layout (wide lists only). */
 export function VehicleRowHeader() {
   return (
     <div
@@ -63,7 +63,7 @@ export function VehicleRowHeader() {
 }
 
 /**
- * One line of the run list: everything a buyer scans before deciding to open a car. Each fact is
+ * One line of the inventory: everything a buyer scans before deciding to open a car. Each fact is
  * rendered once and placed by grid areas: a compact card in a narrow list, two lines beside the
  * picture in a medium one, table columns in a wide one. The list must be an `@container`.
  * `note` adds a line under the vehicle, e.g. "Your top bid $23,300" on My bids.
@@ -76,8 +76,8 @@ export function VehicleRow({ vehicle, note }: { vehicle: VehicleSummary; note?: 
   const hasBids = auction.current_bid !== null
   const name = vehicleName(vehicle)
   const light = conditionLight(vehicle)
-  // The vehicle page's "Run list" link goes back (keeping filters and page) only from here.
-  const onRunList = useMatch('/') !== null
+  // The vehicle page's "Inventory" link goes back (keeping filters and page) only from here.
+  const onInventory = useMatch('/') !== null
 
   return (
     <article
@@ -115,7 +115,7 @@ export function VehicleRow({ vehicle, note }: { vehicle: VehicleSummary; note?: 
             {/* Stretched link: the whole row opens the vehicle, with one link for screen readers. */}
             <Link
               to={`/vehicles/${vehicle.id}`}
-              state={onRunList ? { fromRunList: true } : undefined}
+              state={onInventory ? { fromInventory: true } : undefined}
               className="after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-offset-[-2px] focus-visible:after:outline-[var(--focus)]"
             >
               {name}

@@ -54,7 +54,7 @@ function VehicleDetailContent({ vehicleId }: { vehicleId: string }) {
     return (
       <section className="mx-auto max-w-md py-16 text-center" role="alert">
         <h1 className="text-2xl font-semibold tracking-tight">
-          {missing ? 'This vehicle isn’t on the run list' : 'Couldn’t load this vehicle'}
+          {missing ? 'This vehicle isn’t in the inventory' : 'Couldn’t load this vehicle'}
         </h1>
         <p className="text-ink-muted mt-2">
           {missing ? 'It may have been removed, or the link is wrong.' : query.error.message}
@@ -66,7 +66,7 @@ function VehicleDetailContent({ vehicleId }: { vehicleId: string }) {
             </button>
           )}
           <Link to="/" className="btn btn-plain">
-            Back to the run list
+            Back to the inventory
           </Link>
         </div>
       </section>
@@ -103,25 +103,28 @@ function VehicleDetailContent({ vehicleId }: { vehicleId: string }) {
   )
 }
 
-/** Back to the run list as the buyer left it (filters, page) when they came from it. */
+/** Back to the inventory as the buyer left it (filters, page) when they came from it. */
 function BackLink() {
   const navigate = useNavigate()
   const location = useLocation()
-  // Go back only when we came from the run list, so its filters and page are restored. From
-  // anywhere else (My bids, a toast, a shared link) this is a plain link to the run list.
-  const fromRunList = (location.state as { fromRunList?: boolean } | null)?.fromRunList === true
+  // Go back only when we came from the inventory, so its filters and page are restored. From
+  // anywhere else (My bids, a toast, a shared link) this is a plain link to the inventory.
+  const fromInventory =
+    (location.state as { fromInventory?: boolean } | null)?.fromInventory === true
   return (
     <Link
       to="/"
+      // The header has an "Inventory" link too: this one says where it goes.
+      aria-label="Back to inventory"
       onClick={(event) => {
-        if (!fromRunList) return
+        if (!fromInventory) return
         event.preventDefault()
         void navigate(-1)
       }}
       className="text-ink-muted hover:text-ink inline-flex items-center gap-1.5 text-sm font-semibold"
     >
       <ArrowLeft size={16} aria-hidden />
-      Run list
+      Inventory
     </Link>
   )
 }

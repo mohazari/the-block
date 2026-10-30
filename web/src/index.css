@@ -128,7 +128,7 @@
 }
 
 @theme inline {
-  /* Run-list rows (VehicleRow) lay out by the width of their list: these are the widths the
+  /* Inventory rows (VehicleRow) lay out by the width of their list: these are the widths the
      list has on 640, 1280, 1600 and 1900px screens, less its border. In rem like Tailwind's own
      sizes, so the cascade orders them smallest first. */
   --container-row-split: 37.5rem;

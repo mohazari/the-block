@@ -5,7 +5,7 @@ import { useState, type ReactNode } from 'react'
 import { plural } from '../../lib/format'
 
 /**
- * Mobile filters: a bottom sheet over the run list. Radix handles focus trapping, Escape and
+ * Mobile filters: a bottom sheet over the inventory. Radix handles focus trapping, Escape and
  * screen-reader semantics; Motion animates it in and out.
  */
 export function FilterSheet({

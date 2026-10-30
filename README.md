@@ -1,191 +1,171 @@
 # The Block
 
-The buyer side of a live wholesale vehicle auction, built for the [OPENLANE coding challenge](docs/CHALLENGE.md).
-Dealers browse a run list of 200 vehicles, judge condition at a glance, and bid against live
-(simulated) competition: prices move in real time, and you're told the moment you're outbid.
+The buyer side of a live online car auction, built for the [OPENLANE coding challenge](docs/CHALLENGE.md).
+Dealers browse 200 vehicles, check their condition, and bid. Prices change live as other
+(simulated) dealers bid, and you're told the moment someone outbids you.
 
 ![Run list](docs/screenshots/run-list.png)
 
-| Vehicle detail                                                                                  | On a phone (dark theme)                                     |
-| ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| ![Vehicle detail with salvage-title warning and bid panel](docs/screenshots/vehicle-detail.png) | ![Run list on a phone](docs/screenshots/phone-run-list.png) |
+| Vehicle page                                                                      | On a phone (dark theme)                                     |
+| --------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| ![Vehicle page with a salvage-title warning](docs/screenshots/vehicle-detail.png) | ![Run list on a phone](docs/screenshots/phone-run-list.png) |
+
+| Lane, the car-finding assistant                                            | Vehicle page on a phone                                        |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| ![Lane suggesting two SUVs beside the run list](docs/screenshots/lane.png) | ![Vehicle page on a phone](docs/screenshots/phone-vehicle.png) |
 
 ## How to run
 
-**Prerequisites:** Node.js ≥ 22 and [uv](https://docs.astral.sh/uv/getting-started/installation/)
+**You need:** Node.js 22 or newer, and [uv](https://docs.astral.sh/uv/getting-started/installation/)
 (uv installs the right Python by itself).
 
 ```bash
-npm run setup   # web dependencies (npm) + API dependencies (uv)
-npm run dev     # API on :8000, web app on :5173
+npm run setup   # installs everything
+npm run dev     # starts the API on :8000 and the web app on :5173
 ```
 
-Open **http://localhost:5173**. The database is created and seeded from `data/vehicles.json` on
-first start. Rival dealers start bidding a few seconds later.
+Open **http://localhost:5173**. The database is created and filled from `data/vehicles.json` the
+first time it starts. Other dealers start bidding a few seconds later.
 
-| Command                            | What it does                                                                                                 |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `npm test`                         | API tests (pytest) and web tests (Vitest)                                                                    |
-| `npm --workspace web run test:e2e` | Playwright end-to-end tests (run `npx --workspace web playwright install chromium` once first)               |
-| `npm run lint`                     | ruff + strict mypy, oxlint + tsc + prettier                                                                  |
-| `npm run build`                    | Production build of the web app                                                                              |
-| `npm run reset-db`                 | Start over: fresh data and a fresh auction clock (stop `npm run dev` first; open tabs resync when it's back) |
-| `SIMULATOR_ENABLED=0 npm run dev`  | Turn the rival bidders off                                                                                   |
+| Command                            | What it does                                                                              |
+| ---------------------------------- | ----------------------------------------------------------------------------------------- |
+| `npm test`                         | Runs the API tests and the web tests                                                      |
+| `npm --workspace web run test:e2e` | Runs the browser tests (first run `npx --workspace web playwright install chromium` once) |
+| `npm run lint`                     | Checks code style and types                                                               |
+| `npm run build`                    | Builds the web app for production                                                         |
+| `npm run reset-db`                 | Starts over with fresh data (stop `npm run dev` first)                                    |
+| `SIMULATOR_ENABLED=0 npm run dev`  | Runs without the simulated bidders                                                        |
 
-The API's interactive docs are at **http://localhost:8000/docs**.
+The API's docs are at **http://localhost:8000/docs**.
 
 ### Lane, the car-finding assistant (optional)
 
-Lane answers with your own ChatGPT account, through the
+Lane uses your own ChatGPT account through the
 [Codex CLI](https://developers.openai.com/codex/cli) (version 0.163 or newer):
 
 ```bash
 npm install -g @openai/codex   # or: brew install --cask codex
 ```
 
-Then click **Ask Lane** in the app and **Sign in with ChatGPT**. Lane stays signed in on this
-computer (in `server/.lane/`, separate from your own Codex settings) and uses your ChatGPT plan's
-usage. It's meant for local demos. The rest of the app works without it; `LANE_ENABLED=0` turns
-it off. If Lane says Codex didn't start, its output is in `server/.lane/app-server.log`.
-`LANE_CODEX_COMMAND` (default `codex`) and `LANE_HOME` (default `server/.lane`) point Lane at
-another Codex or sign-in folder.
+Then click **Ask Lane** in the app and **Sign in with ChatGPT**.
+
+- Lane stays signed in on this computer. Its sign-in is kept in `server/.lane/`, apart from your
+  own Codex settings, and it uses your ChatGPT plan.
+- The rest of the app works without it. `LANE_ENABLED=0` turns it off.
+- If Lane says Codex didn't start, look in `server/.lane/app-server.log`.
+- `LANE_CODEX_COMMAND` (default `codex`) and `LANE_HOME` (default `server/.lane`) point Lane at a
+  different Codex or sign-in folder.
+
+## Time spent
+
+About 3–4 hours, as the brief asks.
 
 ## What I built
 
-- **Run list.** Dense rows, not a card grid, the way auction run lists are read. Each row shows
-  the vehicle, key specs, a **condition light**, price, a live countdown, and your standing.
-  From 1280px it's a table with aligned, evenly spaced columns (the reserve under the price),
-  and wider monitors add columns (odometer, location) instead of empty space. Search (make, model, trim, VIN, lot, city, dealer),
-  multi-select filters with live counts (searchable for makes and provinces), sorting, and
-  pagination all live in the URL. Filters sit in a rail on desktop and a bottom sheet on phones.
-- **Vehicle detail.** Illustrated views in the car's real paint colour, a condition report that
-  leads with what matters (branded-title warning, a 1–5 grade meter, damage grouped **major →
-  mechanical → cosmetic**), specs with VIN copy, and the selling dealer.
-- **Bidding.** Quick amounts or a custom one, validated as you type, then a **two-step confirm**.
-  Pre-bids on upcoming auctions, **Buy Now**, a 2-minute **soft close**, and server-side guards
-  against bidding below the minimum, outbidding yourself, fat-finger amounts, and bidding past
-  Buy Now.
-- **Live.** One Server-Sent Events stream updates every price on screen, shared by all open
-  tabs (a SharedWorker), so many tabs can't use up the browser's connections to the site. You
-  get an **outbid toast** with a "Bid again" link. The header shows when the connection drops.
-- **My bids.** Outbid → Winning → Watching → Finished, with a nav badge counting the auctions you
-  need to act on.
-- **Lane, the car-finding assistant.** Describe what you want in plain words ("an SUV under
-  $30,000 with low kilometres, closing today") and Lane picks up to four cars from the run list,
-  each with its live price, countdown and the reason it fits, plus a link that opens the same
-  search in the run list. It knows which car you're looking at, can't bid for you, and only
-  recommends cars that exist. You choose the model and effort. On wide screens it docks beside
-  the page; the run list then switches to its narrower layout.
+- **Run list.** One row per vehicle, the way auction lists are read. Each row shows the car, its
+  main specs, a condition light, the price, a live countdown and where you stand. On wide screens
+  it becomes a table, and very wide screens get extra columns instead of empty space. You can
+  search (make, model, trim, VIN, lot, city, dealer), filter, sort and page, and all of it is kept
+  in the URL, so a link or the back button brings you to the same list.
+- **Vehicle page.** Drawings of the car in its real paint colour, the condition report with the
+  most important things first (a warning for branded titles, a 1–5 grade, damage sorted by how
+  serious it is), the specs with a copyable VIN, and the selling dealer.
+- **Bidding.** Pick a suggested amount or type one, then confirm. You can bid on upcoming
+  auctions early and use Buy Now. A bid in the last 2 minutes adds time, so others can respond.
+  The server refuses bids that are too low, outbid yourself, are far too high by mistake, or go
+  past the Buy Now price.
+- **Live updates.** Prices change on screen as bids come in, in every open tab. If you're outbid,
+  a message pops up with a "Bid again" link. The header shows when the connection drops.
+- **My bids.** Your auctions grouped as Outbid, Winning, Watching and Finished, with a count of
+  the ones that need you.
+- **Lane, the car-finding assistant.** Describe what you want ("an SUV under $30,000 with low
+  kilometres, closing today") and Lane picks up to four cars from the run list. Each comes with
+  its live price, its countdown and why it fits, plus a link that opens the same search in the
+  run list. It knows which car you're looking at, can't bid for you, and only suggests cars that
+  exist. You choose the model and how hard it thinks.
 
 ## Stack
 
 |              |                                                                                                   |
 | ------------ | ------------------------------------------------------------------------------------------------- |
 | **Frontend** | React 19, TypeScript 7, Vite, Tailwind v4, TanStack Query, React Router, Radix primitives, Motion |
-| **Backend**  | Python 3.12, FastAPI (with native SSE), Pydantic, SQLAlchemy 2                                    |
-| **Database** | SQLite (WAL; `BEGIN IMMEDIATE` for bids)                                                          |
+| **Backend**  | Python 3.12, FastAPI, Pydantic, SQLAlchemy 2                                                      |
+| **Database** | SQLite                                                                                            |
 | **Testing**  | pytest, Vitest + Testing Library, Playwright                                                      |
-| **Tooling**  | uv, npm workspaces, ruff, mypy (strict), oxlint, prettier, GitHub Actions                         |
+| **Tooling**  | uv, npm workspaces, ruff, mypy, oxlint, prettier, GitHub Actions                                  |
 
 ```
-server/   FastAPI app: domain rules (pure), services, routers, rival simulator, seed
-web/      React app: routes, components, typed API client (generated from the server's models)
-data/     vehicles.json, the provided dataset (source of truth for seeding)
-docs/     Original challenge brief and screenshots
+server/   The API: auction rules, bidding, the bidder simulator, loading the data
+web/      The web app: pages, components, and an API client typed from the server
+data/     vehicles.json, the dataset from the challenge
+docs/     The challenge brief and screenshots
 ```
 
 ## Notable decisions
 
-The ones that shaped the product:
-
-- **Time made relative to now.** The dataset's auction dates are all in the past. The schedule
-  keeps their relative spacing, shifted so the first auction closes 20 minutes after startup.
-  4-day auctions give a mix of 112 live and 88 upcoming. The data restarts itself once
-  everything has closed, so the app works whenever you clone it.
-- **Pre-bids.** 43 vehicles that land in "upcoming" already have bids in the data. Wholesale
-  lanes accept proxy bids before a car runs, so the app allows them too.
-- **The reserve is never revealed**, only whether it's met, as on real platforms. The amount has
-  no field in any API response.
-- **Condition lights** (green / yellow / red), borrowed from the lights over a physical auction
-  lane. They're derived from title status and damage severity, with the rule shown in a legend.
-- **Correct under concurrency.** Bids run in one write-locked transaction, and the clock is read
-  only after the lock is held. A 6-thread test fires identical bids at once: exactly one wins.
-  Idempotency keys make retries safe. On the client, the newest snapshot (by bid count) wins, so
-  out-of-order events and refetches can't roll a price back.
-- **Data honesty.** The dataset has bid counts but no bid history, and 34 vehicles claim more
-  bids than any increment ladder allows (e.g. 11 bids within $500). Synthesized histories obey
-  the increments, and the stored bid count follows the history.
-- **Rival bidders that are plausible, not rigged.** They counter a human only after 20 seconds,
-  stop at a private ceiling (so a determined buyer can win), and go through the same bid rules.
+- **Auction times are moved to "now".** The dataset's dates are all in the past. I kept the gaps
+  between them and shifted them so the first auction ends 20 minutes after you start the app.
+  That gives 112 live and 88 upcoming auctions. When everything has ended, the data starts over
+  by itself, so the app works whenever you clone it.
+- **Bids before an auction opens.** 43 upcoming cars already have bids in the data. Real
+  wholesale auctions take early bids, so the app does too.
+- **The reserve price stays secret.** You only see whether it's met, as on real auction sites.
+  The amount never leaves the server.
+- **Condition lights** (green, yellow, red), like the lights over a real auction lane. They come
+  from the title and how serious the damage is, and a legend explains the rule.
+- **Two bids at the same moment can't both win.** Bids are handled one at a time on the server.
+  A test fires the same bid six times at once, and exactly one goes through. Sending the same bid
+  twice by accident (a double click, a retry) only places it once.
+- **Honest data.** The dataset has bid counts but no bid history, and 34 cars have more bids than
+  their prices allow. I made up histories that follow the bid steps and set the count to match.
+- **Fair rival bidders.** They only answer you after 20 seconds and each stops at its own limit,
+  so you can win.
 
 ## Assumptions and scope
 
-- One anonymous buyer per browser (a random id in `localStorage`). No accounts, as the brief
-  allows.
-- The listing data has no photos, so each car is drawn in its body style and paint colour, and
-  labelled as an illustration.
-- Times in the dataset are treated as UTC. Money is whole dollars (CAD formatting).
-- **Deliberately not built:** checkout and payments after winning, seller tools, notifications
-  outside the app, proxy (maximum) bidding, saved searches.
+- One buyer per browser, without accounts (the brief allows this).
+- The data has no real photos (only placeholder links), so each car is drawn in its body style
+  and paint colour, labelled as a drawing.
+- Times in the data are UTC. Money is in whole Canadian dollars.
+- **Not built, on purpose:** checkout and payment after winning, seller tools, emails or push
+  notifications, automatic (maximum) bidding, saved searches.
 
 ## Testing
 
-- **API: 180 pytest tests.** Auction rules, schedule normalization, seeding invariants, search
-  and facets, every bid rejection, idempotency, soft close, Buy Now, the concurrency race, SSE
-  personalization and backpressure, and simulator behaviour. Lane's tests run against a fake
-  Codex (`server/tests/fake_codex.py`), so they never need an account. Warnings are errors.
-- **Web: 191 Vitest tests.** Formatting and rules, the API client, the clock sync, URL filter
-  state, the run list, the bid flow (two-step confirm, outbid recovery, amount pinning), live
-  events through a fake `EventSource`, the stream shared between tabs, toasts, My bids, Lane's
-  panel, and the logo matching the browser tab's icon.
-- **End to end: 8 Playwright tests** on desktop and a phone viewport. They find a car, bid,
-  return to the filtered run list, and see the bid in My bids. They also cover the mobile filter
-  sheet, asking Lane for a car and opening its pick, eight tabs open at once, where the vehicle
-  page puts the condition report at each width, and the run-list table's columns.
-- **Manual QA in a real browser** (desktop, dark mode, 390px): found and fixed the search
-  over-matching ("ford" matched "Oxford White"), filter checkboxes reordering under the cursor, a
-  cropped illustration, and the animated price lingering on "$13,997". It also confirmed a real
-  outbid by a simulated rival end to end.
-- **Accessibility:** every text colour meets WCAG AA (4.5:1) on the backgrounds it's used on, in both themes,
-  checked by script. Keyboard focus is visible, there's a skip link, live regions announce
-  standing changes, toasts pause while hovered or focused, and reduced motion is respected.
-- CI runs lint, types, unit and e2e tests on every PR, and fails if the generated API types
-  drift from the server.
+- **API: 180 tests.** Auction rules, the time shift, search and filters, every reason a bid can
+  be refused, double-sent bids, the 2-minute extension, Buy Now, two bids at once, live updates,
+  and the simulated bidders. Lane is tested against a fake Codex, so no account is needed.
+- **Web: 191 tests.** Formatting, filters in the URL, the run list, the bid flow, live updates,
+  the connection shared between tabs, pop-up messages, My bids, and Lane's panel.
+- **Browser: 8 tests** on a desktop and a phone screen. Find a car, bid, go back to the list, see
+  the bid in My bids. Also: filters on a phone, asking Lane for a car, eight tabs open at once, the
+  vehicle page layout at different widths, and the run-list table.
+- **By hand in a real browser** (desktop, dark mode, phone width). This caught, for example, a
+  search for "ford" that also matched "Oxford White". Lane was tried with a real ChatGPT account.
+- **Accessibility:** all text is readable against its background (WCAG AA) in both themes, the
+  app works with a keyboard, screen readers hear changes in your standing, and animation is
+  turned down when your system asks for less motion.
+- Every pull request runs all the checks and tests on GitHub.
 
 ## How it was built
 
-I worked with **Claude Code** as an AI pair. I set the product direction, constraints and review
-bar. The agent analysed the repo and data, drafted code, and ran the reviews and QA. The work
-shipped as **nine slices** (setup → domain → inventory API → bidding API → live updates → web
-foundation → run list → detail and bidding → live UI). Each slice was built, tested, put through
-a code review, fixed, and merged by PR once CI was green: see the
-[PR history](https://github.com/mohazari/the-block/pulls?q=is%3Apr+is%3Aclosed). Reviews found
-real bugs that every PR description lists, for example a stale clock read before the bid lock,
-an idempotency key that could replay a bid as a Buy Now, and a refetch that could roll back a
-live price.
+I worked with **Claude Code** as an AI pair programmer. I chose what to build, set the rules and
+reviewed the work. The agent read the repo and data, wrote code, and ran the reviews and checks.
+The work went in as small pull requests, each one built, tested, reviewed, fixed and merged once
+all checks passed: see the
+[PR history](https://github.com/mohazari/the-block/pulls?q=is%3Apr+is%3Aclosed). The reviews found
+real bugs, and each PR lists them.
 
-Design references: the
-[ui-ux-pro-max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) skill (its auction
-colour semantics and accessibility rules were used; its serif body font and dark-first theme were
-rejected for a data-dense tool) and [Motion](https://github.com/motiondivision/motion) for
-animation. A later design refresh used the
-[taste-skill](https://github.com/Leonxlnx/taste-skill)'s rules for app screens and its
-real-browser inspector, and took colours and type from OPENLANE itself: its published palette
-and Poppins, with tabular figures from Barlow for prices and countdowns.
-
-## Time spent
-
-Well beyond the suggested 3–4 hours, by choice: the goal was a full-stack version with tested
-concurrency and live updates. The slice-by-slice PRs show where the time went.
+Design: the [ui-ux-pro-max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) and
+[taste-skill](https://github.com/Leonxlnx/taste-skill) guides, with colours and the Poppins font
+taken from OPENLANE's own site, and [Motion](https://github.com/motiondivision/motion) for
+animation.
 
 ## What I'd do with more time
 
-- **Proxy (maximum) bidding.** It's how most dealers actually bid, and the bid transaction is
-  already the right place for it.
-- **Real photos and condition-report media**, with the illustrations kept as the fallback.
-- **Postgres and a shared event channel** (`LISTEN/NOTIFY` or Redis) to run more than one API
-  process; the code notes where that changes.
-- **Accounts and notifications** (email/push when outbid or when a watched car opens).
-- **Full-text search with ranking** (SQLite FTS5 or Postgres), so a query like "ford" ranks Ford
-  makes above dealers named Ford.
-- **Post-auction flow:** what happens after "You won" (invoice, transport, arbitration window).
+- **Automatic (maximum) bidding.** It's how most dealers really bid.
+- **Real photos and condition-report pictures**, keeping the drawings as a fallback.
+- **Run more than one API server**, with Postgres and a shared channel for live updates.
+- **Accounts and notifications** (email or push when you're outbid or a watched car opens).
+- **Better search ranking**, so "ford" shows Ford cars before dealers named Ford.
+- **What happens after you win:** invoice, transport, and a window to raise problems.

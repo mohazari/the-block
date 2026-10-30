@@ -19,9 +19,19 @@ test('on a wide screen the run list is a table: text columns, then figures, even
   await expect(header.getByText('Reserve', { exact: true })).toHaveCount(0)
   await expect(row.getByText(/^(Reserve met|Reserve not met|No reserve)$/)).toBeVisible()
 
-  // The time column shows just the time under its "Ends" header.
+  // The time column shows just the time under its "Ends" header; "Ends in" stays for screen
+  // readers only (visually hidden: a 1px box).
   await expect(row.getByText(/^\d+[dhms] \d+[hms]$|^\d+s$/)).toBeVisible()
+  expect(
+    (await row.getByText('Ends in', { exact: true }).boundingBox())!.width,
+  ).toBeLessThanOrEqual(1)
 
   // Compact rows: name and trim share a line.
-  expect((await row.boundingBox())!.height).toBeLessThan(100)
+  const name = (await row.getByRole('heading').boundingBox())!
+  const trim = (await row
+    .getByRole('heading')
+    .locator('xpath=following-sibling::span')
+    .boundingBox())!
+  expect(Math.abs(trim.y + trim.height - (name.y + name.height))).toBeLessThan(4)
+  expect(trim.x).toBeGreaterThan(name.x + name.width)
 })

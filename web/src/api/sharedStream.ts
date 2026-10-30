@@ -1,5 +1,5 @@
 import type { Fresh, FromHub, Source, ToHub } from './streamHub'
-import { CLOSED, CONNECTING, EVENT_NAMES, OPEN } from './streamHub'
+import { CLOSED, CONNECTING, EVENT_NAMES, OPEN, PROTOCOL_VERSION } from './streamHub'
 
 /**
  * The tab's side of the shared live stream (see streamHub.ts): an EventSource look-alike fed by
@@ -13,6 +13,13 @@ export function openEventStream(
   { fresh = false, run }: { fresh?: Fresh; run?: string } = {},
 ): Source {
   const port = sharedPort()
+  // A worker that dies after starting tells no one (onerror is only for loading). A live one
+  // answers every quiet reconnect (a hello, an error or events), so two in a row unanswered mean
+  // it's gone.
+  if (port && fresh === 'quiet' && ++quietUnanswered >= 2) {
+    switchToOwnStream()
+    return new EventSource(url)
+  }
   if (!port) return new EventSource(url)
   // One stream per tab at a time: a newer one takes this tab's place in the hub.
   const stream = new SharedStream(port, url, ++lastId)
@@ -25,6 +32,9 @@ export function openEventStream(
 let port: MessagePort | null | undefined
 let current: SharedStream | null = null
 let lastId = 0
+let quietUnanswered = 0
+/** Page listeners added for the worker, so tests can remove them. */
+const pageListeners: [string, (event: Event) => void][] = []
 
 function sharedPort(): MessagePort | null {
   if (port !== undefined) return port
@@ -33,13 +43,14 @@ function sharedPort(): MessagePort | null {
   try {
     const worker = new SharedWorker(new URL('./liveStream.worker.ts', import.meta.url), {
       type: 'module',
-      name: 'the-block-live',
+      name: `the-block-live-v${PROTOCOL_VERSION}`,
     })
     // A worker script that can't load (blocked, or gone after a deploy) fails after the fact.
     // The stream reports the connection lost for good; the tab's retry then opens its own.
     worker.onerror = switchToOwnStream
     port = worker.port
     port.onmessage = (event: MessageEvent<FromHub>) => {
+      quietUnanswered = 0
       // Messages for a stream this tab has since replaced are old news.
       if (event.data.id !== current?.id) return
       if (event.data.type === 'unavailable') switchToOwnStream()
@@ -48,14 +59,19 @@ function sharedPort(): MessagePort | null {
     port.start()
     // A closing tab says goodbye (a page can't tell the worker otherwise); a tab coming back
     // from the back/forward cache says hello again.
-    window.addEventListener('pagehide', () => current?.leave())
-    window.addEventListener('pageshow', (event) => {
-      if (event.persisted) current?.join(false)
+    listen('pagehide', () => current?.leave())
+    listen('pageshow', (event) => {
+      if ((event as PageTransitionEvent).persisted) current?.join(false)
     })
   } catch {
     port = null
   }
   return port
+}
+
+function listen(type: string, listener: (event: Event) => void): void {
+  window.addEventListener(type, listener)
+  pageListeners.push([type, listener])
 }
 
 /** The worker can't serve this tab: from now on it opens its own EventSource, starting now. */
@@ -165,4 +181,6 @@ class SharedStream implements Source {
 export function resetSharedStream(): void {
   port = undefined
   current = null
+  quietUnanswered = 0
+  pageListeners.splice(0).forEach(([type, listener]) => window.removeEventListener(type, listener))
 }

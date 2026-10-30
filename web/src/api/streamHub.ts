@@ -12,6 +12,13 @@ import { DEFAULT_HEARTBEAT_MS, announcedHeartbeat } from './heartbeat'
  */
 
 /**
+ * The tab↔worker protocol's version, part of the SharedWorker's name: a tab only ever joins a
+ * worker that speaks its protocol (in dev the worker's URL doesn't change between edits, and a
+ * running worker outlives any one tab). Bump it with any change to the messages below.
+ */
+export const PROTOCOL_VERSION = 2
+
+/**
  * Why a tab wants a new stream: `quiet` (its watchdog heard nothing, which a tab that was asleep
  * can misjudge) or `stale` (a response came from a server the stream isn't connected to).
  */

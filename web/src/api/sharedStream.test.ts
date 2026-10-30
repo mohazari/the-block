@@ -138,9 +138,32 @@ describe('openEventStream', () => {
     openEventStream('/x')
     const id = lastId()
     window.dispatchEvent(new Event('pagehide'))
-    expect(port.sent.at(-1)).toEqual({ type: 'close', id })
+    expect(port.sent.filter((m) => m.type === 'close')).toEqual([{ type: 'close', id }])
     window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }))
     expect(port.sent.at(-1)).toEqual({ type: 'open', id, url: '/x', fresh: false })
+  })
+
+  it('gives up on a worker that answers nothing, after two quiet reconnects', () => {
+    // As liveEvents reconnects: close the old stream, open the next.
+    openEventStream('/x').close()
+    openEventStream('/x', { fresh: 'quiet' }).close() // unanswered once: maybe just slow
+    expect(port.closed).toBe(false)
+    const own = openEventStream('/x', { fresh: 'quiet' }) // twice: the worker is gone
+    expect(port.closed).toBe(true)
+    expect(FakeEventSource.instances).toHaveLength(1)
+    expect(FakeEventSource.latest().url).toBe('/x')
+    own.close()
+    openEventStream('/x')
+    expect(FakeEventSource.instances).toHaveLength(2) // its own from then on
+  })
+
+  it('keeps a worker that answers its quiet reconnects', () => {
+    for (let i = 0; i < 3; i++) {
+      openEventStream('/x', { fresh: 'quiet' })
+      port.reply({ type: 'event', id: lastId(), name: 'hello', data: '{}' })
+    }
+    expect(port.closed).toBe(false)
+    expect(FakeEventSource.instances).toHaveLength(0)
   })
 
   it('uses its own EventSource where there is no SharedWorker', () => {

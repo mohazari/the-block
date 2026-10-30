@@ -1,10 +1,12 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { auction, stubApi, vehicleDetail } from '../test/fixtures'
 import { FakeEventSource } from '../test/fakeEventSource'
 import { renderRoute } from '../test/render'
 import { api } from './client'
+import { resetSharedStream } from './sharedStream'
 import { resetStreamGate } from './streamGate'
+import type { FromHub, ToHub } from './streamHub'
 import type { AuctionEvent } from './types'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -439,5 +441,74 @@ describe('live auction events', () => {
     const spy = vi.spyOn(queryClient, 'cancelQueries')
     act(() => source.emit('bid', rivalBid({ vehicle_id: 'car-b', bid: mine, outbid_you: false })))
     expect(spy).toHaveBeenCalledWith({ queryKey: ['me', 'bids'] })
+  })
+})
+
+describe('live events over the stream shared between tabs', () => {
+  /** The worker's end of the tab's port. */
+  let sent: ToHub[]
+  let reply: (message: FromHub) => void
+
+  beforeEach(() => {
+    resetSharedStream()
+    sent = []
+    const port = {
+      onmessage: null as ((event: MessageEvent<FromHub>) => void) | null,
+      postMessage: (message: ToHub) => sent.push(message),
+      start() {},
+      close() {},
+    }
+    reply = (message) => port.onmessage?.(new MessageEvent('message', { data: message }))
+    vi.stubGlobal('SharedWorker', function SharedWorker() {
+      return { port, onerror: null }
+    })
+  })
+  afterEach(() => resetSharedStream())
+
+  const lastOpen = () =>
+    sent.filter((m) => m.type === 'open').at(-1) as Extract<ToHub, { type: 'open' }>
+  const hello = (run: string) =>
+    reply({
+      type: 'event',
+      id: lastOpen().id,
+      name: 'hello',
+      data: JSON.stringify({ server_time: new Date().toISOString(), epoch: 'e', run }),
+    })
+
+  it('joins the shared stream, and asks for a fresh one with its run when it goes quiet', async () => {
+    serveDetail()
+    renderRoute('/vehicles/veh-1')
+    await panel()
+    expect(sent[0]).toMatchObject({ type: 'open', fresh: false })
+    expect(FakeEventSource.instances).toHaveLength(0) // no stream of its own
+    vi.useFakeTimers()
+    try {
+      act(() => hello('run-1')) // its watchdog starts on the fake clock
+      act(() => vi.advanceTimersByTime(31_000)) // 3 heartbeats of silence
+    } finally {
+      vi.useRealTimers()
+    }
+    await act(() => Promise.resolve()) // the old stream's goodbye would go out now
+    expect(lastOpen()).toMatchObject({ fresh: 'quiet', run: 'run-1' })
+    // A reconnect takes the old stream's place: no goodbye that would close the only tab's stream.
+    expect(sent.map((m) => m.type)).toEqual(['open', 'open'])
+  })
+
+  it('reports a stale stream with the run it moved to', async () => {
+    serveDetail()
+    renderRoute('/vehicles/veh-1')
+    await panel()
+    act(() => hello('run-1'))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response('{"items": []}', {
+            headers: { 'X-Server-Run': 'run-2', 'X-Data-Epoch': 'e' },
+          }),
+      ),
+    )
+    await act(() => api('/vehicles'))
+    expect(lastOpen()).toMatchObject({ fresh: 'stale', run: 'run-2' })
   })
 })

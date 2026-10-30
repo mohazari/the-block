@@ -20,24 +20,25 @@ const EDGE = {
   lost: 'before:bg-transparent',
 } as const
 
-/** The reserve column's header already says "Reserve". */
-const RESERVE_SHORT = { met: 'Met', not_met: 'Not met', no_reserve: 'None' } as const
-
 /*
  * Rows lay out by the width of their list, not the window's (container queries, sizes in
  * index.css), so they fit wherever they are: the run list beside the filters, My bids, or a page
- * narrowed by Lane's panel. From about 940px of list the run list is a table: one column per
- * fact, figures right-aligned, so prices and times line up down the list. Wider lists add
- * columns instead of stretching the gaps: odometer and reserve from about 1210px, location from
- * about 1460px (what the run list gets on 1280, 1600 and 1900px screens). Header and rows share
- * these.
+ * narrowed by Lane's panel. From about 940px of list the run list is a table, and wider lists add
+ * columns instead of stretching the gaps: odometer from about 1210px, location from about 1460px
+ * (what the run list gets on 1280, 1600 and 1900px screens). Header and rows share these.
  *
- *   row-table:  128 + vehicle + 144 + 128 + 136 + 40 (+ 5 gaps)              vehicle ≥ 264px
- *   row-wide:   136 + vehicle + 144 + 104 + 128 + 104 + 136 + 40 (+ 7)       vehicle ≥ 288px
- *   row-widest: 144 + vehicle + 152 + 104 + 176 + 136 + 104 + 144 + 40 (+ 8) vehicle ≥ 349px
+ * Only the vehicle column stretches; every other column is sized to its content, with the same
+ * 32px between all of them. Text columns (condition, location) sit left and figures (odometer,
+ * price, time) right, so like alignments sit together: a right-aligned figure against
+ * left-aligned text reads as one phrase. The reserve sits under the price it qualifies.
+ *
+ *   row-table:  128 + vehicle + 120 + 112 + 136 + 40 (+ 5 × 32)    vehicle ≥ 240px
+ *   row-wide:   + odometer 104 (+ 32)                              vehicle ≥ 376px
+ *   row-widest: + location 144 (+ 32)                              vehicle ≥ 456px
+ * The time column fits "Opens Thu 2:00 p.m." for upcoming auctions.
  */
 const TABLE_COLUMNS =
-  '@row-table:grid-cols-[8rem_minmax(0,1fr)_9rem_8rem_8.5rem_2.5rem] @row-table:gap-x-4 @row-wide:grid-cols-[8.5rem_minmax(0,1fr)_9rem_6.5rem_8rem_6.5rem_8.5rem_2.5rem] @row-widest:grid-cols-[9rem_minmax(0,1fr)_9.5rem_6.5rem_11rem_8.5rem_6.5rem_9rem_2.5rem]'
+  '@row-table:grid-cols-[8rem_minmax(0,1fr)_7.5rem_7rem_8.5rem_2.5rem] @row-table:gap-x-8 @row-wide:grid-cols-[8rem_minmax(0,1fr)_7.5rem_6.5rem_7rem_8.5rem_2.5rem] @row-widest:grid-cols-[8rem_minmax(0,1fr)_7.5rem_9rem_6.5rem_7rem_8.5rem_2.5rem]'
 
 /** Column labels over the run list's table layout (wide lists only). */
 export function VehicleRowHeader() {
@@ -52,10 +53,9 @@ export function VehicleRowHeader() {
       <span />
       <span>Vehicle</span>
       <span>Condition</span>
-      <span className="@row-wide:block hidden text-right">Odometer</span>
       <span className="@row-widest:block hidden">Location</span>
+      <span className="@row-wide:block hidden text-right">Odometer</span>
       <span className="text-right">Current bid</span>
-      <span className="@row-wide:block hidden">Reserve</span>
       <span className="text-right">Ends</span>
       <span />
     </div>
@@ -76,6 +76,18 @@ export function VehicleRow({ vehicle, note }: { vehicle: VehicleSummary; note?: 
   const hasBids = auction.current_bid !== null
   const name = vehicleName(vehicle)
   const light = conditionLight(vehicle)
+  // Rendered location first, then odometer: text columns before figures (see TABLE_COLUMNS).
+  const odometer = (
+    <p className="tabular @row-wide:block hidden text-right text-sm">
+      {formatKm(vehicle.odometer_km)}
+    </p>
+  )
+  const location = (
+    <p className="@row-widest:block hidden min-w-0 text-sm">
+      <span className="block truncate">{vehicle.city}</span>
+      <span className="text-ink-muted block truncate text-xs">{vehicle.province}</span>
+    </p>
+  )
 
   return (
     <article
@@ -105,17 +117,24 @@ export function VehicleRow({ vehicle, note }: { vehicle: VehicleSummary; note?: 
 
       {/* Right padding on phones keeps text clear of the floating watch button. */}
       <div className="@row-split:pr-0 @row-table:self-center @row-table:[grid-area:auto] min-w-0 self-end pr-10 [grid-area:id]">
-        <h3 className="truncate text-base leading-snug font-semibold">
-          {/* Stretched link: the whole row opens the vehicle, with one link for screen readers. */}
-          <Link
-            to={`/vehicles/${vehicle.id}`}
-            state={{ fromRunList: true }}
-            className="after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-offset-[-2px] focus-visible:after:outline-[var(--focus)]"
-          >
-            {name}
-          </Link>
-        </h3>
-        <p className="text-ink-muted truncate text-sm">{vehicle.trim}</p>
+        {/* In the table the trim joins the name line, to keep rows short. It sits beside the
+            heading, not in it, so the car's accessible name stays its name. */}
+        <div className="@row-table:flex min-w-0 items-baseline gap-1.5">
+          <h3 className="max-w-full shrink-0 truncate text-base leading-snug font-semibold">
+            {/* Stretched link: the whole row opens the vehicle, with one link for screen readers. */}
+            <Link
+              to={`/vehicles/${vehicle.id}`}
+              state={{ fromRunList: true }}
+              className="after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-offset-[-2px] focus-visible:after:outline-[var(--focus)]"
+            >
+              {name}
+            </Link>
+          </h3>
+          <span className="text-ink-muted @row-table:block hidden min-w-0 truncate text-base">
+            {vehicle.trim}
+          </span>
+        </div>
+        <p className="text-ink-muted @row-table:hidden truncate text-sm">{vehicle.trim}</p>
         <ul className="text-ink-muted @row-split:flex mt-1 hidden flex-wrap gap-x-3 text-sm">
           <li className="tabular @row-wide:hidden">{formatKm(vehicle.odometer_km)}</li>
           <li>{label(vehicle.drivetrain)}</li>
@@ -142,14 +161,8 @@ export function VehicleRow({ vehicle, note }: { vehicle: VehicleSummary; note?: 
         </span>
       </p>
 
-      <p className="tabular @row-wide:block hidden text-right text-sm">
-        {formatKm(vehicle.odometer_km)}
-      </p>
-
-      <p className="@row-widest:block hidden min-w-0 text-sm">
-        <span className="block truncate">{vehicle.city}</span>
-        <span className="text-ink-muted block truncate text-xs">{vehicle.province}</span>
-      </p>
+      {location}
+      {odometer}
 
       <div className="@row-split:self-end @row-split:text-right @row-table:self-center @row-table:[grid-area:auto] self-end [grid-area:money]">
         <p className="text-ink-faint @row-table:sr-only text-xs">
@@ -161,22 +174,23 @@ export function VehicleRow({ vehicle, note }: { vehicle: VehicleSummary; note?: 
         <p className="text-ink-muted text-sm">
           {hasBids ? plural(auction.bid_count, 'bid') : 'No bids yet'}
         </p>
-        <p className="text-ink-muted @row-wide:hidden @row-split:block hidden text-xs">
+        <p
+          className={cn(
+            '@row-split:block hidden text-xs',
+            auction.reserve_status === 'met' ? 'text-win font-semibold' : 'text-ink-muted',
+          )}
+        >
           {RESERVE_TEXT[auction.reserve_status]}
         </p>
       </div>
 
-      <p
-        className={cn(
-          '@row-wide:block hidden text-sm',
-          auction.reserve_status === 'met' ? 'text-win font-semibold' : 'text-ink-muted',
-        )}
-      >
-        {RESERVE_SHORT[auction.reserve_status]}
-      </p>
-
       <div className="@row-split:self-start @row-table:self-center @row-table:[grid-area:auto] self-end text-right text-sm [grid-area:time]">
-        <AuctionClock auction={auction} className="block" />
+        <AuctionClock
+          auction={auction}
+          className="block"
+          // The column header already says "Ends"; screen readers still hear it.
+          labelClassName="@row-table:sr-only"
+        />
         <StandingTag standing={standing} className="mt-1" />
       </div>
 

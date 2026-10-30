@@ -17,28 +17,33 @@ class FakeWorkerPort {
 }
 
 let port: FakeWorkerPort
+let worker: { port: FakeWorkerPort; onerror: (() => void) | null }
 beforeEach(() => {
   resetSharedStream()
   port = new FakeWorkerPort()
-  vi.stubGlobal(
-    'SharedWorker',
-    class {
-      port = port
-    },
-  )
+  worker = { port, onerror: null }
+  // `new SharedWorker(...)` returns the fake: a constructor may return an object.
+  vi.stubGlobal('SharedWorker', function SharedWorker() {
+    return worker
+  })
+  vi.stubGlobal('EventSource', FakeEventSource)
 })
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
+const lastId = () => (port.sent.at(-1) as { id: number }).id
+
 describe('openEventStream', () => {
   it('asks the shared worker for the stream and hands its events on', () => {
     const stream = openEventStream('/api/events?bidder_id=me')
-    expect(port.sent).toEqual([{ type: 'open', url: '/api/events?bidder_id=me', fresh: false }])
+    expect(port.sent).toEqual([
+      { type: 'open', id: lastId(), url: '/api/events?bidder_id=me', fresh: false },
+    ])
     const hellos: string[] = []
     stream.addEventListener('hello', (event) => hellos.push(event.data))
-    port.reply({ type: 'event', name: 'hello', data: '{"run":"r"}' })
+    port.reply({ type: 'event', id: lastId(), name: 'hello', data: '{"run":"r"}' })
     expect(hellos).toEqual(['{"run":"r"}'])
     expect(stream.readyState).toBe(OPEN)
   })
@@ -47,30 +52,52 @@ describe('openEventStream', () => {
     const stream = openEventStream('/x')
     const onerror = vi.fn()
     stream.onerror = onerror
-    port.reply({ type: 'error', readyState: CLOSED })
+    port.reply({ type: 'error', id: lastId(), readyState: CLOSED })
     expect(onerror).toHaveBeenCalledOnce()
     expect(stream.readyState).toBe(CLOSED)
   })
 
-  it('lets only the newest stream in a tab listen, and asks for a fresh one on request', () => {
+  it('drops messages meant for a stream the tab has replaced', () => {
     const old = openEventStream('/x')
+    const oldId = lastId()
     old.close()
     const fresh = openEventStream('/x', { fresh: true })
     expect(port.sent.slice(1)).toEqual([
-      { type: 'close' },
-      { type: 'open', url: '/x', fresh: true },
+      { type: 'close', id: oldId },
+      { type: 'open', id: lastId(), url: '/x', fresh: true },
     ])
     const heard = vi.fn()
-    old.addEventListener('bid', heard)
-    fresh.addEventListener('bid', heard)
-    port.reply({ type: 'event', name: 'bid', data: '{}' })
-    expect(heard).toHaveBeenCalledOnce()
+    fresh.addEventListener('hello', heard)
+    fresh.onerror = heard
+    // Still in flight for the old one when the new one opened.
+    port.reply({ type: 'event', id: oldId, name: 'hello', data: '{}' })
+    port.reply({ type: 'error', id: oldId, readyState: CLOSED })
+    expect(heard).not.toHaveBeenCalled()
+    expect(fresh.readyState).not.toBe(CLOSED)
+  })
+
+  it('falls back to its own EventSource when the worker fails to load', () => {
+    const stream = openEventStream('/x')
+    const onerror = vi.fn()
+    stream.onerror = onerror
+    worker.onerror?.()
+    expect(onerror).toHaveBeenCalledOnce()
+    expect(stream.readyState).toBe(CLOSED) // gone for good: the tab's retry opens a new one
+    openEventStream('/x', { fresh: true })
+    expect(FakeEventSource.latest().url).toBe('/x')
+  })
+
+  it('says goodbye when the page goes away, and hello when it comes back', () => {
+    openEventStream('/x')
+    const id = lastId()
+    window.dispatchEvent(new Event('pagehide'))
+    expect(port.sent.at(-1)).toEqual({ type: 'close', id })
+    window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }))
+    expect(port.sent.at(-1)).toEqual({ type: 'open', id, url: '/x', fresh: false })
   })
 
   it('uses its own EventSource where there is no SharedWorker', () => {
     vi.stubGlobal('SharedWorker', undefined)
-    resetSharedStream()
-    vi.stubGlobal('EventSource', FakeEventSource)
     openEventStream('/x')
     expect(FakeEventSource.latest().url).toBe('/x')
   })
@@ -79,7 +106,6 @@ describe('openEventStream', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('blocked')
     })
-    vi.stubGlobal('EventSource', FakeEventSource)
     openEventStream('/x')
     expect(port.sent).toEqual([])
     expect(FakeEventSource.latest().url).toBe('/x')

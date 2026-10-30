@@ -9,17 +9,26 @@
  * This file is the hub's logic only, with no worker globals, so tests can drive it.
  */
 
-/** Tab → hub. `fresh`: the tab found the stream dead or stale and wants a new connection. */
-export type ToHub = { type: 'open'; url: string; fresh: boolean } | { type: 'close' }
+/**
+ * Tab → hub. `id` names the tab's current stream object: a tab replaces it on every reconnect,
+ * and the hub tags what it sends with the id it was meant for, so a message still in flight for
+ * the old one is dropped instead of being taken for news about the new one.
+ * `fresh`: the tab found the stream dead or stale and asks for a new connection.
+ */
+export type ToHub =
+  { type: 'open'; id: number; url: string; fresh: boolean } | { type: 'close'; id: number }
 
 /** Hub → tab: a server event, or the stream's state after an error. */
 export type FromHub =
-  { type: 'event'; name: string; data: string } | { type: 'error'; readyState: number }
+  | { type: 'event'; id: number; name: string; data: string }
+  | { type: 'error'; id: number; readyState: number }
 
 export interface Port {
   postMessage(message: FromHub): void
   onmessage: ((event: MessageEvent<ToHub>) => void) | null
   start?(): void
+  /** Newer browsers fire `close` on a port whose tab went away. */
+  addEventListener?(type: 'close', listener: () => void): void
 }
 
 export interface Source {
@@ -33,21 +42,32 @@ export const CONNECTING = 0
 export const OPEN = 1
 export const CLOSED = 2
 
-/** The server's event names (see server/app/routers/events.py). */
+/**
+ * The server's event names (server/app/routers/events.py). An EventSource can only listen by
+ * name, so a new server event must be added here too for tabs on the shared stream to get it.
+ */
 export const EVENT_NAMES = ['hello', 'ping', 'bid', 'sold'] as const
 
+/** A connection still not open after this long is taken as hung, and may be replaced. */
+export const CONNECT_TIMEOUT_MS = 10_000
+/** Until a hello says otherwise: how often the server pings a quiet stream. */
+const DEFAULT_HEARTBEAT_MS = 10_000
 /**
- * A request for a fresh connection restarts the stream for every tab, unless it's already
- * connecting or connected only a moment ago: then another tab got there first, and the tabs
- * asking at the same time (they all notice a dead stream together) share that one restart.
+ * An open stream that delivered anything within this many heartbeats is alive: a tab asking
+ * for a fresh one missed the events itself (it was asleep, or frozen in the background), so
+ * it rejoins instead of restarting the stream for every tab.
  */
-export const RESTART_AFTER_MS = 2_000
+const ALIVE_WITHIN_HEARTBEATS = 1.5
 
 interface Stream {
   url: string
   source: Source
   openedAt: number
-  ports: Set<Port>
+  /** When the current connection last delivered anything (hello, ping or event). */
+  heardAt?: number
+  heartbeatMs: number
+  /** Each listening port, with the id of the tab stream it listens for. */
+  ports: Map<Port, number>
   /** The last hello and when it arrived: replayed to tabs that join an open stream. */
   hello?: { data: string; at: number }
 }
@@ -65,22 +85,31 @@ export class StreamHub {
 
   connect(port: Port): void {
     port.onmessage = (event) => this.receive(port, event.data)
+    port.addEventListener?.('close', () => this.leave(port))
     port.start?.()
   }
 
   private receive(port: Port, message: ToHub): void {
+    if (message.type === 'close') {
+      // Only the stream object that is listening may end the port's membership.
+      if (this.joined.get(port)?.ports.get(port) === message.id) this.leave(port)
+      return
+    }
     this.leave(port)
-    if (message.type === 'close') return
-
     let stream = this.streams.get(message.url)
     if (!stream) {
       stream = this.open(message.url)
-    } else if (message.fresh && this.mayRestart(stream)) {
+    } else if (this.isDead(stream) || (message.fresh && this.isSilent(stream))) {
       this.restart(stream)
     } else if (stream.source.readyState === OPEN && stream.hello) {
-      port.postMessage({ type: 'event', name: 'hello', data: this.replay(stream.hello) })
+      port.postMessage({
+        type: 'event',
+        id: message.id,
+        name: 'hello',
+        data: this.replay(stream.hello),
+      })
     }
-    stream.ports.add(port)
+    stream.ports.set(port, message.id)
     this.joined.set(port, stream)
   }
 
@@ -91,15 +120,28 @@ export class StreamHub {
     this.joined.delete(port)
     stream.ports.delete(port)
     if (stream.ports.size === 0) {
+      stream.source.onerror = null
       stream.source.close()
       this.streams.delete(stream.url)
     }
   }
 
-  private mayRestart(stream: Stream): boolean {
+  /** The browser gave up on it, or it never managed to connect. */
+  private isDead(stream: Stream): boolean {
     const state = stream.source.readyState
     if (state === CLOSED) return true
-    return state === OPEN && this.now() - stream.openedAt >= RESTART_AFTER_MS
+    return state === CONNECTING && this.now() - stream.openedAt >= CONNECT_TIMEOUT_MS
+  }
+
+  /**
+   * Whether a tab's "the stream is dead" holds for everyone: it's dead, or it's open but has
+   * gone quiet. While it's connecting (and not hung) a restart would only start over: the tab
+   * waits for the coming hello instead, so tabs asking at the same time share one restart.
+   */
+  private isSilent(stream: Stream): boolean {
+    if (stream.source.readyState !== OPEN) return false
+    const heard = stream.heardAt ?? stream.openedAt
+    return this.now() - heard >= stream.heartbeatMs * ALIVE_WITHIN_HEARTBEATS
   }
 
   private open(url: string): Stream {
@@ -107,7 +149,8 @@ export class StreamHub {
       url,
       source: this.createSource(url),
       openedAt: this.now(),
-      ports: new Set(),
+      heartbeatMs: DEFAULT_HEARTBEAT_MS,
+      ports: new Map(),
     }
     this.wire(stream)
     this.streams.set(url, stream)
@@ -118,8 +161,9 @@ export class StreamHub {
     stream.source.onerror = null
     stream.source.close()
     stream.hello = undefined
+    stream.heardAt = undefined
     // The tabs drop the stream as they would after a network blip; the new hello brings them back.
-    this.broadcast(stream, { type: 'error', readyState: CONNECTING })
+    this.broadcast(stream, (id) => ({ type: 'error', id, readyState: CONNECTING }))
     stream.source = this.createSource(stream.url)
     stream.openedAt = this.now()
     this.wire(stream)
@@ -129,20 +173,24 @@ export class StreamHub {
     const source = stream.source
     for (const name of EVENT_NAMES) {
       source.addEventListener(name, (event) => {
-        if (stream.source !== source) return // a stream that was restarted since
-        if (name === 'hello') stream.hello = { data: event.data, at: this.now() }
-        this.broadcast(stream, { type: 'event', name, data: event.data })
+        if (stream.source !== source) return // a connection that was replaced since
+        stream.heardAt = this.now()
+        if (name === 'hello') {
+          stream.hello = { data: event.data, at: this.now() }
+          stream.heartbeatMs = heartbeatOf(event.data) ?? stream.heartbeatMs
+        }
+        this.broadcast(stream, (id) => ({ type: 'event', id, name, data: event.data }))
       })
     }
     source.onerror = () => {
       if (stream.source !== source) return
       stream.hello = undefined
-      this.broadcast(stream, { type: 'error', readyState: source.readyState })
+      this.broadcast(stream, (id) => ({ type: 'error', id, readyState: source.readyState }))
     }
   }
 
-  private broadcast(stream: Stream, message: FromHub): void {
-    stream.ports.forEach((port) => port.postMessage(message))
+  private broadcast(stream: Stream, message: (id: number) => FromHub): void {
+    stream.ports.forEach((id, port) => port.postMessage(message(id)))
   }
 
   /** The hello as if it had just arrived: its server time moved on by the time it was kept. */
@@ -157,5 +205,16 @@ export class StreamHub {
     } catch {
       return hello.data
     }
+  }
+}
+
+/** The ping interval a hello announces, in ms (as liveEvents.ts reads it), if it names one. */
+function heartbeatOf(data: string): number | undefined {
+  try {
+    const seconds = (JSON.parse(data) as { heartbeat_seconds?: unknown }).heartbeat_seconds
+    if (typeof seconds !== 'number' || !(seconds > 0)) return undefined
+    return Math.min(Math.max(seconds * 1000, 1_000), 600_000) // liveEvents.ts's limits
+  } catch {
+    return undefined
   }
 }

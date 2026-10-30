@@ -64,6 +64,7 @@ export function useAuctionEvents(): void {
 
     const reconnect = () => {
       clearTimeout(silence)
+      clearTimeout(retry) // a pending retry would open a second stream next to this one
       source?.close()
       noteStreamDown()
       setConnection(connectedBefore ? 'reconnecting' : 'connecting')

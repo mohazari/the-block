@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LaneModel, LaneStatus } from '../../api/types'
+import { FakeEventSource } from '../../test/fakeEventSource'
 import { stubApi, vehicle, vehicleDetail, vehicleList } from '../../test/fixtures'
 import { renderRoute } from '../../test/render'
 
@@ -165,6 +166,45 @@ describe('Lane', () => {
     expect(sent[0]!.time_zone).toEqual(expect.any(String))
     // Screen readers hear the finished answer once.
     expect(lane.getByText('One SUV fits. 1 pick below.')).toBeInTheDocument()
+  })
+
+  it("keeps a pick's price live after Lane answered", async () => {
+    const pick = vehicle({ id: 'veh-9', model: 'Escape' })
+    serve({
+      reply: () =>
+        eventStream([
+          {
+            type: 'reply',
+            message: 'This one.',
+            picks: [{ vehicle: pick, reason: 'Fits.' }],
+            search: null,
+          },
+        ]).response,
+    })
+    renderRoute('/')
+    const lane = await openLane()
+    await userEvent.type(await lane.findByRole('textbox', { name: 'Message Lane' }), 'Hi{Enter}')
+    const card = await lane.findByRole('article', { name: '2023 Ford Escape' })
+    expect(within(card).getByText('$22,800')).toBeInTheDocument()
+
+    // A rival outbids after the reply: the card follows the live auction.
+    const bid = {
+      id: 99,
+      amount: 23300,
+      bidder: 'Bidder 2',
+      is_you: false,
+      placed_at: new Date().toISOString(),
+    }
+    FakeEventSource.latest().emit('bid', {
+      type: 'bid',
+      vehicle_id: 'veh-9',
+      vehicle_title: '2023 Ford Escape',
+      auction: { ...pick.auction, current_bid: 23300, bid_count: 17 },
+      bid,
+      outbid_you: false,
+      extended: false,
+    })
+    expect(await within(card).findByText('$23,300', {}, { timeout: 2500 })).toBeInTheDocument()
   })
 
   it('sends the chosen model and effort, and remembers them', async () => {

@@ -11,6 +11,7 @@ export type {
   FacetValue,
   InventoryQuery,
   LaneEffort,
+  LaneMessage,
   LaneModel,
   LanePick,
   LaneProblem,

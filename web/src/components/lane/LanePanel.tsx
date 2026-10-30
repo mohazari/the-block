@@ -31,6 +31,8 @@ import { LanePickCard } from './LanePickCard'
 import { runListUrl, useLane, useLaneOpen, type Turn } from './laneState'
 
 const WIDE = '(min-width: 80rem)'
+/** The server's limit on a message (LaneMessage.text in server/app/lane/schemas.py). */
+const MAX_MESSAGE_LENGTH = 2000
 
 /**
  * From 1280px Lane docks beside the page, which keeps enough room to work. Narrower, it slides
@@ -584,7 +586,7 @@ function Composer({
         onChange={(event) => setText(event.target.value)}
         onKeyDown={onKeyDown}
         rows={1}
-        maxLength={2000}
+        maxLength={MAX_MESSAGE_LENGTH}
         placeholder="Describe the car you want"
         className="field [field-sizing:content] h-auto max-h-40 min-h-10 resize-none py-2"
       />

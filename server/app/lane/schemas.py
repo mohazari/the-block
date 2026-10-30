@@ -47,7 +47,7 @@ CONVERSATION_ID_PATTERN = r"^[A-Za-z0-9-]{8,64}$"
 
 class LaneMessage(BaseModel):
     conversation_id: str = Field(pattern=CONVERSATION_ID_PATTERN)
-    text: str = Field(min_length=1, max_length=2000)
+    text: str = Field(min_length=1, max_length=2000)  # also the composer's maxLength
     model: str | None = Field(default=None, max_length=100)
     effort: str | None = Field(default=None, max_length=40)
     vehicle_id: str | None = Field(

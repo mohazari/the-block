@@ -72,7 +72,6 @@
   --action-hover: #0050d6;
   --action-ink: #ffffff;
   --action-soft: #e5efff; /* Blue 50: selected states, with ink text */
-  --action-edge: #cce0ff; /* Blue 100 */
 
   --win: #017a22; /* OPENLANE's accessible green */
   --win-soft: #eefae3;
@@ -113,7 +112,6 @@
   --action-hover: #99c0ff; /* Blue 200 */
   --action-ink: #0a1b5f;
   --action-soft: #10213f;
-  --action-edge: #23437a;
 
   --win: #3fc07a;
   --win-soft: #172a1d;
@@ -153,7 +151,6 @@
   --color-action-hover: var(--action-hover);
   --color-action-ink: var(--action-ink);
   --color-action-soft: var(--action-soft);
-  --color-action-edge: var(--action-edge);
   --color-win: var(--win);
   --color-win-soft: var(--win-soft);
   --color-caution: var(--caution);
@@ -281,15 +278,6 @@
   }
   .btn-primary:not(:disabled):hover {
     background: var(--action-hover);
-  }
-  .btn-secondary {
-    border-color: var(--action);
-    background: var(--surface);
-    color: var(--action);
-  }
-  .btn-secondary:not(:disabled):hover {
-    border-color: var(--action-hover);
-    color: var(--action-hover);
   }
   /* Neutral outline: for controls that aren't the page's action (Filters, Previous, Next). */
   .btn-plain {

@@ -278,7 +278,7 @@ class CodexClient:
                 return
             if "error" in message:
                 error = message["error"] or {}
-                future.set_exception(CodexError(str(error.get("message")), error.get("code")))
+                future.set_exception(CodexError(str(error.get("message"))))
             else:
                 future.set_result(message.get("result") or {})
         elif "id" in message:  # a request from the server: answer it off the read loop

@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { bidderId } from '../lib/bidder'
 import { ApiError, api, send } from './client'
-import type { LaneMessage } from './schema'
 import type {
+  LaneMessage,
   LaneModel,
   LaneProblem,
   LaneReply,

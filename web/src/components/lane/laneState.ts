@@ -24,7 +24,7 @@ export interface Choice {
   effort: string | null
 }
 
-export const CHOICE_KEY = 'the-block:lane-choice'
+const CHOICE_KEY = 'the-block:lane-choice'
 
 export function storedChoice(): Choice {
   try {

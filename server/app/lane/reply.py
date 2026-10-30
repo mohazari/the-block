@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 MAX_PICKS = 4
+KINDS = ("recommend", "ask", "nothing_fits")
 
 REPLY_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -19,7 +20,7 @@ REPLY_SCHEMA: dict[str, Any] = {
         "message": {"type": "string"},
         # An explicit decision before the picks: without it, a model would sometimes describe
         # cars in the message and leave `picks` empty.
-        "kind": {"type": "string", "enum": ["recommend", "ask", "nothing_fits"]},
+        "kind": {"type": "string", "enum": list(KINDS)},
         "picks": {
             "type": "array",
             "items": {
@@ -92,9 +93,6 @@ class MessageStream:
             out.append(chr(unit))
         self._position = i
         return "".join(out)
-
-
-KINDS = frozenset({"recommend", "ask", "nothing_fits"})
 
 
 @dataclass

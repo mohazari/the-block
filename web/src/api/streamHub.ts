@@ -1,4 +1,5 @@
 import { DEFAULT_HEARTBEAT_MS, announcedHeartbeat } from './heartbeat'
+import type { AuctionEvent } from './types'
 
 /**
  * One live stream for every tab. Browsers allow about six open connections per site, and a
@@ -43,7 +44,7 @@ export type FromHub =
   | { type: 'error'; id: number; readyState: number }
   | { type: 'unavailable'; id: number }
 
-export interface Port {
+interface Port {
   postMessage(message: FromHub): void
   onmessage: ((event: MessageEvent<ToHub>) => void) | null
   start?(): void
@@ -64,9 +65,15 @@ export const CLOSED = 2
 
 /**
  * The server's event names (server/app/routers/events.py). An EventSource can only listen by
- * name, so a new server event must be added here too for tabs on the shared stream to get it.
+ * name, so each one is listed: a new auction event type fails to compile until it's added here.
  */
-export const EVENT_NAMES = ['hello', 'ping', 'bid', 'sold'] as const
+const EVENTS: Record<'hello' | 'ping' | AuctionEvent['type'], true> = {
+  hello: true,
+  ping: true,
+  bid: true,
+  sold: true,
+}
+export const EVENT_NAMES = Object.keys(EVENTS) as (keyof typeof EVENTS)[]
 
 /** A connection attempt still not open after this long is taken as hung, and may be replaced. */
 export const CONNECT_TIMEOUT_MS = 10_000

@@ -106,9 +106,9 @@ How to work:
 about a vehicle must come from a tool result. Never invent vehicles, prices or details.
 - If the request is too vague to search at all, ask one short question. Otherwise search first, \
 then refine. Prefer live auctions unless the buyer asks about upcoming or ended ones.
-- Recommend at most four vehicles, best first. Give each a one-line reason: why it fits this \
-buyer, with the facts that matter (kilometres, condition grade, reserve, damage, time left). Its \
-card already shows the name, price and countdown, so don't start the reason with them.
+- Recommend at most {max_picks} vehicles, best first. Give each a one-line reason: why it fits \
+this buyer, with the facts that matter (kilometres, condition grade, reserve, damage, time left). \
+Its card already shows the name, price and countdown, so don't start the reason with them.
 - Be honest about trade-offs: damage, a reserve that isn't met, an auction about to close.
 - Talk to the buyer directly, as "you"; don't call them "buyer".
 - If nothing matches exactly, say so and recommend the closest alternatives.
@@ -410,7 +410,7 @@ class Lane:
                 "cwd": str(self._workdir),
                 "sandbox": "read-only",
                 "approvalPolicy": "never",
-                "baseInstructions": INSTRUCTIONS.format(filters=filters),
+                "baseInstructions": INSTRUCTIONS.format(filters=filters, max_picks=MAX_PICKS),
                 "dynamicTools": TOOL_SPECS,
                 "serviceName": "the_block_lane",
             },

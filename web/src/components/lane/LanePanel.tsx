@@ -41,9 +41,10 @@ function useIsWide(): boolean {
 
 /** The header button that opens Lane. */
 export function LaneButton() {
-  const { open, setOpen } = useLane()
+  const { open, setOpen, buttonRef } = useLane()
   return (
     <button
+      ref={buttonRef}
       type="button"
       onClick={() => setOpen(!open)}
       aria-expanded={open}
@@ -61,7 +62,7 @@ export function LaneButton() {
  * beside it), full screen on phones. Signs in with the buyer's ChatGPT account on first use.
  */
 export function LanePanel() {
-  const { open, setOpen, newChat, turns } = useLane()
+  const { open, setOpen, newChat, turns, buttonRef } = useLane()
   const wide = useIsWide()
   const [showSettings, setShowSettings] = useState(false)
   const status = useLaneStatus(open)
@@ -88,6 +89,11 @@ export function LanePanel() {
               aria-describedby={undefined}
               // Docked, the page beside Lane stays usable: clicking it mustn't close the panel.
               onInteractOutside={(event) => wide && event.preventDefault()}
+              // The header button isn't Radix's own trigger, so return focus to it by hand.
+              onCloseAutoFocus={(event) => {
+                event.preventDefault()
+                buttonRef.current?.focus()
+              }}
             >
               <m.section
                 className="bg-surface border-line fixed inset-0 z-50 flex flex-col sm:left-auto sm:w-[var(--lane-width)] sm:border-l xl:z-40"

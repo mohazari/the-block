@@ -17,6 +17,9 @@ REPLY_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "message": {"type": "string"},
+        # An explicit decision before the picks: without it, a model would sometimes describe
+        # cars in the message and leave `picks` empty.
+        "kind": {"type": "string", "enum": ["recommend", "ask", "nothing_fits"]},
         "picks": {
             "type": "array",
             "items": {
@@ -30,7 +33,7 @@ REPLY_SCHEMA: dict[str, Any] = {
             },
         },
     },
-    "required": ["message", "picks"],
+    "required": ["message", "kind", "picks"],
     "additionalProperties": False,
 }
 
@@ -91,10 +94,14 @@ class MessageStream:
         return "".join(out)
 
 
+KINDS = frozenset({"recommend", "ask", "nothing_fits"})
+
+
 @dataclass
 class Reply:
     message: str
     picks: list[tuple[str, str]] = field(default_factory=list)  # (vehicle id, reason)
+    kind: str = "ask"  # recommend | ask | nothing_fits
 
 
 def parse_reply(text: str) -> Reply:
@@ -115,4 +122,9 @@ def parse_reply(text: str) -> Reply:
         if isinstance(vehicle_id, str) and isinstance(reason, str) and vehicle_id not in seen:
             seen.add(vehicle_id)
             picks.append((vehicle_id, reason.strip()))
-    return Reply(message=message.strip() if isinstance(message, str) else "", picks=picks)
+    kind = data.get("kind")
+    if kind not in KINDS:
+        kind = "recommend" if picks else "nothing_fits"
+    return Reply(
+        message=message.strip() if isinstance(message, str) else "", picks=picks, kind=kind
+    )

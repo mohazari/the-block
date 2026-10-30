@@ -20,6 +20,7 @@ import {
 export function LaneProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
+  const buttonRef = useRef<HTMLButtonElement>(null)
   const [turns, setTurns] = useState<Turn[]>([])
   const [answering, setAnswering] = useState(false)
   const [choice, setChoiceState] = useState<Choice>(storedChoice)
@@ -148,7 +149,7 @@ export function LaneProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ open, setOpen, turns, answering, choice, setChoice, ask, stop, newChat }),
+    () => ({ open, setOpen, buttonRef, turns, answering, choice, setChoice, ask, stop, newChat }),
     [open, turns, answering, choice, setChoice, ask, stop, newChat],
   )
   return <LaneContext.Provider value={value}>{children}</LaneContext.Provider>

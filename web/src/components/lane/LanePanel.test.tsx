@@ -244,6 +244,15 @@ describe('Lane', () => {
     expect(sent[0]).toMatchObject({ text: 'Is this car a good buy?', vehicle_id: 'veh-1' })
   })
 
+  it('closes on Escape and gives focus back to its button', async () => {
+    serve()
+    renderRoute('/')
+    await openLane()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /Ask Lane/ })).toHaveFocus()
+  })
+
   it('keeps the conversation while closed, and starts afresh on "New chat"', async () => {
     serve({
       reply: () =>

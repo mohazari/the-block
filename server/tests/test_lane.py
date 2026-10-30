@@ -253,6 +253,74 @@ def test_only_real_vehicles_are_recommended_at_most_four(lane_client: LaneClient
     assert reply["search"] is None  # no search behind these picks
 
 
+def test_picks_by_lot_number_count_and_unknown_ones_are_logged(
+    lane_client: LaneClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    client = lane_client()
+    vehicle = live_vehicles(client)[0]
+    picks = [
+        {"vehicle_id": vehicle["lot"], "reason": "By lot"},
+        {"vehicle_id": "2024 Ford Bronco", "reason": "By name"},
+    ]
+    client = lane_client({"turns": [[{"reply": {"message": "Here.", "picks": picks}}]]})
+    _, reply = final(ask(client))
+    assert [p["vehicle"]["id"] for p in reply["picks"]] == [vehicle["id"]]
+    assert "Lane picked vehicles that don't exist: ['2024 Ford Bronco']" in caplog.text
+
+
+def test_close_times_are_given_on_the_buyers_clock(lane_client: LaneClient, log: Log) -> None:
+    scenario = {
+        "turns": [
+            [{"tool": "search_vehicles", "arguments": {"status": ["live"]}}, {"text": "a"}],
+            [{"tool": "search_vehicles", "arguments": {"status": ["live"]}}, {"text": "b"}],
+        ]
+    }
+    client = lane_client(scenario)
+    ask(client, time_zone="America/Vancouver")
+    ask(client)  # no zone: minutes only
+    with_zone, without = (json.loads(r["contentItems"][0]["text"]) for r in log.tool_results())
+    first = with_zone["vehicles"][0]
+    # The frozen clock is 12:00 UTC on Wed 28 Oct 2026: 05:00 in Vancouver.
+    assert first["ends_at_local"].startswith("Wed 2026-10-28 ")
+    assert "ends_at_local" not in without["vehicles"][0]
+    [first_turn, _] = log.requests("turn/start")
+    assert "Wed 2026-10-28 05:00 (America/Vancouver)" in first_turn["input"][0]["text"]
+
+
+def test_a_recommendation_without_picks_is_asked_for_them_once(
+    lane_client: LaneClient, log: Log
+) -> None:
+    client = lane_client()
+    vehicle = live_vehicles(client)[0]
+    message = {"message": "These two fit.", "kind": "recommend", "picks": []}
+    fixed = {**message, "picks": [{"vehicle_id": vehicle["id"], "reason": "Fits."}]}
+    scenario = {
+        "turns": [
+            [{"tool": "search_vehicles", "arguments": {"status": ["live"]}}, {"reply": message}],
+            [{"reply": fixed}],
+        ]
+    }
+    client = lane_client(scenario)
+    events = ask(client, model="fake-small", effort="low")
+    assert ("step", {"type": "step", "label": "Matching the picks to cars"}) in events
+    _, reply = final(events)
+    assert reply["message"] == "These two fit."  # the streamed message stands
+    assert [p["vehicle"]["id"] for p in reply["picks"]] == [vehicle["id"]]
+    assert reply["search"] == {"status": ["live"]}
+    _, repair = log.requests("turn/start")
+    assert repair["input"][0]["text"].startswith('Your last reply has kind "recommend"')
+    assert (repair["model"], repair["effort"]) == ("fake-small", "low")
+
+
+@pytest.mark.parametrize("kind", ["ask", "nothing_fits"])
+def test_a_question_or_no_match_needs_no_picks(
+    lane_client: LaneClient, log: Log, kind: str
+) -> None:
+    client = lane_client({"turns": [[{"reply": {"message": "?", "kind": kind, "picks": []}}]]})
+    assert final(ask(client))[1]["picks"] == []
+    assert len(log.requests("turn/start")) == 1
+
+
 def test_a_reply_that_isnt_json_is_shown_as_text(lane_client: LaneClient) -> None:
     client = lane_client({"turns": [[{"text": "Sorry, plain words."}]]})
     assert final(ask(client)) == (
@@ -281,7 +349,7 @@ def test_each_thread_is_ephemeral_read_only_with_only_lanes_tools(
     [turn] = log.requests("turn/start")
     assert turn["model"] == "fake-small"
     assert turn["effort"] == "low"
-    assert set(turn["outputSchema"]["required"]) == {"message", "picks"}
+    assert set(turn["outputSchema"]["required"]) == {"message", "kind", "picks"}
     context = turn["input"][0]["text"]
     assert "(America/Toronto)" in context
     assert turn["input"][1]["text"] == "hello"
@@ -295,6 +363,19 @@ def test_follow_ups_reuse_the_thread(lane_client: LaneClient, log: Log) -> None:
     turns = log.requests("turn/start")
     assert [t["threadId"] for t in turns] == ["thread-0", "thread-0"]
     assert "looking at vehicle veh-x" in turns[1]["input"][0]["text"]
+
+
+def test_a_conversation_survives_codex_restarting(lane_client: LaneClient, log: Log) -> None:
+    client = lane_client()
+    assert final(ask(client, "first"))[0] == "reply"
+    process = client.app.state.lane._client._process  # type: ignore[attr-defined]
+    process.kill()
+    for _ in range(100):  # the bridge notices the process is gone
+        if not client.app.state.lane._client.running:  # type: ignore[attr-defined]
+            break
+        time.sleep(0.02)
+    assert final(ask(client, "after the crash"))[0] == "reply"
+    assert len(log.requests("thread/start")) == 2  # a new thread in the new process
 
 
 def test_tools_run_as_the_buyer(lane_client: LaneClient, log: Log) -> None:

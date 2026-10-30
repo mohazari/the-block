@@ -80,6 +80,8 @@ class CodexClient:
         self.handle_server_request: ServerRequestHandler | None = None
         self._answering: set[asyncio.Task[None]] = set()  # keeps running answers referenced
         self.user_agent: str | None = None
+        # Which Codex process this is: threads live in one process and die with it.
+        self.generation = 0
 
     @property
     def running(self) -> bool:
@@ -127,6 +129,7 @@ class CodexClient:
             )
         except (FileNotFoundError, PermissionError) as exc:
             raise CodexError(f"Can't start Codex ({self._command[0]}): {exc}") from exc
+        self.generation += 1
         self._reader = asyncio.create_task(self._read(self._process))
 
     async def close(self) -> None:

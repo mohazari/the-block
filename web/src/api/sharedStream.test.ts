@@ -61,10 +61,10 @@ describe('openEventStream', () => {
     const old = openEventStream('/x')
     const oldId = lastId()
     old.close()
-    const fresh = openEventStream('/x', { fresh: true })
+    const fresh = openEventStream('/x', { fresh: 'quiet' })
     expect(port.sent.slice(1)).toEqual([
       { type: 'close', id: oldId },
-      { type: 'open', id: lastId(), url: '/x', fresh: true },
+      { type: 'open', id: lastId(), url: '/x', fresh: 'quiet' },
     ])
     const heard = vi.fn()
     fresh.addEventListener('hello', heard)
@@ -83,8 +83,23 @@ describe('openEventStream', () => {
     worker.onerror?.()
     expect(onerror).toHaveBeenCalledOnce()
     expect(stream.readyState).toBe(CLOSED) // gone for good: the tab's retry opens a new one
-    openEventStream('/x', { fresh: true })
+    openEventStream('/x', { fresh: 'quiet' })
     expect(FakeEventSource.latest().url).toBe('/x')
+  })
+
+  it('falls back to its own EventSource when the worker says it cannot open one', () => {
+    const stream = openEventStream('/x')
+    port.reply({ type: 'unavailable', id: lastId() })
+    expect(stream.readyState).toBe(CLOSED)
+    openEventStream('/x', { fresh: 'quiet' })
+    expect(FakeEventSource.latest().url).toBe('/x')
+  })
+
+  it('still says goodbye when closed after the shared stream failed', () => {
+    const stream = openEventStream('/x')
+    port.reply({ type: 'error', id: lastId(), readyState: CLOSED })
+    stream.close()
+    expect(port.sent.at(-1)).toEqual({ type: 'close', id: lastId() })
   })
 
   it('says goodbye when the page goes away, and hello when it comes back', () => {

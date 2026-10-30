@@ -1,3 +1,5 @@
+import { DEFAULT_HEARTBEAT_MS, announcedHeartbeat } from './heartbeat'
+
 /**
  * One live stream for every tab. Browsers allow about six open connections per site, and each
  * tab used to hold one /api/events stream for good: with enough tabs open, a new tab's requests
@@ -10,18 +12,27 @@
  */
 
 /**
+ * Why a tab wants a new stream: `quiet` (its watchdog heard nothing, which a tab that was asleep
+ * can misjudge) or `stale` (a response came from a server the stream isn't connected to).
+ */
+export type Fresh = false | 'quiet' | 'stale'
+
+/**
  * Tab → hub. `id` names the tab's current stream object: a tab replaces it on every reconnect,
  * and the hub tags what it sends with the id it was meant for, so a message still in flight for
  * the old one is dropped instead of being taken for news about the new one.
- * `fresh`: the tab found the stream dead or stale and asks for a new connection.
  */
 export type ToHub =
-  { type: 'open'; id: number; url: string; fresh: boolean } | { type: 'close'; id: number }
+  { type: 'open'; id: number; url: string; fresh: Fresh } | { type: 'close'; id: number }
 
-/** Hub → tab: a server event, or the stream's state after an error. */
+/**
+ * Hub → tab: a server event, the stream's state after an error, or `unavailable`: the worker
+ * can't open a stream at all (no EventSource in workers), so the tab must use its own.
+ */
 export type FromHub =
   | { type: 'event'; id: number; name: string; data: string }
   | { type: 'error'; id: number; readyState: number }
+  | { type: 'unavailable'; id: number }
 
 export interface Port {
   postMessage(message: FromHub): void
@@ -48,21 +59,25 @@ export const CLOSED = 2
  */
 export const EVENT_NAMES = ['hello', 'ping', 'bid', 'sold'] as const
 
-/** A connection still not open after this long is taken as hung, and may be replaced. */
+/** A connection attempt still not open after this long is taken as hung, and may be replaced. */
 export const CONNECT_TIMEOUT_MS = 10_000
-/** Until a hello says otherwise: how often the server pings a quiet stream. */
-const DEFAULT_HEARTBEAT_MS = 10_000
 /**
- * An open stream that delivered anything within this many heartbeats is alive: a tab asking
- * for a fresh one missed the events itself (it was asleep, or frozen in the background), so
- * it rejoins instead of restarting the stream for every tab.
+ * An open stream that delivered anything within this many heartbeats is alive: a tab that heard
+ * nothing missed the events itself (it was asleep, or frozen in the background), so it rejoins
+ * instead of restarting the stream for every tab.
  */
 const ALIVE_WITHIN_HEARTBEATS = 1.5
+/**
+ * A stream that said hello this recently is already a new connection: tabs reporting it stale
+ * at the same moment share it rather than restart it again.
+ */
+const JUST_CONNECTED_MS = 2_000
 
 interface Stream {
   url: string
   source: Source
-  openedAt: number
+  /** When the current connection attempt began: opened, restarted, or retried by the browser. */
+  attemptAt: number
   /** When the current connection last delivered anything (hello, ping or event). */
   heardAt?: number
   heartbeatMs: number
@@ -95,21 +110,27 @@ export class StreamHub {
       if (this.joined.get(port)?.ports.get(port) === message.id) this.leave(port)
       return
     }
-    this.leave(port)
-    let stream = this.streams.get(message.url)
+    // A tab rejoining its own stream keeps its place: leaving first would close the connection
+    // whenever it's the only tab, only to open another.
+    if (this.joined.get(port)?.url !== message.url) this.leave(port)
+    try {
+      this.join(port, message.id, message.url, message.fresh)
+    } catch {
+      this.leave(port)
+      port.postMessage({ type: 'unavailable', id: message.id })
+    }
+  }
+
+  private join(port: Port, id: number, url: string, fresh: Fresh): void {
+    let stream = this.streams.get(url)
     if (!stream) {
-      stream = this.open(message.url)
-    } else if (this.isDead(stream) || (message.fresh && this.isSilent(stream))) {
+      stream = this.open(url)
+    } else if (this.isDead(stream) || this.isRestartWanted(stream, fresh)) {
       this.restart(stream)
     } else if (stream.source.readyState === OPEN && stream.hello) {
-      port.postMessage({
-        type: 'event',
-        id: message.id,
-        name: 'hello',
-        data: this.replay(stream.hello),
-      })
+      port.postMessage({ type: 'event', id, name: 'hello', data: this.replay(stream.hello) })
     }
-    stream.ports.set(port, message.id)
+    stream.ports.set(port, id)
     this.joined.set(port, stream)
   }
 
@@ -126,21 +147,24 @@ export class StreamHub {
     }
   }
 
-  /** The browser gave up on it, or it never managed to connect. */
+  /** The browser gave up on it, or its connection attempt hung. */
   private isDead(stream: Stream): boolean {
     const state = stream.source.readyState
     if (state === CLOSED) return true
-    return state === CONNECTING && this.now() - stream.openedAt >= CONNECT_TIMEOUT_MS
+    return state === CONNECTING && this.now() - stream.attemptAt >= CONNECT_TIMEOUT_MS
   }
 
   /**
-   * Whether a tab's "the stream is dead" holds for everyone: it's dead, or it's open but has
-   * gone quiet. While it's connecting (and not hung) a restart would only start over: the tab
-   * waits for the coming hello instead, so tabs asking at the same time share one restart.
+   * Whether a tab's reason for a new stream holds for everyone. Stale: a response came from
+   * another server, so the connection is to the wrong one, unless it was only just made. Quiet:
+   * only if the stream really went quiet; otherwise the tab missed the events itself. While a
+   * connection is being made (and not hung), a restart would only start it over: the tab waits
+   * for the coming hello instead, so tabs asking at the same time share one restart.
    */
-  private isSilent(stream: Stream): boolean {
-    if (stream.source.readyState !== OPEN) return false
-    const heard = stream.heardAt ?? stream.openedAt
+  private isRestartWanted(stream: Stream, fresh: Fresh): boolean {
+    if (!fresh || stream.source.readyState !== OPEN) return false
+    if (fresh === 'stale') return !stream.hello || this.now() - stream.hello.at >= JUST_CONNECTED_MS
+    const heard = stream.heardAt ?? stream.attemptAt
     return this.now() - heard >= stream.heartbeatMs * ALIVE_WITHIN_HEARTBEATS
   }
 
@@ -148,7 +172,7 @@ export class StreamHub {
     const stream: Stream = {
       url,
       source: this.createSource(url),
-      openedAt: this.now(),
+      attemptAt: this.now(),
       heartbeatMs: DEFAULT_HEARTBEAT_MS,
       ports: new Map(),
     }
@@ -165,7 +189,7 @@ export class StreamHub {
     // The tabs drop the stream as they would after a network blip; the new hello brings them back.
     this.broadcast(stream, (id) => ({ type: 'error', id, readyState: CONNECTING }))
     stream.source = this.createSource(stream.url)
-    stream.openedAt = this.now()
+    stream.attemptAt = this.now()
     this.wire(stream)
   }
 
@@ -185,6 +209,8 @@ export class StreamHub {
     source.onerror = () => {
       if (stream.source !== source) return
       stream.hello = undefined
+      // The browser retries a dropped connection itself: that's a new attempt, timed afresh.
+      if (source.readyState === CONNECTING) stream.attemptAt = this.now()
       this.broadcast(stream, (id) => ({ type: 'error', id, readyState: source.readyState }))
     }
   }
@@ -208,12 +234,11 @@ export class StreamHub {
   }
 }
 
-/** The ping interval a hello announces, in ms (as liveEvents.ts reads it), if it names one. */
 function heartbeatOf(data: string): number | undefined {
   try {
-    const seconds = (JSON.parse(data) as { heartbeat_seconds?: unknown }).heartbeat_seconds
-    if (typeof seconds !== 'number' || !(seconds > 0)) return undefined
-    return Math.min(Math.max(seconds * 1000, 1_000), 600_000) // liveEvents.ts's limits
+    return announcedHeartbeat(
+      (JSON.parse(data) as { heartbeat_seconds?: unknown }).heartbeat_seconds,
+    )
   } catch {
     return undefined
   }

@@ -5,6 +5,7 @@ import {
   CONNECT_TIMEOUT_MS,
   CONNECTING,
   StreamHub,
+  type Fresh,
   type FromHub,
   type ToHub,
 } from './streamHub'
@@ -28,7 +29,7 @@ class FakePort {
     this.onmessage?.(new MessageEvent('message', { data: message }))
   }
   /** The tab's stream object (re)joins, as after a reconnect. */
-  open(fresh = false) {
+  open(fresh: Fresh = false) {
     this.id += 1
     this.send({ type: 'open', id: this.id, url: URL_A, fresh })
   }
@@ -122,7 +123,7 @@ describe('StreamHub', () => {
     now += HEARTBEAT_MS * 2 // no pings since: the connection died without telling anyone
 
     reporter.close()
-    reporter.open(true)
+    reporter.open('quiet')
     expect(before.closed).toBe(true)
     expect(FakeEventSource.instances).toHaveLength(2)
     expect(watcher.received.at(-1)).toEqual({ type: 'error', id: 1, readyState: CONNECTING })
@@ -144,7 +145,7 @@ describe('StreamHub', () => {
 
     // A background tab woke up, its watchdog saw "silence", and it asks for a fresh stream.
     sleeper.close()
-    sleeper.open(true)
+    sleeper.open('quiet')
     expect(FakeEventSource.instances).toHaveLength(1)
     expect(healthy.received.some((m) => m.type === 'error')).toBe(false)
     expect(sleeper.events('hello').at(-1)).toMatchObject({ id: 2 }) // greeted as connected
@@ -157,7 +158,7 @@ describe('StreamHub', () => {
     now += HEARTBEAT_MS * 2
     tabs.forEach((port) => {
       port.close()
-      port.open(true)
+      port.open('quiet')
     })
     expect(FakeEventSource.instances).toHaveLength(2) // the first restart; the rest join it
   })
@@ -168,11 +169,11 @@ describe('StreamHub', () => {
     tab().open()
     now += CONNECT_TIMEOUT_MS - 1
     first.close()
-    first.open(true)
+    first.open('quiet')
     expect(FakeEventSource.instances).toHaveLength(1) // still within reason: wait for it
     now += 1
     first.close()
-    first.open(true)
+    first.open('quiet')
     expect(FakeEventSource.instances).toHaveLength(2) // hung: replaced
   })
 
@@ -194,7 +195,7 @@ describe('StreamHub', () => {
     const old = FakeEventSource.latest()
     now += HEARTBEAT_MS * 2
     first.close()
-    first.open(true)
+    first.open('quiet')
     old.emit('bid', { vehicle_id: 'late' })
     expect(first.events('bid')).toHaveLength(0)
   })
@@ -210,6 +211,54 @@ describe('StreamHub', () => {
     other.open()
     other.gone()
     expect(FakeEventSource.latest().closed).toBe(true)
+  })
+
+  it('restarts a live stream that a tab found stale, unless it only just connected', () => {
+    const watcher = tab()
+    watcher.open()
+    const reporter = tab()
+    reporter.open()
+    hello()
+    now += 1_000
+    reporter.close()
+    reporter.open('stale') // a second after the hello: that connection is already new
+    expect(FakeEventSource.instances).toHaveLength(1)
+
+    now += 5_000
+    FakeEventSource.latest().emit('ping', {}) // still delivering, but from the old server
+    reporter.close()
+    reporter.open('stale')
+    expect(FakeEventSource.instances).toHaveLength(2)
+  })
+
+  it("times a hung connection from the browser's own retry, not from the first connect", () => {
+    const first = tab()
+    first.open()
+    hello()
+    now += 60_000
+    FakeEventSource.latest().fail() // dropped: the browser retries by itself
+    now += 1_000
+    tab().open() // a tab opening during the retry waits for it
+    expect(FakeEventSource.instances).toHaveLength(1)
+  })
+
+  it('keeps the connection when its only tab rejoins it', () => {
+    const only = tab()
+    only.open()
+    hello()
+    only.open() // e.g. back from the back/forward cache
+    expect(FakeEventSource.instances).toHaveLength(1)
+    expect(FakeEventSource.latest().closed).toBe(false)
+    expect(only.events('hello').at(-1)).toMatchObject({ id: 2 })
+  })
+
+  it('tells a tab to use its own stream when the worker cannot open one', () => {
+    hub = new StreamHub(() => {
+      throw new ReferenceError('EventSource is not defined')
+    })
+    const port = tab()
+    port.open()
+    expect(port.received).toEqual([{ type: 'unavailable', id: 1 }])
   })
 
   it("ignores a goodbye from a tab's older stream", () => {

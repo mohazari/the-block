@@ -135,6 +135,8 @@ class Fake:
             self.interrupts[turn_id] = asyncio.Event()
             self.tasks.add(asyncio.create_task(self.play(params["threadId"], turn_id, steps)))
             return {"turn": {"id": turn_id, "items": [], "status": "inProgress"}}
+        if method == "thread/unsubscribe":
+            return {"status": "unsubscribed"}
         if method == "turn/interrupt":
             self.interrupts.get(params["turnId"], asyncio.Event()).set()
             return {}

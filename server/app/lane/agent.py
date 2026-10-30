@@ -353,6 +353,8 @@ class Lane:
                 _, dropped = self._conversations.popitem(last=False)
                 if dropped.thread_id:
                     self._by_thread.pop(dropped.thread_id, None)
+                    if not dropped.lock.locked():  # a turn still running releases nothing
+                        self._release(dropped.thread_id, dropped.thread_generation)
         elif conversation.bidder_id != bidder_id:
             return None
         self._conversations.move_to_end(conversation_id)
@@ -416,6 +418,7 @@ class Lane:
         thread_id = str(result["thread"]["id"])
         if conversation.thread_id is not None:
             self._by_thread.pop(conversation.thread_id, None)
+            self._release(conversation.thread_id, conversation.thread_generation)
         conversation.thread_id = thread_id
         conversation.thread_generation = self._client.generation
         self._by_thread[thread_id] = conversation
@@ -481,6 +484,19 @@ class Lane:
             finally:
                 if conversation.turn_id == turn_id:
                     conversation.turn_id = None
+
+    def _release(self, thread_id: str, generation: int) -> None:
+        """Lets Codex unload a thread no conversation uses any more (each holds its history in
+        memory). A thread from an earlier Codex process went with it."""
+        if generation != self._client.generation or not self._client.running:
+            return
+
+        async def unsubscribe() -> None:
+            with contextlib.suppress(CodexError, TimeoutError):
+                await self._client.request("thread/unsubscribe", {"threadId": thread_id})
+
+        self._background.add(task := asyncio.create_task(unsubscribe()))
+        task.add_done_callback(self._background.discard)
 
     async def _start_turn(
         self, conversation: Conversation, thread_id: str, params: dict[str, Any]

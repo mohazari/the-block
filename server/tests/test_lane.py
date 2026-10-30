@@ -654,6 +654,18 @@ def test_a_second_message_waits_for_the_first(lane_client: LaneClient, log: Log)
     reader.join(5)
 
 
+def test_codex_unloads_the_threads_of_forgotten_conversations(
+    lane_client: LaneClient, log: Log, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(agent_module, "MAX_CONVERSATIONS", 1)
+    client = lane_client()
+    ask(client)
+    body = {"conversation_id": "another-chat", "text": "hi"}
+    with client.stream("POST", "/api/lane/messages", json=body, headers=ME) as response:
+        response.read()  # the second chat pushes the first one out
+    assert wait_for_log(log, "thread/unsubscribe") == [{"threadId": "thread-0"}]
+
+
 def test_a_conversation_belongs_to_one_buyer(lane_client: LaneClient) -> None:
     client = lane_client()
     ask(client)

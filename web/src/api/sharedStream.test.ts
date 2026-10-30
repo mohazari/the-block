@@ -117,9 +117,11 @@ describe('openEventStream', () => {
     const onerror = vi.fn()
     stream.onerror = onerror
     port.reply({ type: 'unavailable', id: lastId() })
+    expect(onerror).toHaveBeenCalledOnce() // shown as reconnecting until its own says hello
+    expect(stream.readyState).not.toBe(CLOSED) // not given up: no retry delay
     expect(FakeEventSource.latest().url).toBe('/x')
     FakeEventSource.latest().fail()
-    expect(onerror).toHaveBeenCalledOnce()
+    expect(onerror).toHaveBeenCalledTimes(2)
     stream.close()
     expect(FakeEventSource.latest().closed).toBe(true)
   })

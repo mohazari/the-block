@@ -158,7 +158,7 @@ export class StreamHub {
 
   /**
    * Whether a tab's reason for a new stream holds for everyone. Stale: the tab is on another
-   * server run than the stream (or, if either run is unknown, the stream isn't brand new).
+   * server run than the stream (or, if either run is unknown, the stream's hello isn't brand new).
    * Quiet: only if the stream really went quiet; otherwise the tab missed the events itself.
    * While a connection is being made (and not hung), a restart would only start it over: the
    * tab waits for the coming hello instead, so tabs asking at the same time share one restart.
@@ -166,8 +166,10 @@ export class StreamHub {
   private isRestartWanted(stream: Stream, { fresh, run }: { fresh: Fresh; run?: string }): boolean {
     if (!fresh || stream.source.readyState !== OPEN) return false
     if (fresh === 'stale') {
-      if (run && stream.hello?.run) return stream.hello.run !== run
-      return this.now() - (stream.hello?.at ?? stream.attemptAt) >= JUST_CONNECTED_MS
+      // Open but no hello yet: a connection made just now, whatever the tab saw before it.
+      if (!stream.hello) return false
+      if (run && stream.hello.run) return stream.hello.run !== run
+      return this.now() - stream.hello.at >= JUST_CONNECTED_MS
     }
     const heard = stream.heardAt ?? stream.attemptAt
     return this.now() - heard >= stream.heartbeatMs * ALIVE_WITHIN_HEARTBEATS

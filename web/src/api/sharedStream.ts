@@ -125,6 +125,9 @@ class SharedStream implements Source {
   /** Carries on over the tab's own EventSource; the live-update logic doesn't notice. */
   fallBack(): void {
     if (this.state === CLOSED) return
+    // The shared connection is gone: the tab shows it reconnecting until its own says hello.
+    this.state = CONNECTING
+    this.onerror?.(new Event('error'))
     const own = new EventSource(this.url)
     this.own = own
     for (const name of EVENT_NAMES) {

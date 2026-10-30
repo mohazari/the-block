@@ -28,3 +28,7 @@ playwright-report/
 
 # Private working notes, kept local
 DECISIONS.md
+
+# Lane: its own Codex home (ChatGPT sign-in, Codex state); the e2e run uses another
+server/.lane/
+server/.lane-e2e/

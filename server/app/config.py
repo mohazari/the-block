@@ -1,4 +1,5 @@
 import os
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +19,11 @@ class Settings:
     database_url: str
     data_path: Path
     simulator_enabled: bool
+    # Lane, the car-finding assistant: the command that runs Codex (tests swap in a fake), and
+    # Lane's own Codex home, so its sign-in and settings stay apart from the user's own Codex.
+    lane_enabled: bool = True
+    lane_command: tuple[str, ...] = ("codex",)
+    lane_home: Path = SERVER_DIR / ".lane"
 
     def __post_init__(self) -> None:
         # The engine setup (BEGIN IMMEDIATE, WAL, pragmas) is SQLite-specific by design.
@@ -30,4 +36,7 @@ class Settings:
             database_url=os.environ.get("DATABASE_URL", f"sqlite:///{SERVER_DIR / 'the_block.db'}"),
             data_path=Path(os.environ.get("DATA_PATH", REPO_DIR / "data" / "vehicles.json")),
             simulator_enabled=_env_flag("SIMULATOR_ENABLED", default=True),
+            lane_enabled=_env_flag("LANE_ENABLED", default=True),
+            lane_command=tuple(shlex.split(os.environ.get("LANE_CODEX_COMMAND", "codex"))),
+            lane_home=Path(os.environ.get("LANE_HOME", SERVER_DIR / ".lane")),
         )

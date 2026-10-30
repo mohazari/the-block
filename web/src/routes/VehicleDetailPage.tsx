@@ -14,6 +14,13 @@ import { ConditionReport } from './vehicle/ConditionReport'
 import { Gallery } from './vehicle/Gallery'
 import { SpecSheet } from './vehicle/SpecSheet'
 
+/**
+ * The column about the car (photos, condition, specs, seller) shares one width, capped so a
+ * wide monitor doesn't blow the picture up past the condition report: uncapped at 1920px, the
+ * picture alone filled most of the first screen.
+ */
+const DETAILS = 'min-w-0 max-w-[60rem] lg:col-start-1'
+
 export function VehicleDetailPage() {
   const { vehicleId = '' } = useParams()
   // A new vehicle gets fresh component state (draft bids, errors, selected view).
@@ -54,26 +61,26 @@ function VehicleDetailContent({ vehicleId }: { vehicleId: string }) {
       <BackLink />
       <Header vehicle={vehicle} />
       {/* One bid panel, placed by the grid: after the photos on phones, a sticky column on
-          desktop. On wide screens the condition report moves up beside the photos, so the first
-          screen answers "can I trust this car?" as well as "what does it cost?". The last row is
-          1fr: the tall bid column's extra height lands there, not as gaps between sections. */}
-      <div className="mt-6 grid items-start gap-x-8 gap-y-10 lg:grid-cols-[minmax(0,1fr)_clamp(22rem,26vw,27.5rem)] lg:grid-rows-[auto_auto_1fr] 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_clamp(22rem,24vw,27.5rem)] 2xl:grid-rows-[auto_1fr] 2xl:gap-x-12">
-        <div className="min-w-0 lg:col-start-1 lg:row-start-1">
+          desktop. Everything about the car reads down one column at every width: photos, then
+          its condition, then specs and seller. The last row is 1fr: the tall bid column's extra
+          height lands there, not as gaps between sections. */}
+      <div className="mt-6 grid items-start gap-x-8 gap-y-10 lg:grid-cols-[minmax(0,1fr)_clamp(22rem,26vw,27.5rem)] lg:grid-rows-[auto_auto_1fr] 2xl:gap-x-12">
+        <div className={cn(DETAILS, 'lg:row-start-1')}>
           <Gallery vehicle={vehicle} />
         </div>
         <aside
           aria-label="Bidding"
           id="bid"
-          className="scroll-mt-20 lg:col-start-2 lg:row-span-3 lg:row-start-1 2xl:col-start-3 2xl:row-span-2"
+          className="scroll-mt-20 lg:col-start-2 lg:row-span-3 lg:row-start-1"
         >
           <div className="lg:sticky lg:top-20">
             <BidPanel vehicle={vehicle} />
           </div>
         </aside>
-        <div className="min-w-0 lg:col-start-1 lg:row-start-2 2xl:col-start-2 2xl:row-span-2 2xl:row-start-1">
+        <div className={cn(DETAILS, 'lg:row-start-2')}>
           <ConditionReport vehicle={vehicle} />
         </div>
-        <div className="min-w-0 space-y-10 lg:col-start-1 lg:row-start-3 2xl:row-start-2">
+        <div className={cn(DETAILS, 'space-y-10 lg:row-start-3')}>
           <SpecSheet vehicle={vehicle} />
           <Seller vehicle={vehicle} />
         </div>

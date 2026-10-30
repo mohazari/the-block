@@ -108,14 +108,28 @@ function AttentionBadge() {
   )
 }
 
-/** The product's mark: a run list (three lots, the first one up) in OPENLANE Blue. */
+/**
+ * The product's mark, built the way OPENLANE builds its own: a closed shape with one part set
+ * apart (their open "O"), here a block with its open side as a separate bar. On OPENLANE Blue,
+ * as before. public/favicon.svg is the same drawing, so the tab and the header match.
+ */
 function BlockMark() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden className="size-6 shrink-0">
-      <rect width="24" height="24" rx="6" fill="var(--action)" />
-      <rect x="5" y="6" width="14" height="3" rx="1.5" fill="var(--action-ink)" />
-      <rect x="5" y="10.5" width="10" height="3" rx="1.5" fill="var(--action-ink)" opacity="0.7" />
-      <rect x="5" y="15" width="7" height="3" rx="1.5" fill="var(--action-ink)" opacity="0.45" />
+      <rect x="1" y="1" width="22" height="22" rx="6" fill="var(--action)" />
+      <path
+        d="M10.5 6.75h3a3.5 3.5 0 0 1 3.5 3.5v3.5a3.5 3.5 0 0 1-3.5 3.5h-3"
+        stroke="var(--action-ink)"
+        strokeWidth="2.75"
+        fill="none"
+      />
+      <path
+        d="M7 10v4"
+        stroke="var(--action-ink)"
+        strokeWidth="2.75"
+        strokeLinecap="round"
+        opacity="0.7"
+      />
     </svg>
   )
 }

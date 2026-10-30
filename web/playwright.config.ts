@@ -27,7 +27,13 @@ export default defineConfig({
       // seed --reset gives every run a fresh database, on any OS.
       command: `uv run python -m app.seed --reset && uv run python -m app.serve --port ${API_PORT}`,
       cwd: '../server',
-      env: { DATABASE_URL: 'sqlite:///e2e.db', SIMULATOR_ENABLED: '0' },
+      env: {
+        DATABASE_URL: 'sqlite:///e2e.db',
+        SIMULATOR_ENABLED: '0',
+        // Lane talks to a fake Codex: no ChatGPT account, no model calls (server/tests).
+        LANE_CODEX_COMMAND: 'python tests/fake_codex.py',
+        LANE_HOME: '.lane-e2e',
+      },
       url: `http://127.0.0.1:${API_PORT}/api/health`,
       reuseExistingServer: false,
     },

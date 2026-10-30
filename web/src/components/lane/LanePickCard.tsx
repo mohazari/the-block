@@ -1,7 +1,9 @@
 import { Link } from 'react-router'
+import { withNewestSeen } from '../../api/auctionLedger'
 import type { LanePick } from '../../api/types'
 import { LIGHT_LABEL, conditionLight } from '../../lib/condition'
 import { formatKm, formatMoney } from '../../lib/format'
+import { useServerNow } from '../../lib/serverClock'
 import { vehicleName } from '../../lib/vehicle'
 import { AuctionClock } from '../auction/AuctionClock'
 import { LightDot } from '../auction/ConditionLight'
@@ -12,7 +14,11 @@ import { CarIllustration } from '../CarIllustration'
  * The whole card opens the vehicle.
  */
 export function LanePickCard({ pick, onOpen }: { pick: LanePick; onOpen?: () => void }) {
-  const { vehicle, reason } = pick
+  // The reply carries the car as it was when Lane answered; live events since (a rival's bid, a
+  // close pushed back, a sale) are in the ledger. The server clock's tick re-reads it each second.
+  useServerNow()
+  const { reason } = pick
+  const vehicle = withNewestSeen(pick.vehicle)
   const { auction } = vehicle
   const name = vehicleName(vehicle)
   const light = conditionLight(vehicle)

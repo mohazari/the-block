@@ -8,7 +8,7 @@ import { useServerNow } from '../lib/serverClock'
 import { ConnectionStatus } from './ConnectionStatus'
 import { LaneButton, LanePanel } from './lane/LanePanel'
 import { LaneProvider } from './lane/LaneProvider'
-import { useLane } from './lane/laneState'
+import { useLaneOpen } from './lane/laneState'
 import { Toaster } from './toasts/Toaster'
 import { MARK } from './blockMark'
 import { cn } from '../lib/cn'
@@ -31,7 +31,7 @@ export function AppShell() {
 
 function Shell() {
   const [theme, toggleTheme] = useTheme()
-  const { open: laneOpen } = useLane()
+  const { open: laneOpen } = useLaneOpen()
   useAuctionEvents()
 
   return (

@@ -9,7 +9,6 @@ the database.
 import asyncio
 import contextlib
 import logging
-import re
 import tempfile
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable
@@ -22,7 +21,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.clock import Clock
-from app.lane.codex import CodexClient, CodexError
+from app.lane.codex import (
+    MIN_CODEX_VERSION,
+    CodexClient,
+    CodexError,
+    CodexMissingError,
+    CodexTooOldError,
+)
 from app.lane.reply import MAX_PICKS, REPLY_SCHEMA, MessageStream, parse_reply
 from app.lane.schemas import (
     LaneEffort,
@@ -48,8 +53,6 @@ from app.lane.tools import (
 
 logger = logging.getLogger(__name__)
 
-# The app-server protocol Lane was built and tested against.
-MIN_CODEX_VERSION = (0, 163, 0)
 # A turn that goes this long without any event from Codex is given up on.
 TURN_IDLE_SECONDS = 120.0
 # Conversations kept in memory; the oldest is dropped past this.
@@ -103,9 +106,9 @@ How to work:
 about a vehicle must come from a tool result. Never invent vehicles, prices or details.
 - If the request is too vague to search at all, ask one short question. Otherwise search first, \
 then refine. Prefer live auctions unless the buyer asks about upcoming or ended ones.
-- Recommend at most four vehicles, best first. Give each a one-line reason: why it fits this \
-buyer, with the facts that matter (kilometres, condition grade, reserve, damage, time left). Its \
-card already shows the name, price and countdown, so don't start the reason with them.
+- Recommend at most {max_picks} vehicles, best first. Give each a one-line reason: why it fits \
+this buyer, with the facts that matter (kilometres, condition grade, reserve, damage, time left). \
+Its card already shows the name, price and countdown, so don't start the reason with them.
 - Be honest about trade-offs: damage, a reserve that isn't met, an auction about to close.
 - Talk to the buyer directly, as "you"; don't call them "buyer".
 - If nothing matches exactly, say so and recommend the closest alternatives.
@@ -134,6 +137,8 @@ class Conversation:
     thread_id: str | None = None
     thread_generation: int = 0  # the Codex process the thread lives in (see CodexClient)
     turn_id: str | None = None
+    # Stop pressed while a turn was being prepared (no turn id yet): honoured once it has one.
+    stop_requested: bool = False
     last_search: dict[str, Any] | None = None
     zone: tzinfo | None = None  # the buyer's, from their latest message
     choice: dict[str, str] = field(default_factory=dict)  # model and effort of the latest turn
@@ -143,12 +148,8 @@ class Conversation:
 @dataclass
 class SignIn:
     login_id: str
-    error: str | None = None
-
-
-def parse_version(user_agent: str) -> tuple[int, ...] | None:
-    match = re.search(r"/(\d+)\.(\d+)\.(\d+)", user_agent)
-    return tuple(int(part) for part in match.groups()) if match else None
+    # The Codex process the login lives in: if Codex restarts, nobody will ever complete it.
+    generation: int
 
 
 def time_zone(name: str | None) -> tzinfo | None:
@@ -183,6 +184,7 @@ class Lane:
         self._problem: str | None = None
         # An empty working directory: there is nothing on disk for Codex to look at.
         self._workdir = Path(tempfile.mkdtemp(prefix="lane-"))
+        self._background: set[asyncio.Task[None]] = set()
         client.handle_server_request = self._serve_request
         client.on_account_event(self._account_event)
 
@@ -206,16 +208,22 @@ class Lane:
         """Start Codex if needed. False (with self._problem set) when it can't run."""
         try:
             await self._client.ensure_started()
-        except CodexError as exc:
+        except CodexMissingError as exc:
             logger.info("Lane is unavailable: %s", exc)
             self._problem = (
                 "Lane needs the Codex CLI. Install it, then reopen Lane (see the README)."
             )
             return False
-        version = parse_version(self._client.user_agent or "")
-        if version is not None and version < MIN_CODEX_VERSION:
+        except CodexTooOldError as exc:
+            logger.warning("Lane is unavailable: %s", exc)
             wanted = ".".join(map(str, MIN_CODEX_VERSION))
             self._problem = f"Lane needs Codex {wanted} or newer. Update the Codex CLI."
+            return False
+        except CodexError as exc:
+            logger.warning("Lane is unavailable: %s", exc)
+            self._problem = (
+                f"Codex is installed but didn't start. Its output is in {self._client.log_path}."
+            )
             return False
         self._problem = None
         return True
@@ -238,7 +246,7 @@ class Lane:
             problem=None,
             signed_in=signed_in,
             plan=account.get("planType") if account else None,
-            signing_in=self._sign_in is not None,
+            signing_in=self._signing_in(),
             sign_in_error=self._sign_in_error,
             usage=await self._usage() if signed_in else None,
         )
@@ -268,9 +276,14 @@ class Lane:
                     "account/login/cancel", {"loginId": self._sign_in.login_id}
                 )
         result = await self._client.request("account/login/start", {"type": "chatgpt"})
-        self._sign_in = SignIn(login_id=str(result["loginId"]))
+        self._sign_in = SignIn(login_id=str(result["loginId"]), generation=self._client.generation)
         self._sign_in_error = None
         return str(result["authUrl"])
+
+    def _signing_in(self) -> bool:
+        if self._sign_in is not None and self._sign_in.generation != self._client.generation:
+            self._sign_in = None  # Codex restarted: that login can't finish any more
+        return self._sign_in is not None
 
     async def cancel_sign_in(self) -> None:
         sign_in, self._sign_in = self._sign_in, None
@@ -285,6 +298,9 @@ class Lane:
 
     def _account_event(self, method: str, params: dict[str, Any]) -> None:
         if method == "account/login/completed":
+            login_id = params.get("loginId")
+            if self._sign_in is None or (login_id and login_id != self._sign_in.login_id):
+                return  # a login that was cancelled or replaced since
             self._sign_in = None
             self._sign_in_error = (
                 None if params.get("success") else "Sign-in didn't finish. Try again."
@@ -337,6 +353,8 @@ class Lane:
                 _, dropped = self._conversations.popitem(last=False)
                 if dropped.thread_id:
                     self._by_thread.pop(dropped.thread_id, None)
+                    if not dropped.lock.locked():  # a turn still running releases nothing
+                        self._release(dropped.thread_id, dropped.thread_generation)
         elif conversation.bidder_id != bidder_id:
             return None
         self._conversations.move_to_end(conversation_id)
@@ -346,12 +364,10 @@ class Lane:
         conversation = self._conversations.get(conversation_id)
         if conversation is None or conversation.bidder_id != bidder_id:
             return
-        if conversation.thread_id and conversation.turn_id and self._client.running:
-            with contextlib.suppress(CodexError):
-                await self._client.request(
-                    "turn/interrupt",
-                    {"threadId": conversation.thread_id, "turnId": conversation.turn_id},
-                )
+        if conversation.thread_id and conversation.turn_id:
+            await self._interrupt(conversation.thread_id, conversation.turn_id)
+        elif conversation.lock.locked():
+            conversation.stop_requested = True  # the turn hasn't started yet
 
     async def check_choice(self, model: str | None, effort: str | None) -> str | None:
         """Why the model/effort pair can't be used, or None if it can."""
@@ -394,7 +410,7 @@ class Lane:
                 "cwd": str(self._workdir),
                 "sandbox": "read-only",
                 "approvalPolicy": "never",
-                "baseInstructions": INSTRUCTIONS.format(filters=filters),
+                "baseInstructions": INSTRUCTIONS.format(filters=filters, max_picks=MAX_PICKS),
                 "dynamicTools": TOOL_SPECS,
                 "serviceName": "the_block_lane",
             },
@@ -402,6 +418,7 @@ class Lane:
         thread_id = str(result["thread"]["id"])
         if conversation.thread_id is not None:
             self._by_thread.pop(conversation.thread_id, None)
+            self._release(conversation.thread_id, conversation.thread_generation)
         conversation.thread_id = thread_id
         conversation.thread_generation = self._client.generation
         self._by_thread[thread_id] = conversation
@@ -428,6 +445,7 @@ class Lane:
     async def _turn(
         self, conversation: Conversation, message: LaneMessage
     ) -> AsyncIterator[LaneEvent]:
+        conversation.stop_requested = False
         if not await self._ready():
             yield LaneProblem(code="lane_unavailable", message=self._problem or FAILED[1])
             return
@@ -452,16 +470,53 @@ class Lane:
             if value
         }
         params.update(conversation.choice)
+        if conversation.stop_requested:
+            yield LaneProblem(code="lane_stopped", message="Stopped.")
+            return
 
         async with self._client.thread_events(thread_id) as events:
-            started = await self._client.request("turn/start", params)
-            turn_id = conversation.turn_id = str(started["turn"]["id"])
+            turn_id = await self._start_turn(conversation, thread_id, params)
+            if conversation.stop_requested:
+                await self._interrupt(thread_id, turn_id)  # ends as interrupted below
             try:
                 async for event in self._follow(conversation, events, thread_id, turn_id):
                     yield event
             finally:
                 if conversation.turn_id == turn_id:
                     conversation.turn_id = None
+
+    def _release(self, thread_id: str, generation: int) -> None:
+        """Lets Codex unload a thread no conversation uses any more (each holds its history in
+        memory). A thread from an earlier Codex process went with it."""
+        if generation != self._client.generation or not self._client.running:
+            return
+
+        async def unsubscribe() -> None:
+            with contextlib.suppress(CodexError, TimeoutError):
+                await self._client.request("thread/unsubscribe", {"threadId": thread_id})
+
+        self._background.add(task := asyncio.create_task(unsubscribe()))
+        task.add_done_callback(self._background.discard)
+
+    async def _start_turn(
+        self, conversation: Conversation, thread_id: str, params: dict[str, Any]
+    ) -> str:
+        """Starts a turn and records its id. If the buyer goes away before Codex answers, the
+        turn is interrupted as soon as its id arrives, rather than left running unwatched."""
+        start = asyncio.ensure_future(self._client.request("turn/start", params))
+        try:
+            started = await asyncio.shield(start)
+        except asyncio.CancelledError:
+            self._background.add(task := asyncio.create_task(self._abandon(start, thread_id)))
+            task.add_done_callback(self._background.discard)
+            raise
+        turn_id = conversation.turn_id = str(started["turn"]["id"])
+        return turn_id
+
+    async def _abandon(self, start: asyncio.Future[dict[str, Any]], thread_id: str) -> None:
+        with contextlib.suppress(CodexError, asyncio.CancelledError):
+            started = await start
+            await self._interrupt(thread_id, str(started["turn"]["id"]))
 
     async def _follow(
         self,
@@ -482,10 +537,12 @@ class Lane:
                 except TimeoutError:
                     finished = True
                     await self._interrupt(thread_id, turn_id)
+                    logger.warning("Lane turn %s went silent; interrupted it", turn_id)
                     yield LaneProblem(code="lane_failed", message="Lane took too long. Try again.")
                     return
                 if method == "lane/disconnected":
                     finished = True
+                    logger.warning("Lane turn %s ended: Codex stopped", turn_id)
                     yield LaneProblem(code=FAILED[0], message=FAILED[1])
                     return
                 # Only this turn's events: a stopped turn's completion can arrive after it.
@@ -522,6 +579,9 @@ class Lane:
                     if status == "interrupted":
                         yield LaneProblem(code="lane_stopped", message="Stopped.")
                     elif status == "failed":
+                        logger.warning(
+                            "Lane turn %s failed: %s", turn_id, turn.get("error") or error
+                        )
                         code, text = problem_for(turn.get("error") or error)
                         yield LaneProblem(code=code, message=text)
                     else:
@@ -546,6 +606,7 @@ class Lane:
         reply = parse_reply(text) if text else None
         message = (reply.message if reply else "") or streamed.strip()
         if not message:
+            logger.warning("Lane's reply had no message: %r", text[:200])
             yield LaneProblem(code=FAILED[0], message=FAILED[1])
             return
         picks = await self._resolve(conversation, reply.picks if reply else [])
@@ -556,14 +617,26 @@ class Lane:
         yield LaneReply(
             message=message,
             picks=picks,
-            search=conversation.last_search if picks else None,
+            search=self._search_behind(conversation, picks),
         )
+
+    @staticmethod
+    def _search_behind(conversation: Conversation, picks: list[LanePick]) -> dict[str, Any] | None:
+        """The search the picks came from, for "see these in the run list": only when its
+        results hold every pick (Lane may have searched again since, for something else)."""
+        last = conversation.last_search
+        if not picks or last is None:
+            return None
+        found = set(last["found"])
+        return last["query"] if all(p.vehicle.id in found for p in picks) else None
 
     async def _resolve(
         self, conversation: Conversation, picks: list[tuple[str, str]]
     ) -> list[LanePick]:
         """Lane's picks as live vehicles; ones that don't exist are dropped (and logged)."""
-        keys = [key for key, _ in picks[:MAX_PICKS]]
+        # More than shown are looked up: a duplicate or a made-up id leaves room for the next.
+        picks = picks[: MAX_PICKS * 3]
+        keys = [key for key, _ in picks]
         now = self._clock.now()
         found = await self._read(
             lambda session: summaries(session, keys, now, conversation.bidder_id)
@@ -572,11 +645,11 @@ class Lane:
         if unknown:
             logger.warning("Lane picked vehicles that don't exist: %s", unknown)
         resolved: list[LanePick] = []
-        for key, reason in picks[:MAX_PICKS]:
+        for key, reason in picks:
             vehicle = found.get(key)
             if vehicle is not None and all(p.vehicle.id != vehicle.id for p in resolved):
                 resolved.append(LanePick(vehicle=vehicle, reason=reason))
-        return resolved
+        return resolved[:MAX_PICKS]
 
     async def _repair(self, conversation: Conversation) -> list[tuple[str, str]]:
         """One follow-up turn asking for the picks the last reply left out (not streamed)."""
@@ -589,13 +662,15 @@ class Lane:
             **conversation.choice,
         }
         text = ""
+        turn_id: str | None = None
+        completed = False
         try:
             async with self._client.thread_events(thread_id) as events:
-                started = await self._client.request("turn/start", params)
-                turn_id = conversation.turn_id = str(started["turn"]["id"])
+                turn_id = await self._start_turn(conversation, thread_id, params)
                 while True:
                     method, event = await asyncio.wait_for(events.get(), TURN_IDLE_SECONDS)
                     if method == "lane/disconnected":
+                        completed = True
                         return []
                     item = event.get("item") or {}
                     if method == "item/completed" and item.get("type") == "agentMessage":
@@ -604,10 +679,17 @@ class Lane:
                         method == "turn/completed"
                         and (event.get("turn") or {}).get("id") == turn_id
                     ):
+                        completed = True
                         break
         except (CodexError, TimeoutError) as exc:
             logger.warning("Lane couldn't recover its picks: %s", exc)
             return []
+        finally:
+            # Timed out, or the buyer left mid-repair: don't let the turn run on their plan.
+            if turn_id is not None and not completed:
+                await self._interrupt(thread_id, turn_id)
+            if turn_id is not None and conversation.turn_id == turn_id:
+                conversation.turn_id = None
         return parse_reply(text).picks if text else []
 
     # Requests from Codex ----------------------------------------------------------------------
@@ -632,9 +714,17 @@ class Lane:
             )
         except ToolError as exc:
             return {"success": False, "contentItems": [{"type": "inputText", "text": str(exc)}]}
+        except Exception:
+            # A bug or a database error: log it in full, and give the model nothing internal.
+            logger.exception("Lane's %s tool failed", name)
+            failed = "The tool failed. Try a different search."
+            return {"success": False, "contentItems": [{"type": "inputText", "text": failed}]}
         if name == "search_vehicles":
             query = search_query(arguments)
-            conversation.last_search = query.model_dump(
-                mode="json", exclude_defaults=True, exclude={"page", "page_size"}
-            )
+            conversation.last_search = {
+                "query": query.model_dump(
+                    mode="json", exclude_defaults=True, exclude={"page", "page_size"}
+                ),
+                "found": [vehicle["id"] for vehicle in result["vehicles"]],
+            }
         return {"success": True, "contentItems": [{"type": "inputText", "text": as_text(result)}]}

@@ -17,7 +17,23 @@ test('on a wide screen the run list is a table: text columns, then figures, even
   }
   expect([...xs].sort((a, b) => a - b)).toEqual(xs)
   await expect(header.getByText('Reserve', { exact: true })).toHaveCount(0)
-  await expect(row.getByText(/^(Reserve met|Reserve not met|No reserve)$/)).toBeVisible()
+  const reserve = row.getByText(/^(Reserve met|Reserve not met|No reserve)$/)
+  await expect(reserve).toBeVisible()
+  // Under the price, right-aligned with it.
+  const price = (await row.getByText(/^\$[\d,]+$/).boundingBox())!
+  const under = (await reserve.boundingBox())!
+  expect(under.y).toBeGreaterThanOrEqual(price.y + price.height)
+  expect(Math.abs(under.x + under.width - (price.x + price.width))).toBeLessThan(2)
+
+  // Header and rows share one grid, with the same gap between every column.
+  const grid = (locator: typeof row) =>
+    locator.evaluate((element) => {
+      const style = element.ownerDocument.defaultView!.getComputedStyle(element)
+      return { columns: style.gridTemplateColumns, gap: style.columnGap }
+    })
+  const rowGrid = await grid(row)
+  expect(rowGrid.gap).toBe('32px')
+  expect(await grid(header)).toEqual(rowGrid)
 
   // The time column shows just the time under its "Ends" header; "Ends in" stays for screen
   // readers only (visually hidden: a 1px box).

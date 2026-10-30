@@ -128,6 +128,8 @@ describe('InventoryPage', () => {
     renderRoute('/?page=5')
     expect(await screen.findByText('Page 5 is past the end of the list')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Go to the first page' })).toBeInTheDocument()
+    // No pager with a range that runs backwards ("101–30 of 30").
+    expect(screen.queryByRole('navigation', { name: 'Pages' })).not.toBeInTheDocument()
   })
 
   it('searches a long make list, keeping ticked makes in view', async () => {
@@ -151,6 +153,48 @@ describe('InventoryPage', () => {
     await userEvent.clear(rail.getByRole('searchbox', { name: 'Search makes' }))
     await userEvent.type(rail.getByRole('searchbox', { name: 'Search makes' }), 'zzz')
     expect(rail.getByRole('status')).toHaveTextContent('No makes match “zzz”.')
+  })
+
+  it('drops a make search when other filters shrink the list until its box goes away', async () => {
+    const many = ['Audi', 'BMW', 'Chevrolet', 'Ford', 'GMC', 'Honda', 'Kia', 'Toyota']
+    const few = ['BMW', 'Ford', 'Toyota']
+    const api = stubApi((url) =>
+      url.pathname === '/api/vehicles'
+        ? vehicleList([vehicle()], {
+            facets: {
+              make: (url.searchParams.has('province') ? few : many).map((value) => ({
+                value,
+                count: 3,
+              })),
+            },
+          })
+        : undefined,
+    )
+    vi.stubGlobal('fetch', api.fetch)
+    const { router } = renderRoute('/')
+    const rail = within(await screen.findByRole('complementary', { name: 'Filters' }))
+    await userEvent.type(await rail.findByRole('searchbox', { name: 'Search makes' }), 'for')
+    expect(rail.queryByRole('checkbox', { name: /BMW/ })).not.toBeInTheDocument()
+
+    // Another filter leaves too few makes for a search box: the term must stop hiding them.
+    await router.navigate('/?province=Quebec')
+    expect(await rail.findByRole('checkbox', { name: /BMW/ })).toBeInTheDocument()
+    expect(rail.getByRole('checkbox', { name: /Toyota/ })).toBeInTheDocument()
+    expect(rail.queryByRole('searchbox', { name: 'Search makes' })).not.toBeInTheDocument()
+  })
+
+  it('empties the make search on "Clear all"', async () => {
+    const makes = ['Audi', 'BMW', 'Chevrolet', 'Ford', 'GMC', 'Honda', 'Kia', 'Toyota']
+    serve(
+      vehicleList([vehicle()], { facets: { make: makes.map((value) => ({ value, count: 3 })) } }),
+    )
+    renderRoute('/?make=Ford')
+    const rail = within(await screen.findByRole('complementary', { name: 'Filters' }))
+    const box = await rail.findByRole('searchbox', { name: 'Search makes' })
+    await userEvent.type(box, 'for')
+    await userEvent.click(rail.getByRole('button', { name: 'Clear all' }))
+    expect(box).toHaveValue('')
+    expect(rail.getByRole('checkbox', { name: /BMW/ })).toBeInTheDocument()
   })
 
   it('shows the range of the page it is on', async () => {

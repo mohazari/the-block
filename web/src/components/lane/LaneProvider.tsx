@@ -4,7 +4,8 @@ import { ApiError } from '../../api/client'
 import { laneKeys, stopLane, streamLaneReply, type LaneEvent } from '../../api/lane'
 import { newId } from '../../lib/bidder'
 import {
-  LaneContext,
+  LaneChatContext,
+  LaneOpenContext,
   saveChoice,
   storedChoice,
   timeZone,
@@ -148,9 +149,14 @@ export function LaneProvider({ children }: { children: ReactNode }) {
     setAnswering(false)
   }, [])
 
-  const value = useMemo(
-    () => ({ open, setOpen, buttonRef, turns, answering, choice, setChoice, ask, stop, newChat }),
-    [open, turns, answering, choice, setChoice, ask, stop, newChat],
+  const openState = useMemo(() => ({ open, setOpen, buttonRef }), [open])
+  const chat = useMemo(
+    () => ({ turns, answering, choice, setChoice, ask, stop, newChat }),
+    [turns, answering, choice, setChoice, ask, stop, newChat],
   )
-  return <LaneContext.Provider value={value}>{children}</LaneContext.Provider>
+  return (
+    <LaneOpenContext.Provider value={openState}>
+      <LaneChatContext.Provider value={chat}>{children}</LaneChatContext.Provider>
+    </LaneOpenContext.Provider>
+  )
 }

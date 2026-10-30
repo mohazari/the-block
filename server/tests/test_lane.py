@@ -13,8 +13,9 @@ from fastapi.testclient import TestClient
 
 from app.clock import FrozenClock
 from app.config import Settings
-from app.lane.agent import parse_version, problem_for
-from app.lane.codex import DISABLED_FEATURES
+from app.lane import agent as agent_module
+from app.lane.agent import problem_for
+from app.lane.codex import DISABLED_FEATURES, parse_version
 from app.lane.reply import MessageStream, parse_reply
 from app.lane.tools import ToolError, search_query
 from app.main import create_app
@@ -151,6 +152,22 @@ def test_an_old_codex_is_refused(lane_client: LaneClient) -> None:
     assert "0.163.0 or newer" in status["problem"]
 
 
+def test_a_codex_that_wont_start_points_to_its_output(
+    lane_client: LaneClient, tmp_path: Path
+) -> None:
+    status = lane_client({"exit_on_start": True}).get("/api/lane/status").json()
+    assert status["available"] is False
+    assert "installed but didn't start" in status["problem"]
+    log_file = tmp_path / "lane" / "app-server.log"
+    assert str(log_file) in status["problem"]
+    assert "Unknown feature flag" in log_file.read_text()
+
+
+def test_an_empty_codex_command_means_the_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LANE_CODEX_COMMAND", "")
+    assert Settings.from_env().lane_command == ("codex",)
+
+
 def test_lane_can_be_turned_off(lane_client: LaneClient) -> None:
     client = lane_client(lane_enabled=False)
     status = client.get("/api/lane/status").json()
@@ -166,7 +183,7 @@ def test_signing_in_and_out(lane_client: LaneClient) -> None:
     client = lane_client({"signed_in": False})
     assert client.get("/api/lane/status").json()["signed_in"] is False
 
-    started = client.post("/api/lane/sign-in")
+    started = client.post("/api/lane/sign-in", headers=ME)
     assert started.json() == {"auth_url": "https://auth.example/x"}
     for _ in range(50):  # the fake completes the browser sign-in shortly after
         status = client.get("/api/lane/status").json()
@@ -176,8 +193,51 @@ def test_signing_in_and_out(lane_client: LaneClient) -> None:
     assert status["signed_in"] is True
     assert status["signing_in"] is False
 
-    assert client.post("/api/lane/sign-out").status_code == 204
+    assert client.post("/api/lane/sign-out", headers=ME).status_code == 204
     assert client.get("/api/lane/status").json()["signed_in"] is False
+
+
+def wait_for_status(client: TestClient, done: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
+    for _ in range(100):
+        status: dict[str, Any] = client.get("/api/lane/status").json()
+        if done(status):
+            return status
+        time.sleep(0.02)
+    raise AssertionError(f"status never settled: {status}")
+
+
+@pytest.mark.parametrize("path", ["sign-in", "sign-in/cancel", "sign-out"])
+def test_signing_in_or_out_needs_the_bidder_header(lane_client: LaneClient, path: str) -> None:
+    # Without a custom header, any website could post these from the buyer's browser.
+    response = lane_client().post(f"/api/lane/{path}")
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "bidder_id_required"
+
+
+def test_a_failed_sign_in_says_so(lane_client: LaneClient) -> None:
+    client = lane_client({"signed_in": False, "sign_in": "fail"})
+    client.post("/api/lane/sign-in", headers=ME)
+    status = wait_for_status(client, lambda s: not s["signing_in"])
+    assert status["signed_in"] is False
+    assert status["sign_in_error"] == "Sign-in didn't finish. Try again."
+
+
+def test_a_sign_in_codex_can_no_longer_finish_is_dropped(lane_client: LaneClient) -> None:
+    client = lane_client({"signed_in": False, "sign_in": "never"})
+    client.post("/api/lane/sign-in", headers=ME)
+    assert client.get("/api/lane/status").json()["signing_in"] is True
+    lane = client.app.state.lane  # type: ignore[attr-defined]
+    lane._client._process.kill()
+    # The first call can still meet the dying process (a 503); then Codex starts afresh.
+    wait_for_status(client, lambda s: s.get("available") is True and not s["signing_in"])
+
+
+def test_a_sign_in_can_be_cancelled(lane_client: LaneClient, log: Log) -> None:
+    client = lane_client({"signed_in": False, "sign_in": "never"})
+    client.post("/api/lane/sign-in", headers=ME)
+    assert client.post("/api/lane/sign-in/cancel", headers=ME).status_code == 204
+    assert client.get("/api/lane/status").json()["signing_in"] is False
+    assert log.requests("account/login/cancel") == [{"loginId": "login-1"}]
 
 
 def test_models_list_each_models_efforts(lane_client: LaneClient) -> None:
@@ -249,8 +309,47 @@ def test_only_real_vehicles_are_recommended_at_most_four(lane_client: LaneClient
     picks += [{"vehicle_id": i, "reason": "Real"} for i in [ids[0], ids[0], *ids[1:]]]
     client = lane_client({"turns": [[{"reply": {"message": "Here.", "picks": picks}}]]})
     _, reply = final(ask(client))
-    assert [p["vehicle"]["id"] for p in reply["picks"]] == ids[:3]
+    # The made-up and the repeated one don't take places: the next real cars fill them.
+    assert [p["vehicle"]["id"] for p in reply["picks"]] == ids[:4]
     assert reply["search"] is None  # no search behind these picks
+
+
+def test_the_search_link_is_only_given_for_the_search_the_picks_came_from(
+    lane_client: LaneClient,
+) -> None:
+    client = lane_client()
+    # The tool's search is the run list's query: the first three are what Lane is shown.
+    everything = [
+        v["id"] for v in client.get("/api/vehicles", params={"page_size": 10}).json()["items"]
+    ]
+    found, elsewhere = everything[:3], everything[5]
+    scenario = {
+        "turns": [
+            [
+                {"tool": "search_vehicles", "arguments": {"limit": 3}},
+                {
+                    "reply": {
+                        "message": "Here.",
+                        "kind": "recommend",
+                        "picks": [{"vehicle_id": found[0], "reason": "From the search"}],
+                    }
+                },
+            ],
+            [
+                {"tool": "search_vehicles", "arguments": {"limit": 3}},
+                {
+                    "reply": {
+                        "message": "Here.",
+                        "kind": "recommend",
+                        "picks": [{"vehicle_id": elsewhere, "reason": "Not in that search"}],
+                    }
+                },
+            ],
+        ]
+    }
+    client = lane_client(scenario)
+    assert final(ask(client))[1]["search"] is not None
+    assert final(ask(client))[1]["search"] is None
 
 
 def test_picks_by_lot_number_count_and_unknown_ones_are_logged(
@@ -374,6 +473,7 @@ def test_a_conversation_survives_codex_restarting(lane_client: LaneClient, log: 
         if not client.app.state.lane._client.running:  # type: ignore[attr-defined]
             break
         time.sleep(0.02)
+    assert not client.app.state.lane._client.running  # type: ignore[attr-defined]
     assert final(ask(client, "after the crash"))[0] == "reply"
     assert len(log.requests("thread/start")) == 2  # a new thread in the new process
 
@@ -410,6 +510,32 @@ def test_a_bad_tool_call_goes_back_to_the_model(lane_client: LaneClient, log: Lo
     assert "No vehicle with that id" in unknown["contentItems"][0]["text"]
     assert invalid["success"] is False
     assert "year_min must not exceed year_max" in invalid["contentItems"][0]["text"]
+
+
+def test_a_tool_that_crashes_is_logged_and_tells_the_model_nothing_internal(
+    lane_client: LaneClient,
+    log: Log,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def broken(*_: Any, **__: Any) -> Any:
+        raise RuntimeError("SELECT secret FROM vehicles")
+
+    monkeypatch.setattr(agent_module, "run_tool", broken)
+    client = lane_client({"turns": [[{"tool": "search_vehicles"}, {"text": "sorry"}]]})
+    ask(client)
+    [result] = log.tool_results()
+    assert result == {
+        "success": False,
+        "contentItems": [{"type": "inputText", "text": "The tool failed. Try a different search."}],
+    }
+    assert "Lane's search_vehicles tool failed" in caplog.text
+    assert "SELECT secret" in caplog.text  # the traceback is in the log, not sent to the model
+
+
+def test_a_failed_turn_is_logged(lane_client: LaneClient, caplog: pytest.LogCaptureFixture) -> None:
+    ask(lane_client({"turns": [[{"fail": "badRequest"}]]}))
+    assert "Lane turn turn-0 failed" in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -453,15 +579,131 @@ def test_stop_ends_the_answer(lane_client: LaneClient) -> None:
     )
 
 
-def test_a_late_completion_of_a_stopped_turn_doesnt_end_the_next(
-    lane_client: LaneClient, log: Log
-) -> None:
-    # The first turn is stopped by Lane itself, which doesn't wait for its completion; the
-    # second must still get its own reply.
-    scenario = {"turns": [[{"forbidden": "webSearch"}], [{"text": "second answer"}]]}
+def test_a_late_completion_of_a_stopped_turn_doesnt_end_the_next(lane_client: LaneClient) -> None:
+    # Lane stops the first turn itself and moves on; its completion arrives 0.3s later, while the
+    # second turn (which takes 0.6s) is listening. Taken for the second turn's own, it would end
+    # that turn with no reply.
+    scenario = {
+        "turns": [
+            [{"forbidden": "webSearch", "complete_after": 0.3}],
+            [{"sleep": 0.6}, {"text": "second answer"}],
+        ]
+    }
     client = lane_client(scenario)
     assert final(ask(client))[0] == "problem"
-    assert final(ask(client))[1]["message"] == "second answer"
+    assert final(ask(client)) == (
+        "reply",
+        {"type": "reply", "message": "second answer", "picks": [], "search": None},
+    )
+
+
+def wait_for_log(log: Log, method: str, count: int = 1) -> list[dict[str, Any]]:
+    """The fake's requests of `method`, once it has received `count` of them."""
+    for _ in range(150):
+        found = log.requests(method)
+        if len(found) >= count:
+            return found
+        time.sleep(0.02)
+    raise AssertionError(f"Codex never got {method}")
+
+
+def ask_in_background(client: TestClient, events: list[tuple[str, Any]]) -> threading.Thread:
+    reader = threading.Thread(target=lambda: events.extend(ask(client)))
+    reader.start()
+    return reader
+
+
+def test_stop_before_the_turn_has_started_still_stops_it(lane_client: LaneClient, log: Log) -> None:
+    client = lane_client({"turn_start_delay": 0.5, "turns": [[{"hang": True}]]})
+    events: list[tuple[str, Any]] = []
+    reader = ask_in_background(client, events)
+    wait_for_log(log, "turn/start")  # asked, but Codex hasn't answered with the turn's id yet
+    assert (
+        client.post(f"/api/lane/conversations/{CONVERSATION}/stop", headers=ME).status_code == 204
+    )
+    reader.join(5)
+    assert final(events)[1]["code"] == "lane_stopped"
+    assert wait_for_log(log, "turn/interrupt") == [{"threadId": "thread-0", "turnId": "turn-0"}]
+
+
+def test_leaving_mid_answer_stops_the_turn(lane_client: LaneClient, log: Log) -> None:
+    client = lane_client({"turns": [[{"tool": "search_vehicles"}, {"hang": True}]]})
+    body = {"conversation_id": CONVERSATION, "text": "hi"}
+    with client.stream("POST", "/api/lane/messages", json=body, headers=ME) as response:
+        for line in response.iter_lines():
+            if line.startswith("data:"):
+                break  # the first step arrived; the buyer closes the tab
+    assert wait_for_log(log, "turn/interrupt") == [{"threadId": "thread-0", "turnId": "turn-0"}]
+
+
+def test_leaving_while_lane_matches_its_picks_stops_that_turn(
+    lane_client: LaneClient, log: Log
+) -> None:
+    no_picks = {"message": "These fit.", "kind": "recommend", "picks": []}
+    client = lane_client({"turns": [[{"reply": no_picks}], [{"hang": True}]]})
+    body = {"conversation_id": CONVERSATION, "text": "hi"}
+    with client.stream("POST", "/api/lane/messages", json=body, headers=ME) as response:
+        for line in response.iter_lines():
+            if "Matching the picks" in line:
+                break
+    assert wait_for_log(log, "turn/interrupt") == [{"threadId": "thread-0", "turnId": "turn-1"}]
+
+
+def test_a_silent_turn_times_out(
+    lane_client: LaneClient, log: Log, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(agent_module, "TURN_IDLE_SECONDS", 0.3)
+    client = lane_client({"turns": [[{"hang": True}]]})
+    assert final(ask(client)) == (
+        "problem",
+        {"type": "problem", "code": "lane_failed", "message": "Lane took too long. Try again."},
+    )
+    assert log.requests("turn/interrupt") == [{"threadId": "thread-0", "turnId": "turn-0"}]
+
+
+def test_codex_crashing_mid_answer_ends_it_and_the_chat_recovers(
+    lane_client: LaneClient, log: Log, tmp_path: Path
+) -> None:
+    client = lane_client({"turns": [[{"hang": True}]]})
+    events: list[tuple[str, Any]] = []
+    reader = ask_in_background(client, events)
+    wait_for_log(log, "turn/start")
+    client.app.state.lane._client._process.kill()  # type: ignore[attr-defined]
+    reader.join(5)
+    assert final(events)[1]["code"] == "lane_failed"
+    # The restarted Codex reads its script afresh: this time the turn answers.
+    (tmp_path / "scenario.json").write_text(json.dumps({"turns": [[{"text": "recovered"}]]}))
+    assert final(ask(client))[1]["message"] == "recovered"
+    assert len(log.requests("thread/start")) == 2
+
+
+def test_a_second_message_waits_for_the_first(lane_client: LaneClient, log: Log) -> None:
+    client = lane_client({"turns": [[{"hang": True}]]})
+    events: list[tuple[str, Any]] = []
+    reader = ask_in_background(client, events)
+    wait_for_log(log, "turn/start")
+    assert final(ask(client)) == (
+        "problem",
+        {
+            "type": "problem",
+            "code": "lane_busy",
+            "message": "Lane is still answering. Wait or stop.",
+        },
+    )
+    client.post(f"/api/lane/conversations/{CONVERSATION}/stop", headers=ME)
+    reader.join(5)
+
+
+def test_codex_unloads_the_threads_of_forgotten_conversations(
+    lane_client: LaneClient, log: Log, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(agent_module, "MAX_CONVERSATIONS", 1)
+    client = lane_client()
+    ask(client)
+    body = {"conversation_id": "another-chat", "text": "hi"}
+    with client.stream("POST", "/api/lane/messages", json=body, headers=ME) as response:
+        response.read()  # the second chat pushes the first one out
+    assert wait_for_log(log, "thread/unsubscribe") == [{"threadId": "thread-0"}]
 
 
 def test_a_conversation_belongs_to_one_buyer(lane_client: LaneClient) -> None:
@@ -472,6 +714,21 @@ def test_a_conversation_belongs_to_one_buyer(lane_client: LaneClient) -> None:
     with client.stream("POST", "/api/lane/messages", json=body, headers=other) as response:
         lines = [line for line in response.iter_lines() if line.startswith("data:")]
     assert json.loads(lines[-1].removeprefix("data:"))["code"] == "lane_failed"
+
+
+def test_another_buyer_cant_stop_my_answer(lane_client: LaneClient, log: Log) -> None:
+    client = lane_client({"turns": [[{"sleep": 0.5}, {"text": "all yours"}]]})
+    events: list[tuple[str, Any]] = []
+    reader = ask_in_background(client, events)
+    wait_for_log(log, "turn/start")
+    other = {"X-Bidder-Id": "browser-other-0002"}
+    assert (
+        client.post(f"/api/lane/conversations/{CONVERSATION}/stop", headers=other).status_code
+        == 204
+    )
+    reader.join(5)
+    assert final(events)[1]["message"] == "all yours"
+    assert log.requests("turn/interrupt") == []
 
 
 # Units ----------------------------------------------------------------------------------------

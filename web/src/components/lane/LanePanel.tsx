@@ -2,8 +2,10 @@ import { ArrowUp, MessageCircle, Settings2, Square, SquarePen, X } from 'lucide-
 import { AnimatePresence, m } from 'motion/react'
 import { Dialog } from 'radix-ui'
 import {
+  memo,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -13,35 +15,52 @@ import {
   type ReactNode,
 } from 'react'
 import { Link, useMatch } from 'react-router'
-import { useLaneModels, useLaneSignIn, useLaneSignOut, useLaneStatus } from '../../api/lane'
+import { ApiError } from '../../api/client'
+import {
+  useLaneCancelSignIn,
+  useLaneModels,
+  useLaneSignIn,
+  useLaneSignOut,
+  useLaneStatus,
+} from '../../api/lane'
 import type { LaneStatus } from '../../api/types'
 import { cn } from '../../lib/cn'
 import { formatClockTime } from '../../lib/format'
 import { SelectField } from '../SelectField'
 import { LanePickCard } from './LanePickCard'
-import { runListUrl, useLane, type Turn } from './laneState'
+import { runListUrl, useLane, useLaneOpen, type Turn } from './laneState'
 
 const WIDE = '(min-width: 80rem)'
+/** The server's limit on a message (LaneMessage.text in server/app/lane/schemas.py). */
+const MAX_MESSAGE_LENGTH = 2000
 
 /**
  * From 1280px Lane docks beside the page, which keeps enough room to work. Narrower, it slides
  * over the page as a sheet (the whole screen on phones).
  */
 function useIsWide(): boolean {
-  return useSyncExternalStore(
-    (onChange) => {
-      if (typeof window.matchMedia !== 'function') return () => undefined
-      const query = window.matchMedia(WIDE)
-      query.addEventListener('change', onChange)
-      return () => query.removeEventListener('change', onChange)
-    },
-    () => typeof window.matchMedia === 'function' && window.matchMedia(WIDE).matches,
-  )
+  return useSyncExternalStore(subscribeWide, isWide)
+}
+
+let wideQuery: MediaQueryList | null | undefined // made on first use, then shared
+
+function query(): MediaQueryList | null {
+  wideQuery ??= typeof window.matchMedia === 'function' ? window.matchMedia(WIDE) : null
+  return wideQuery
+}
+
+function subscribeWide(onChange: () => void): () => void {
+  query()?.addEventListener('change', onChange)
+  return () => query()?.removeEventListener('change', onChange)
+}
+
+function isWide(): boolean {
+  return query()?.matches ?? false
 }
 
 /** The header button that opens Lane. */
 export function LaneButton() {
-  const { open, setOpen, buttonRef } = useLane()
+  const { open, setOpen, buttonRef } = useLaneOpen()
   return (
     <button
       ref={buttonRef}
@@ -133,6 +152,7 @@ export function LanePanel() {
                   status={status.data}
                   loading={status.isPending}
                   failed={status.isError}
+                  reason={status.error instanceof ApiError ? status.error.message : undefined}
                   retry={() => void status.refetch()}
                 />
               </m.section>
@@ -181,11 +201,14 @@ function Body({
   status,
   loading,
   failed,
+  reason,
   retry,
 }: {
   status: LaneStatus | undefined
   loading: boolean
   failed: boolean
+  /** The server's own explanation, when it gave one (e.g. Codex didn't answer). */
+  reason?: string
   retry: () => void
 }) {
   if (loading) {
@@ -194,6 +217,7 @@ function Body({
   if (failed || !status) {
     return (
       <Notice title="Couldn't reach Lane">
+        {reason && <p>{reason}</p>}
         <button type="button" onClick={retry} className="btn btn-plain mt-3">
           Try again
         </button>
@@ -220,6 +244,7 @@ function Notice({ title, children }: { title: string; children?: ReactNode }) {
 
 function SignIn({ status }: { status: LaneStatus }) {
   const signIn = useLaneSignIn()
+  const cancel = useLaneCancelSignIn()
 
   const start = () => {
     // Open the tab now, inside the click: opened after the request returns, it would be
@@ -227,6 +252,11 @@ function SignIn({ status }: { status: LaneStatus }) {
     const tab = window.open('', '_blank')
     signIn.mutate(undefined, {
       onSuccess: ({ auth_url }) => {
+        // Only ever navigate to a web page: never a javascript: URL in this origin.
+        if (!/^https:\/\//i.test(auth_url)) {
+          tab?.close()
+          return
+        }
         if (tab) {
           tab.opener = null
           tab.location.href = auth_url
@@ -248,9 +278,30 @@ function SignIn({ status }: { status: LaneStatus }) {
         Lane answers with your ChatGPT account. Sign in once; it stays signed in on this computer.
       </p>
       {status.signing_in ? (
-        <p role="status" className="bg-surface-sunk rounded-[var(--radius-control)] px-3 py-2">
-          Finish signing in on the ChatGPT tab that opened. This updates on its own.
-        </p>
+        <div className="space-y-3">
+          <p role="status" className="bg-surface-sunk rounded-[var(--radius-control)] px-3 py-2">
+            Finish signing in on the ChatGPT tab that opened. This updates on its own.
+          </p>
+          {/* A closed or lost tab would otherwise leave this waiting for good. */}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={start}
+              disabled={signIn.isPending}
+              className="btn btn-plain flex-1"
+            >
+              Open ChatGPT again
+            </button>
+            <button
+              type="button"
+              onClick={() => cancel.mutate()}
+              disabled={cancel.isPending}
+              className="btn text-ink-muted hover:text-ink"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       ) : (
         <button
           type="button"
@@ -391,7 +442,7 @@ function Chat() {
   }, [progress])
 
   // Leaving for a car on a phone: the full-screen panel would cover it.
-  const onOpen = wide ? undefined : () => setOpen(false)
+  const onOpen = useMemo(() => (wide ? undefined : () => setOpen(false)), [wide, setOpen])
   const starters = vehicleId ? ['Is this car a good buy?', ...STARTERS.slice(0, 2)] : STARTERS
 
   return (
@@ -432,7 +483,8 @@ function Chat() {
   )
 }
 
-function TurnView({ turn, onOpen }: { turn: Turn; onOpen?: () => void }) {
+// Memoised: while an answer streams in, only its own turn re-renders, not every earlier one.
+const TurnView = memo(function TurnView({ turn, onOpen }: { turn: Turn; onOpen?: () => void }) {
   if (turn.role === 'buyer') {
     return (
       <li className="flex justify-end">
@@ -476,7 +528,7 @@ function TurnView({ turn, onOpen }: { turn: Turn; onOpen?: () => void }) {
         ))}
     </li>
   )
-}
+})
 
 /** Screen readers hear each finished answer once, not every word as it streams in. */
 function Announcer({ turn }: { turn: Turn | undefined }) {
@@ -534,7 +586,7 @@ function Composer({
         onChange={(event) => setText(event.target.value)}
         onKeyDown={onKeyDown}
         rows={1}
-        maxLength={2000}
+        maxLength={MAX_MESSAGE_LENGTH}
         placeholder="Describe the car you want"
         className="field [field-sizing:content] h-auto max-h-40 min-h-10 resize-none py-2"
       />

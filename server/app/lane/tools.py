@@ -15,7 +15,6 @@ from sqlalchemy.orm import Session
 
 from app.domain.auction import AuctionStatus
 from app.models import Bid, Vehicle, WatchlistEntry
-from app.routers.me import my_bids, my_watchlist
 from app.schemas import InventoryQuery, SortOrder, VehicleSummary
 from app.services.inventory import (
     FACET_COLUMNS,
@@ -24,6 +23,7 @@ from app.services.inventory import (
     summarize,
     vehicle_detail,
 )
+from app.services.me import my_bids, my_watchlist
 
 SEARCH_LIMIT = 20
 DEFAULT_SEARCH_LIMIT = 8

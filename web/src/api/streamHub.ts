@@ -1,15 +1,23 @@
 import { DEFAULT_HEARTBEAT_MS, announcedHeartbeat } from './heartbeat'
+import type { AuctionEvent } from './types'
 
 /**
- * One live stream for every tab. Browsers allow about six open connections per site, and each
- * tab used to hold one /api/events stream for good: with enough tabs open, a new tab's requests
- * queued behind the streams and never ran ("Loading vehicles…" forever). The hub runs in a
+ * One live stream for every tab. Browsers allow about six open connections per site, and a
+ * stream per tab holds one for good: with enough tabs open, a new tab's requests would queue
+ * behind the streams and never run ("Loading vehicles…" forever). The hub runs in a
  * SharedWorker (liveStream.worker.ts), keeps one EventSource per URL, and relays it to the tabs
  * over their ports. Tabs keep all their own logic (watchdog, reconnects, reseeds): to them the
  * relay looks like an EventSource (sharedStream.ts).
  *
  * This file is the hub's logic only, with no worker globals, so tests can drive it.
  */
+
+/**
+ * The tab↔worker protocol's version, part of the SharedWorker's name: a tab only ever joins a
+ * worker that speaks its protocol (in dev the worker's URL doesn't change between edits, and a
+ * running worker outlives any one tab). Bump it with any change to the messages below.
+ */
+export const PROTOCOL_VERSION = 2
 
 /**
  * Why a tab wants a new stream: `quiet` (its watchdog heard nothing, which a tab that was asleep
@@ -36,7 +44,7 @@ export type FromHub =
   | { type: 'error'; id: number; readyState: number }
   | { type: 'unavailable'; id: number }
 
-export interface Port {
+interface Port {
   postMessage(message: FromHub): void
   onmessage: ((event: MessageEvent<ToHub>) => void) | null
   start?(): void
@@ -57,9 +65,15 @@ export const CLOSED = 2
 
 /**
  * The server's event names (server/app/routers/events.py). An EventSource can only listen by
- * name, so a new server event must be added here too for tabs on the shared stream to get it.
+ * name, so each one is listed: a new auction event type fails to compile until it's added here.
  */
-export const EVENT_NAMES = ['hello', 'ping', 'bid', 'sold'] as const
+const EVENTS: Record<'hello' | 'ping' | AuctionEvent['type'], true> = {
+  hello: true,
+  ping: true,
+  bid: true,
+  sold: true,
+}
+export const EVENT_NAMES = Object.keys(EVENTS) as (keyof typeof EVENTS)[]
 
 /** A connection attempt still not open after this long is taken as hung, and may be replaced. */
 export const CONNECT_TIMEOUT_MS = 10_000

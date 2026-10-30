@@ -46,7 +46,9 @@ npm install -g @openai/codex   # or: brew install --cask codex
 Then click **Ask Lane** in the app and **Sign in with ChatGPT**. Lane stays signed in on this
 computer (in `server/.lane/`, separate from your own Codex settings) and uses your ChatGPT plan's
 usage. It's meant for local demos. The rest of the app works without it; `LANE_ENABLED=0` turns
-it off.
+it off. If Lane says Codex didn't start, its output is in `server/.lane/app-server.log`.
+`LANE_CODEX_COMMAND` (default `codex`) and `LANE_HOME` (default `server/.lane`) point Lane at
+another Codex or sign-in folder.
 
 ## What I built
 
@@ -128,11 +130,11 @@ The ones that shaped the product:
 
 ## Testing
 
-- **API: 161 pytest tests.** Auction rules, schedule normalization, seeding invariants, search
+- **API: 180 pytest tests.** Auction rules, schedule normalization, seeding invariants, search
   and facets, every bid rejection, idempotency, soft close, Buy Now, the concurrency race, SSE
   personalization and backpressure, and simulator behaviour. Lane's tests run against a fake
   Codex (`server/tests/fake_codex.py`), so they never need an account. Warnings are errors.
-- **Web: 175 Vitest tests.** Formatting and rules, the API client, the clock sync, URL filter
+- **Web: 191 Vitest tests.** Formatting and rules, the API client, the clock sync, URL filter
   state, the run list, the bid flow (two-step confirm, outbid recovery, amount pinning), live
   events through a fake `EventSource`, the stream shared between tabs, toasts, My bids, Lane's
   panel, and the logo matching the browser tab's icon.

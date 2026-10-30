@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { bidderId } from '../lib/bidder'
 import { ApiError, api, send } from './client'
-import type { LaneMessage } from './schema'
 import type {
+  LaneMessage,
   LaneModel,
   LaneProblem,
   LaneReply,
@@ -41,6 +41,14 @@ export function useLaneSignIn() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async () => (await send<LaneSignIn>('/lane/sign-in', { method: 'POST' })).data,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: laneKeys.status }),
+  })
+}
+
+export function useLaneCancelSignIn() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => send('/lane/sign-in/cancel', { method: 'POST' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: laneKeys.status }),
   })
 }

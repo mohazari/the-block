@@ -1,5 +1,5 @@
 import { Star } from 'lucide-react'
-import { Link } from 'react-router'
+import { Link, useMatch } from 'react-router'
 import { useWatch } from '../../api/queries'
 import type { VehicleSummary } from '../../api/types'
 import { AuctionClock } from '../../components/auction/AuctionClock'
@@ -76,6 +76,8 @@ export function VehicleRow({ vehicle, note }: { vehicle: VehicleSummary; note?: 
   const hasBids = auction.current_bid !== null
   const name = vehicleName(vehicle)
   const light = conditionLight(vehicle)
+  // The vehicle page's "Run list" link goes back (keeping filters and page) only from here.
+  const onRunList = useMatch('/') !== null
 
   return (
     <article
@@ -113,7 +115,7 @@ export function VehicleRow({ vehicle, note }: { vehicle: VehicleSummary; note?: 
             {/* Stretched link: the whole row opens the vehicle, with one link for screen readers. */}
             <Link
               to={`/vehicles/${vehicle.id}`}
-              state={{ fromRunList: true }}
+              state={onRunList ? { fromRunList: true } : undefined}
               className="after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-offset-[-2px] focus-visible:after:outline-[var(--focus)]"
             >
               {name}

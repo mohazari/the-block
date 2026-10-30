@@ -309,8 +309,47 @@ def test_only_real_vehicles_are_recommended_at_most_four(lane_client: LaneClient
     picks += [{"vehicle_id": i, "reason": "Real"} for i in [ids[0], ids[0], *ids[1:]]]
     client = lane_client({"turns": [[{"reply": {"message": "Here.", "picks": picks}}]]})
     _, reply = final(ask(client))
-    assert [p["vehicle"]["id"] for p in reply["picks"]] == ids[:3]
+    # The made-up and the repeated one don't take places: the next real cars fill them.
+    assert [p["vehicle"]["id"] for p in reply["picks"]] == ids[:4]
     assert reply["search"] is None  # no search behind these picks
+
+
+def test_the_search_link_is_only_given_for_the_search_the_picks_came_from(
+    lane_client: LaneClient,
+) -> None:
+    client = lane_client()
+    # The tool's search is the run list's query: the first three are what Lane is shown.
+    everything = [
+        v["id"] for v in client.get("/api/vehicles", params={"page_size": 10}).json()["items"]
+    ]
+    found, elsewhere = everything[:3], everything[5]
+    scenario = {
+        "turns": [
+            [
+                {"tool": "search_vehicles", "arguments": {"limit": 3}},
+                {
+                    "reply": {
+                        "message": "Here.",
+                        "kind": "recommend",
+                        "picks": [{"vehicle_id": found[0], "reason": "From the search"}],
+                    }
+                },
+            ],
+            [
+                {"tool": "search_vehicles", "arguments": {"limit": 3}},
+                {
+                    "reply": {
+                        "message": "Here.",
+                        "kind": "recommend",
+                        "picks": [{"vehicle_id": elsewhere, "reason": "Not in that search"}],
+                    }
+                },
+            ],
+        ]
+    }
+    client = lane_client(scenario)
+    assert final(ask(client))[1]["search"] is not None
+    assert final(ask(client))[1]["search"] is None
 
 
 def test_picks_by_lot_number_count_and_unknown_ones_are_logged(

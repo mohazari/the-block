@@ -111,7 +111,8 @@ export function InventoryPage() {
           )}
         </div>
 
-        {data && pages > 1 && (
+        {/* Past the end, the notice above says where the list ends: no "101–30 of 30". */}
+        {data && pages > 1 && page <= pages && (
           <nav aria-label="Pages" className="mt-6 flex items-center justify-between gap-4">
             <PageButton disabled={page <= 1} onClick={() => goToPage(page - 1)}>
               Previous

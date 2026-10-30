@@ -617,14 +617,26 @@ class Lane:
         yield LaneReply(
             message=message,
             picks=picks,
-            search=conversation.last_search if picks else None,
+            search=self._search_behind(conversation, picks),
         )
+
+    @staticmethod
+    def _search_behind(conversation: Conversation, picks: list[LanePick]) -> dict[str, Any] | None:
+        """The search the picks came from, for "see these in the run list": only when its
+        results hold every pick (Lane may have searched again since, for something else)."""
+        last = conversation.last_search
+        if not picks or last is None:
+            return None
+        found = set(last["found"])
+        return last["query"] if all(p.vehicle.id in found for p in picks) else None
 
     async def _resolve(
         self, conversation: Conversation, picks: list[tuple[str, str]]
     ) -> list[LanePick]:
         """Lane's picks as live vehicles; ones that don't exist are dropped (and logged)."""
-        keys = [key for key, _ in picks[:MAX_PICKS]]
+        # More than shown are looked up: a duplicate or a made-up id leaves room for the next.
+        picks = picks[: MAX_PICKS * 3]
+        keys = [key for key, _ in picks]
         now = self._clock.now()
         found = await self._read(
             lambda session: summaries(session, keys, now, conversation.bidder_id)
@@ -633,11 +645,11 @@ class Lane:
         if unknown:
             logger.warning("Lane picked vehicles that don't exist: %s", unknown)
         resolved: list[LanePick] = []
-        for key, reason in picks[:MAX_PICKS]:
+        for key, reason in picks:
             vehicle = found.get(key)
             if vehicle is not None and all(p.vehicle.id != vehicle.id for p in resolved):
                 resolved.append(LanePick(vehicle=vehicle, reason=reason))
-        return resolved
+        return resolved[:MAX_PICKS]
 
     async def _repair(self, conversation: Conversation) -> list[tuple[str, str]]:
         """One follow-up turn asking for the picks the last reply left out (not streamed)."""
@@ -709,7 +721,10 @@ class Lane:
             return {"success": False, "contentItems": [{"type": "inputText", "text": failed}]}
         if name == "search_vehicles":
             query = search_query(arguments)
-            conversation.last_search = query.model_dump(
-                mode="json", exclude_defaults=True, exclude={"page", "page_size"}
-            )
+            conversation.last_search = {
+                "query": query.model_dump(
+                    mode="json", exclude_defaults=True, exclude={"page", "page_size"}
+                ),
+                "found": [vehicle["id"] for vehicle in result["vehicles"]],
+            }
         return {"success": True, "contentItems": [{"type": "inputText", "text": as_text(result)}]}

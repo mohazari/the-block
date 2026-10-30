@@ -128,6 +128,8 @@ describe('InventoryPage', () => {
     renderRoute('/?page=5')
     expect(await screen.findByText('Page 5 is past the end of the list')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Go to the first page' })).toBeInTheDocument()
+    // No pager with a range that runs backwards ("101–30 of 30").
+    expect(screen.queryByRole('navigation', { name: 'Pages' })).not.toBeInTheDocument()
   })
 
   it('searches a long make list, keeping ticked makes in view', async () => {

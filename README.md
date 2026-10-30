@@ -127,11 +127,11 @@ The ones that shaped the product:
 
 ## Testing
 
-- **API: 155 pytest tests.** Auction rules, schedule normalization, seeding invariants, search
+- **API: 161 pytest tests.** Auction rules, schedule normalization, seeding invariants, search
   and facets, every bid rejection, idempotency, soft close, Buy Now, the concurrency race, SSE
   personalization and backpressure, and simulator behaviour. Lane's tests run against a fake
   Codex (`server/tests/fake_codex.py`), so they never need an account. Warnings are errors.
-- **Web: 144 Vitest tests.** Formatting and rules, the API client, the clock sync, URL filter
+- **Web: 145 Vitest tests.** Formatting and rules, the API client, the clock sync, URL filter
   state, the run list, the bid flow (two-step confirm, outbid recovery, amount pinning), live
   events through a fake `EventSource`, toasts, My bids, and Lane's panel.
 - **End to end: 5 Playwright tests** on desktop and a phone viewport. They find a car, bid,

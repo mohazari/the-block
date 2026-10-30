@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, type RefObject } from 'react'
 import { toSearchParams } from '../../api/client'
 import type { LanePick } from '../../api/types'
 
@@ -54,6 +54,8 @@ export function timeZone(): string | undefined {
 export interface LaneState {
   open: boolean
   setOpen: (open: boolean) => void
+  /** The header button: focus goes back to it when the panel closes. */
+  buttonRef: RefObject<HTMLButtonElement | null>
   turns: Turn[]
   answering: boolean
   choice: Choice

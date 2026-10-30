@@ -6,11 +6,11 @@ writes: bidding, Buy Now and the watchlist stay with the buyer.
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, tzinfo
 from typing import Any
 
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.domain.auction import AuctionStatus
@@ -99,8 +99,13 @@ def _minutes_until(moment: datetime, now: datetime) -> int:
     return max(0, round((moment - now).total_seconds() / 60))
 
 
-def brief(vehicle: VehicleSummary, now: datetime) -> dict[str, Any]:
-    """The facts a buyer weighs, compact enough to send twenty of."""
+def _local(moment: datetime, zone: tzinfo) -> str:
+    return f"{moment.astimezone(zone):%a %Y-%m-%d %H:%M}"
+
+
+def brief(vehicle: VehicleSummary, now: datetime, zone: tzinfo | None = None) -> dict[str, Any]:
+    """The facts a buyer weighs, compact enough to send twenty of. With the buyer's time zone,
+    close and open times are also given on their clock, so "today" needs no arithmetic."""
     auction = vehicle.auction
     facts: dict[str, Any] = {
         "id": vehicle.id,
@@ -125,8 +130,12 @@ def brief(vehicle: VehicleSummary, now: datetime) -> dict[str, Any]:
     }
     if auction.status is AuctionStatus.LIVE:
         facts["ends_in_minutes"] = _minutes_until(auction.ends_at, now)
+        if zone is not None:
+            facts["ends_at_local"] = _local(auction.ends_at, zone)
     elif auction.status is AuctionStatus.UPCOMING:
         facts["opens_in_minutes"] = _minutes_until(auction.starts_at, now)
+        if zone is not None:
+            facts["opens_at_local"] = _local(auction.starts_at, zone)
     if vehicle.watching:
         facts["watching"] = True
     if auction.has_bid:
@@ -151,14 +160,19 @@ def search_query(arguments: dict[str, Any]) -> InventoryQuery:
 
 
 def run_tool(
-    name: str, arguments: dict[str, Any], session: Session, now: datetime, bidder_id: str
+    name: str,
+    arguments: dict[str, Any],
+    session: Session,
+    now: datetime,
+    bidder_id: str,
+    zone: tzinfo | None = None,
 ) -> dict[str, Any]:
     """Run one tool and return its JSON-able result."""
     if name == "search_vehicles":
         result = search_inventory(session, search_query(arguments), now, bidder_id)
         return {
             "total": result.total,
-            "vehicles": [brief(vehicle, now) for vehicle in result.items],
+            "vehicles": [brief(vehicle, now, zone) for vehicle in result.items],
         }
     if name == "get_vehicle":
         vehicle = session.get(Vehicle, str(arguments.get("vehicle_id", "")))
@@ -166,7 +180,7 @@ def run_tool(
             raise ToolError("No vehicle with that id. Use an id from search_vehicles.")
         detail = vehicle_detail(session, vehicle, now, bidder_id)
         return {
-            **brief(detail, now),
+            **brief(detail, now, zone),
             "vin": detail.vin,
             "engine": detail.engine,
             "transmission": detail.transmission,
@@ -180,10 +194,10 @@ def run_tool(
     if name == "my_activity":
         return {
             "bids": [
-                {**brief(bid, now), "your_top_bid": bid.my_top_bid, "standing": bid.standing}
+                {**brief(bid, now, zone), "your_top_bid": bid.my_top_bid, "standing": bid.standing}
                 for bid in my_bids(session, now, bidder_id)
             ],
-            "watching": [brief(item, now) for item in my_watchlist(session, now, bidder_id)],
+            "watching": [brief(v, now, zone) for v in my_watchlist(session, now, bidder_id)],
         }
     raise ToolError(f"There is no tool called {name}.")
 
@@ -201,12 +215,18 @@ def filter_values(session: Session) -> dict[str, list[str]]:
 
 
 def summaries(
-    session: Session, vehicle_ids: list[str], now: datetime, bidder_id: str
+    session: Session, keys: list[str], now: datetime, bidder_id: str
 ) -> dict[str, VehicleSummary]:
-    """Fresh summaries of the vehicles Lane picked, as the buyer would see them. Unknown ids
-    are left out: Lane can only recommend cars that exist."""
-    vehicles = session.scalars(select(Vehicle).where(Vehicle.id.in_(vehicle_ids))).all()
+    """Fresh summaries of the vehicles Lane picked, as the buyer would see them, by the id or
+    lot number Lane gave. Unknown keys are left out: Lane can only recommend cars that exist."""
+    vehicles = session.scalars(
+        select(Vehicle).where(or_(Vehicle.id.in_(keys), Vehicle.lot.in_(keys)))
+    ).all()
     ids = [vehicle.id for vehicle in vehicles]
     watching = ids_for_bidder(session, bidder_id, WatchlistEntry, ids)
     bid_on = ids_for_bidder(session, bidder_id, Bid, ids)
-    return {v.id: summarize(v, now, bidder_id, watching, bid_on) for v in vehicles}
+    found: dict[str, VehicleSummary] = {}
+    for vehicle in vehicles:
+        summary = summarize(vehicle, now, bidder_id, watching, bid_on)
+        found[vehicle.id] = found[vehicle.lot] = summary
+    return found

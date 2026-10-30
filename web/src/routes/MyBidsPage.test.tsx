@@ -1,7 +1,8 @@
 import { screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { MyBid, VehicleSummary } from '../api/types'
-import { auction, stubApi, vehicle, vehicleList } from '../test/fixtures'
+import { auction, stubApi, vehicle, vehicleDetail, vehicleList } from '../test/fixtures'
 import { renderRoute } from '../test/render'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -34,6 +35,27 @@ describe('MyBidsPage', () => {
     const row = within(section).getByRole('article', { name: '2023 Ford F-150' })
     expect(within(row).getByText('Your top bid $22,300')).toBeInTheDocument()
     expect(within(screen.getByRole('link', { name: /My bids/ })).getByText('1')).toBeInTheDocument()
+  })
+
+  it("takes 'Run list' on a car opened from here to the run list, not back here", async () => {
+    vi.stubGlobal(
+      'fetch',
+      stubApi((url) =>
+        url.pathname === '/api/me/bids'
+          ? [outbid]
+          : url.pathname === '/api/me/watchlist'
+            ? []
+            : url.pathname === '/api/vehicles/out'
+              ? vehicleDetail({ id: 'out', model: 'F-150' })
+              : url.pathname === '/api/vehicles'
+                ? vehicleList([vehicle()])
+                : undefined,
+      ).fetch,
+    )
+    renderRoute('/my-bids')
+    await userEvent.click(await screen.findByRole('link', { name: '2023 Ford F-150' }))
+    await userEvent.click(await screen.findByRole('link', { name: 'Run list' }))
+    expect(await screen.findByRole('heading', { name: 'Run list' })).toBeInTheDocument()
   })
 
   it('invites you to the run list when there is nothing to show', async () => {

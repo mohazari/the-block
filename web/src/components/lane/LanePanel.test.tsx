@@ -64,7 +64,7 @@ function eventStream(events: object[], hold = false) {
 }
 
 interface Options {
-  status?: LaneStatus
+  status?: LaneStatus | (() => LaneStatus)
   authUrl?: string
   reply?: () => Response
   onStop?: () => void
@@ -84,7 +84,7 @@ function serve({
       case '/api/vehicles/veh-1':
         return vehicleDetail()
       case '/api/lane/status':
-        return status
+        return typeof status === 'function' ? status() : status
       case '/api/lane/models':
         return MODELS
       case '/api/lane/sign-in':
@@ -378,5 +378,99 @@ describe('Lane', () => {
     await userEvent.click(lane.getByRole('button', { name: 'New chat' }))
     expect(lane.queryByRole('list', { name: 'Conversation' })).not.toBeInTheDocument()
     expect(lane.getByRole('list', { name: 'Suggestions' })).toBeInTheDocument()
+  })
+
+  it('closes when a pick is opened on a phone, where it would cover the car', async () => {
+    const pick = vehicle({ id: 'veh-1', model: 'Escape' })
+    serve({
+      reply: () =>
+        eventStream([
+          {
+            type: 'reply',
+            message: 'This one.',
+            picks: [{ vehicle: pick, reason: 'Fits.' }],
+            search: null,
+          },
+        ]).response,
+    })
+    renderRoute('/')
+    const lane = await openLane()
+    await userEvent.type(await lane.findByRole('textbox', { name: 'Message Lane' }), 'Hi{Enter}')
+    const card = await lane.findByRole('article', { name: '2023 Ford Escape' })
+    await userEvent.click(within(card).getByRole('link'))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('forgets a saved model the plan no longer offers', async () => {
+    localStorage.setItem('the-block:lane-choice', JSON.stringify({ model: 'gone', effort: 'high' }))
+    let replies = 0
+    const { sent } = serve({
+      reply: () =>
+        replies++ === 0
+          ? new Response(
+              JSON.stringify({
+                error: { code: 'invalid_choice', message: 'That model is no longer offered.' },
+              }),
+              { status: 400 },
+            )
+          : eventStream([{ type: 'reply', message: 'Fine.', picks: [], search: null }]).response,
+    })
+    renderRoute('/')
+    const lane = await openLane()
+    const box = await lane.findByRole('textbox', { name: 'Message Lane' })
+    await userEvent.type(box, 'Hi{Enter}')
+    expect(
+      await conversation(lane).findByText('That model is no longer offered.'),
+    ).toBeInTheDocument()
+    await userEvent.type(box, 'Again{Enter}')
+    await waitFor(() => expect(sent).toHaveLength(2))
+    expect(sent[0]).toMatchObject({ model: 'gone', effort: 'high' })
+    expect(sent[1]).toMatchObject({ model: null, effort: null }) // the plan's defaults
+  })
+
+  it('never leaves an answer spinning when the stream ends without one', async () => {
+    serve({
+      reply: () => eventStream([{ type: 'step', label: 'Searching the run list' }]).response,
+    })
+    renderRoute('/')
+    const lane = await openLane()
+    await userEvent.type(await lane.findByRole('textbox', { name: 'Message Lane' }), 'Hi{Enter}')
+    expect(
+      await conversation(lane).findByText("Lane couldn't answer that. Try again."),
+    ).toBeInTheDocument()
+    expect(lane.getByRole('button', { name: 'Send' })).toBeInTheDocument()
+  })
+
+  it('stops the answer when "New chat" is pressed while Lane is answering', async () => {
+    const stream = eventStream([{ type: 'step', label: 'Searching the run list' }], true)
+    const onStop = vi.fn()
+    serve({ reply: () => stream.response, onStop })
+    renderRoute('/')
+    const lane = await openLane()
+    await userEvent.type(await lane.findByRole('textbox', { name: 'Message Lane' }), 'Hi{Enter}')
+    expect(await lane.findByText('Searching the run list…')).toBeInTheDocument()
+    await userEvent.click(lane.getByRole('button', { name: 'New chat' }))
+    await waitFor(() => expect(onStop).toHaveBeenCalled())
+    stream.close() // the old answer's end arrives late: it mustn't show in the new chat
+    expect(lane.getByRole('list', { name: 'Suggestions' })).toBeInTheDocument()
+    expect(lane.queryByText('Stopped.')).not.toBeInTheDocument()
+    expect(lane.getByRole('button', { name: 'Send' })).toBeInTheDocument()
+  })
+
+  it('asks the buyer to sign in again when Lane finds the account signed out', async () => {
+    let signedIn = true
+    serve({
+      status: () => ({ ...SIGNED_IN, signed_in: signedIn }),
+      reply: () => {
+        signedIn = false
+        return eventStream([
+          { type: 'problem', code: 'lane_signed_out', message: 'Sign in to ChatGPT again.' },
+        ]).response
+      },
+    })
+    renderRoute('/')
+    const lane = await openLane()
+    await userEvent.type(await lane.findByRole('textbox', { name: 'Message Lane' }), 'Hi{Enter}')
+    expect(await lane.findByRole('button', { name: 'Sign in with ChatGPT' })).toBeInTheDocument()
   })
 })

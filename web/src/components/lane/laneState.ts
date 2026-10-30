@@ -51,11 +51,18 @@ export function timeZone(): string | undefined {
   }
 }
 
-export interface LaneState {
+/**
+ * Whether Lane is open, in a context of its own: the page shell needs it, and mustn't re-render
+ * with every word of an answer.
+ */
+export interface LaneOpenState {
   open: boolean
   setOpen: (open: boolean) => void
   /** The header button: focus goes back to it when the panel closes. */
   buttonRef: RefObject<HTMLButtonElement | null>
+}
+
+export interface LaneChatState {
   turns: Turn[]
   answering: boolean
   choice: Choice
@@ -65,12 +72,22 @@ export interface LaneState {
   newChat: () => void
 }
 
-export const LaneContext = createContext<LaneState | null>(null)
+export type LaneState = LaneOpenState & LaneChatState
 
-export function useLane(): LaneState {
-  const state = useContext(LaneContext)
-  if (!state) throw new Error('useLane needs a LaneProvider')
+export const LaneOpenContext = createContext<LaneOpenState | null>(null)
+export const LaneChatContext = createContext<LaneChatState | null>(null)
+
+export function useLaneOpen(): LaneOpenState {
+  const state = useContext(LaneOpenContext)
+  if (!state) throw new Error('useLaneOpen needs a LaneProvider')
   return state
+}
+
+/** Everything about Lane, the conversation included: for the panel itself. */
+export function useLane(): LaneState {
+  const chat = useContext(LaneChatContext)
+  if (!chat) throw new Error('useLane needs a LaneProvider')
+  return { ...useLaneOpen(), ...chat }
 }
 
 /** The run list's URL for Lane's search: the same filters, so the buyer can browse them all. */

@@ -2,8 +2,10 @@ import { ArrowUp, MessageCircle, Settings2, Square, SquarePen, X } from 'lucide-
 import { AnimatePresence, m } from 'motion/react'
 import { Dialog } from 'radix-ui'
 import {
+  memo,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -26,7 +28,7 @@ import { cn } from '../../lib/cn'
 import { formatClockTime } from '../../lib/format'
 import { SelectField } from '../SelectField'
 import { LanePickCard } from './LanePickCard'
-import { runListUrl, useLane, type Turn } from './laneState'
+import { runListUrl, useLane, useLaneOpen, type Turn } from './laneState'
 
 const WIDE = '(min-width: 80rem)'
 
@@ -35,20 +37,28 @@ const WIDE = '(min-width: 80rem)'
  * over the page as a sheet (the whole screen on phones).
  */
 function useIsWide(): boolean {
-  return useSyncExternalStore(
-    (onChange) => {
-      if (typeof window.matchMedia !== 'function') return () => undefined
-      const query = window.matchMedia(WIDE)
-      query.addEventListener('change', onChange)
-      return () => query.removeEventListener('change', onChange)
-    },
-    () => typeof window.matchMedia === 'function' && window.matchMedia(WIDE).matches,
-  )
+  return useSyncExternalStore(subscribeWide, isWide)
+}
+
+let wideQuery: MediaQueryList | null | undefined // made on first use, then shared
+
+function query(): MediaQueryList | null {
+  wideQuery ??= typeof window.matchMedia === 'function' ? window.matchMedia(WIDE) : null
+  return wideQuery
+}
+
+function subscribeWide(onChange: () => void): () => void {
+  query()?.addEventListener('change', onChange)
+  return () => query()?.removeEventListener('change', onChange)
+}
+
+function isWide(): boolean {
+  return query()?.matches ?? false
 }
 
 /** The header button that opens Lane. */
 export function LaneButton() {
-  const { open, setOpen, buttonRef } = useLane()
+  const { open, setOpen, buttonRef } = useLaneOpen()
   return (
     <button
       ref={buttonRef}
@@ -430,7 +440,7 @@ function Chat() {
   }, [progress])
 
   // Leaving for a car on a phone: the full-screen panel would cover it.
-  const onOpen = wide ? undefined : () => setOpen(false)
+  const onOpen = useMemo(() => (wide ? undefined : () => setOpen(false)), [wide, setOpen])
   const starters = vehicleId ? ['Is this car a good buy?', ...STARTERS.slice(0, 2)] : STARTERS
 
   return (
@@ -471,7 +481,8 @@ function Chat() {
   )
 }
 
-function TurnView({ turn, onOpen }: { turn: Turn; onOpen?: () => void }) {
+// Memoised: while an answer streams in, only its own turn re-renders, not every earlier one.
+const TurnView = memo(function TurnView({ turn, onOpen }: { turn: Turn; onOpen?: () => void }) {
   if (turn.role === 'buyer') {
     return (
       <li className="flex justify-end">
@@ -515,7 +526,7 @@ function TurnView({ turn, onOpen }: { turn: Turn; onOpen?: () => void }) {
         ))}
     </li>
   )
-}
+})
 
 /** Screen readers hear each finished answer once, not every word as it streams in. */
 function Announcer({ turn }: { turn: Turn | undefined }) {

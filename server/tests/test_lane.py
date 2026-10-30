@@ -288,7 +288,7 @@ def test_a_reply_streams_steps_and_text_then_checked_picks(lane_client: LaneClie
     client = lane_client(scenario)
     events = ask(client, "An SUV please")
 
-    assert events[0] == ("step", {"type": "step", "label": "Searching the run list"})
+    assert events[0] == ("step", {"type": "step", "label": "Searching the inventory"})
     streamed = "".join(data["delta"] for event, data in events if event == "text")
     assert streamed == 'Two "SUVs" worth a look.\nBoth live.'
     event, reply = final(events)
@@ -318,7 +318,7 @@ def test_the_search_link_is_only_given_for_the_search_the_picks_came_from(
     lane_client: LaneClient,
 ) -> None:
     client = lane_client()
-    # The tool's search is the run list's query: the first three are what Lane is shown.
+    # The tool's search is the inventory's query: the first three are what Lane is shown.
     everything = [
         v["id"] for v in client.get("/api/vehicles", params={"page_size": 10}).json()["items"]
     ]
@@ -761,7 +761,7 @@ def test_error_names_and_versions() -> None:
     assert parse_version("nothing") is None
 
 
-def test_search_arguments_are_checked_like_the_run_list() -> None:
+def test_search_arguments_are_checked_like_the_inventory() -> None:
     assert search_query({"make": ["Ford"], "limit": 3}).page_size == 3
     with pytest.raises(ToolError, match="limit"):
         search_query({"limit": 500})

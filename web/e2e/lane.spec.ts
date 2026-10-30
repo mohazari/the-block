@@ -25,7 +25,7 @@ test('a buyer asks Lane for a car and opens its pick', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1, name })).toBeVisible()
   await expect(lane).toBeVisible()
 
-  // The search behind the pick opens in the run list.
-  await lane.getByRole('link', { name: 'Show this search in the run list' }).click()
+  // The search behind the pick opens in the inventory.
+  await lane.getByRole('link', { name: 'Show this search in the inventory' }).click()
   await expect(page).toHaveURL(/status=live/)
 })

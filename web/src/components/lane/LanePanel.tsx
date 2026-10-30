@@ -28,7 +28,7 @@ import { cn } from '../../lib/cn'
 import { formatClockTime } from '../../lib/format'
 import { SelectField } from '../SelectField'
 import { LanePickCard } from './LanePickCard'
-import { runListUrl, useLane, useLaneOpen, type Turn } from './laneState'
+import { inventoryUrl, useLane, useLaneOpen, type Turn } from './laneState'
 
 const WIDE = '(min-width: 80rem)'
 /** The server's limit on a message (LaneMessage.text in server/app/lane/schemas.py). */
@@ -272,7 +272,7 @@ function SignIn({ status }: { status: LaneStatus }) {
     <div className="space-y-4 p-4 text-sm">
       <p>
         Tell Lane what you're after (budget, body style, mileage, when the auction should close) and
-        it picks the cars in today's run list that fit, with the reason for each.
+        it picks the cars in today's inventory that fit, with the reason for each.
       </p>
       <p className="text-ink-muted">
         Lane answers with your ChatGPT account. Sign in once; it stays signed in on this computer.
@@ -514,8 +514,8 @@ const TurnView = memo(function TurnView({ turn, onOpen }: { turn: Turn; onOpen?:
         </ul>
       )}
       {turn.search && turn.picks.length > 0 && (
-        <Link to={runListUrl(turn.search)} onClick={onOpen} className="link-action inline-block">
-          Show this search in the run list
+        <Link to={inventoryUrl(turn.search)} onClick={onOpen} className="link-action inline-block">
+          Show this search in the inventory
         </Link>
       )}
       {turn.problem &&

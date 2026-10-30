@@ -178,10 +178,10 @@ describe('VehicleDetailPage', () => {
     )
     renderRoute('/vehicles/nope')
     expect(
-      await screen.findByRole('heading', { name: 'This vehicle isn’t on the run list' }),
+      await screen.findByRole('heading', { name: 'This vehicle isn’t in the inventory' }),
     ).toBeInTheDocument()
     await waitFor(() =>
-      expect(screen.getByRole('link', { name: 'Back to the run list' })).toHaveAttribute(
+      expect(screen.getByRole('link', { name: 'Back to the inventory' })).toHaveAttribute(
         'href',
         '/',
       ),

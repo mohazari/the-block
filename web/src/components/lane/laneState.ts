@@ -10,7 +10,7 @@ export type Turn =
       id: string
       role: 'lane'
       text: string
-      /** What Lane did on the way, e.g. "Searching the run list". */
+      /** What Lane did on the way, e.g. "Searching the inventory". */
       steps: string[]
       picks: LanePick[]
       search: Search | null
@@ -90,8 +90,8 @@ export function useLane(): LaneState {
   return { ...useLaneOpen(), ...chat }
 }
 
-/** The run list's URL for Lane's search: the same filters, so the buyer can browse them all. */
-export function runListUrl(search: Search): string {
+/** The inventory's URL for Lane's search: the same filters, so the buyer can browse them all. */
+export function inventoryUrl(search: Search): string {
   const params = toSearchParams(search)
   return params.size > 0 ? `/?${params}` : '/'
 }

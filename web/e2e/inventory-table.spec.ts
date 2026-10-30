@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('on a wide screen the run list is a table: text columns, then figures, evenly spaced', async ({
+test('on a wide screen the inventory is a table: text columns, then figures, evenly spaced', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1920, height: 1080 })

@@ -61,7 +61,7 @@ MAX_CONVERSATIONS = 50
 LaneEvent = LaneStep | LaneText | LaneReply | LaneProblem
 
 STEP_LABELS = {
-    "search_vehicles": "Searching the run list",
+    "search_vehicles": "Searching the inventory",
     "get_vehicle": "Reading the condition report",
     "my_activity": "Checking your bids and watchlist",
 }
@@ -622,7 +622,7 @@ class Lane:
 
     @staticmethod
     def _search_behind(conversation: Conversation, picks: list[LanePick]) -> dict[str, Any] | None:
-        """The search the picks came from, for "see these in the run list": only when its
+        """The search the picks came from, for "see these in the inventory": only when its
         results hold every pick (Lane may have searched again since, for something else)."""
         last = conversation.last_search
         if not picks or last is None:

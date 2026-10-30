@@ -54,7 +54,7 @@ export function InventoryPage() {
         <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
           <div>
             <h1 id="inventory-heading" className="text-2xl font-semibold tracking-tight">
-              Run list
+              Inventory
             </h1>
             <p className="text-ink-muted text-sm" aria-live="polite">
               {data ? plural(data.total, 'vehicle') : 'Loading vehicles…'}
@@ -79,7 +79,7 @@ export function InventoryPage() {
             <RowSkeletons />
           ) : inventory.isError && !data ? (
             <Notice
-              title="Couldn't load the run list"
+              title="Couldn't load the inventory"
               body={inventory.error.message}
               action={{ label: 'Try again', onClick: () => void inventory.refetch() }}
             />

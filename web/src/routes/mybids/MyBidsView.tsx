@@ -125,7 +125,7 @@ function NothingYet() {
           </p>
         </div>
         <Link to="/" className="btn btn-primary">
-          Browse the run list
+          Browse the inventory
         </Link>
       </div>
       {vehicles.length > 0 && (

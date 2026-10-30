@@ -203,7 +203,7 @@ describe('Lane', () => {
     const { sent } = serve({
       reply: () =>
         eventStream([
-          { type: 'step', label: 'Searching the run list' },
+          { type: 'step', label: 'Searching the inventory' },
           { type: 'text', delta: 'One SUV ' },
           { type: 'text', delta: 'fits.' },
           {
@@ -225,7 +225,7 @@ describe('Lane', () => {
     expect(conversation(lane).getByText('One SUV fits.')).toBeInTheDocument()
     expect(within(card).getByText('Low kilometres, reserve met.')).toBeInTheDocument()
     expect(within(card).getByRole('link')).toHaveAttribute('href', '/vehicles/veh-9')
-    expect(lane.getByRole('link', { name: 'Show this search in the run list' })).toHaveAttribute(
+    expect(lane.getByRole('link', { name: 'Show this search in the inventory' })).toHaveAttribute(
       'href',
       '/?body_style=SUV&price_max=30000',
     )
@@ -328,14 +328,14 @@ describe('Lane', () => {
   })
 
   it('stops an answer on request', async () => {
-    const stream = eventStream([{ type: 'step', label: 'Searching the run list' }], true)
+    const stream = eventStream([{ type: 'step', label: 'Searching the inventory' }], true)
     const onStop = vi.fn(() => stream.close())
     serve({ reply: () => stream.response, onStop })
     renderRoute('/')
     const lane = await openLane()
 
     await userEvent.type(await lane.findByRole('textbox', { name: 'Message Lane' }), 'Hi{Enter}')
-    expect(await lane.findByText('Searching the run list…')).toBeInTheDocument()
+    expect(await lane.findByText('Searching the inventory…')).toBeInTheDocument()
     await userEvent.click(lane.getByRole('button', { name: 'Stop answering' }))
     expect(onStop).toHaveBeenCalled()
     await waitFor(() => expect(conversation(lane).getByText('Stopped.')).toBeInTheDocument())
@@ -430,7 +430,7 @@ describe('Lane', () => {
 
   it('never leaves an answer spinning when the stream ends without one', async () => {
     serve({
-      reply: () => eventStream([{ type: 'step', label: 'Searching the run list' }]).response,
+      reply: () => eventStream([{ type: 'step', label: 'Searching the inventory' }]).response,
     })
     renderRoute('/')
     const lane = await openLane()
@@ -442,13 +442,13 @@ describe('Lane', () => {
   })
 
   it('stops the answer when "New chat" is pressed while Lane is answering', async () => {
-    const stream = eventStream([{ type: 'step', label: 'Searching the run list' }], true)
+    const stream = eventStream([{ type: 'step', label: 'Searching the inventory' }], true)
     const onStop = vi.fn()
     serve({ reply: () => stream.response, onStop })
     renderRoute('/')
     const lane = await openLane()
     await userEvent.type(await lane.findByRole('textbox', { name: 'Message Lane' }), 'Hi{Enter}')
-    expect(await lane.findByText('Searching the run list…')).toBeInTheDocument()
+    expect(await lane.findByText('Searching the inventory…')).toBeInTheDocument()
     await userEvent.click(lane.getByRole('button', { name: 'New chat' }))
     await waitFor(() => expect(onStop).toHaveBeenCalled())
     stream.close() // the old answer's end arrives late: it mustn't show in the new chat

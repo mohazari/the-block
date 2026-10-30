@@ -4,15 +4,15 @@ The buyer side of a live online car auction, built for the [OPENLANE coding chal
 Dealers browse 200 vehicles, check their condition, and bid. Prices change live as other
 (simulated) dealers bid, and you're told the moment someone outbids you.
 
-![Run list](docs/screenshots/run-list.png)
+![Inventory](docs/screenshots/inventory.png)
 
-| Vehicle page                                                                      | On a phone (dark theme)                                     |
-| --------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| ![Vehicle page with a salvage-title warning](docs/screenshots/vehicle-detail.png) | ![Run list on a phone](docs/screenshots/phone-run-list.png) |
+| Vehicle page                                                                      | On a phone (dark theme)                                       |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| ![Vehicle page with a salvage-title warning](docs/screenshots/vehicle-detail.png) | ![Inventory on a phone](docs/screenshots/phone-inventory.png) |
 
-| Lane, the car-finding assistant                                            | Vehicle page on a phone                                        |
-| -------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| ![Lane suggesting two SUVs beside the run list](docs/screenshots/lane.png) | ![Vehicle page on a phone](docs/screenshots/phone-vehicle.png) |
+| Lane, the car-finding assistant                                             | Vehicle page on a phone                                        |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| ![Lane suggesting two SUVs beside the inventory](docs/screenshots/lane.png) | ![Vehicle page on a phone](docs/screenshots/phone-vehicle.png) |
 
 ## How to run
 
@@ -62,7 +62,7 @@ About 3–4 hours, as the brief asks.
 
 ## What I built
 
-- **Run list.** One row per vehicle, the way auction lists are read. Each row shows the car, its
+- **Inventory.** One row per vehicle, the way auction lists are read. Each row shows the car, its
   main specs, a condition light, the price, a live countdown and where you stand. On wide screens
   it becomes a table, and very wide screens get extra columns instead of empty space. You can
   search (make, model, trim, VIN, lot, city, dealer), filter, sort and page, and all of it is kept
@@ -79,9 +79,9 @@ About 3–4 hours, as the brief asks.
 - **My bids.** Your auctions grouped as Outbid, Winning, Watching and Finished, with a count of
   the ones that need you.
 - **Lane, the car-finding assistant.** Describe what you want ("an SUV under $30,000 with low
-  kilometres, closing today") and Lane picks up to four cars from the run list. Each comes with
+  kilometres, closing today") and Lane picks up to four cars from the inventory. Each comes with
   its live price, its countdown and why it fits, plus a link that opens the same search in the
-  run list. It knows which car you're looking at, can't bid for you, and only suggests cars that
+  inventory. It knows which car you're looking at, can't bid for you, and only suggests cars that
   exist. You choose the model and how hard it thinks.
 
 ## Stack
@@ -135,11 +135,11 @@ docs/     The challenge brief and screenshots
 - **API: 180 tests.** Auction rules, the time shift, search and filters, every reason a bid can
   be refused, double-sent bids, the 2-minute extension, Buy Now, two bids at once, live updates,
   and the simulated bidders. Lane is tested against a fake Codex, so no account is needed.
-- **Web: 191 tests.** Formatting, filters in the URL, the run list, the bid flow, live updates,
+- **Web: 191 tests.** Formatting, filters in the URL, the inventory, the bid flow, live updates,
   the connection shared between tabs, pop-up messages, My bids, and Lane's panel.
 - **Browser: 8 tests** on a desktop and a phone screen. Find a car, bid, go back to the list, see
   the bid in My bids. Also: filters on a phone, asking Lane for a car, eight tabs open at once, the
-  vehicle page layout at different widths, and the run-list table.
+  vehicle page layout at different widths, and the inventory table.
 - **By hand in a real browser** (desktop, dark mode, phone width). This caught, for example, a
   search for "ford" that also matched "Oxford White". Lane was tried with a real ChatGPT account.
 - **Accessibility:** all text is readable against its background (WCAG AA) in both themes, the

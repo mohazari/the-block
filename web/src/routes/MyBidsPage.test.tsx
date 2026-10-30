@@ -37,7 +37,7 @@ describe('MyBidsPage', () => {
     expect(within(screen.getByRole('link', { name: /My bids/ })).getByText('1')).toBeInTheDocument()
   })
 
-  it("takes 'Run list' on a car opened from here to the run list, not back here", async () => {
+  it("takes 'Back to inventory' on a car opened from here to the inventory, not back here", async () => {
     vi.stubGlobal(
       'fetch',
       stubApi((url) =>
@@ -54,17 +54,17 @@ describe('MyBidsPage', () => {
     )
     renderRoute('/my-bids')
     await userEvent.click(await screen.findByRole('link', { name: '2023 Ford F-150' }))
-    await userEvent.click(await screen.findByRole('link', { name: 'Run list' }))
-    expect(await screen.findByRole('heading', { name: 'Run list' })).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('link', { name: 'Back to inventory' }))
+    expect(await screen.findByRole('heading', { name: 'Inventory' })).toBeInTheDocument()
   })
 
-  it('invites you to the run list when there is nothing to show', async () => {
+  it('invites you to the inventory when there is nothing to show', async () => {
     serve([])
     renderRoute('/my-bids')
     expect(
       await screen.findByRole('heading', { name: 'No bids or watched vehicles yet' }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Browse the run list' })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: 'Browse the inventory' })).toHaveAttribute('href', '/')
   })
 
   it('suggests the auctions closing first when there is nothing to show', async () => {

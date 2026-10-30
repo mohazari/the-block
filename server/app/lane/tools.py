@@ -36,7 +36,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "type": "function",
         "name": "search_vehicles",
         "description": (
-            "Search the auction inventory with the run list's filters. Open auctions only "
+            "Search the auction inventory with the inventory page's filters. Open auctions only "
             "(live and upcoming) unless `status` says otherwise. Returns the total that match "
             "and the first `limit` vehicles in `sort` order."
         ),
@@ -144,7 +144,7 @@ def brief(vehicle: VehicleSummary, now: datetime, zone: tzinfo | None = None) ->
 
 
 def search_query(arguments: dict[str, Any]) -> InventoryQuery:
-    """The tool's arguments as the run list's own query; raises ToolError if they don't fit."""
+    """The tool's arguments as the inventory's own query; raises ToolError if they don't fit."""
     filters = {key: value for key, value in arguments.items() if key != "limit"}
     limit = arguments.get("limit", DEFAULT_SEARCH_LIMIT)
     if not isinstance(limit, int) or not 1 <= limit <= SEARCH_LIMIT:

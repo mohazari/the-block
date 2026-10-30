@@ -7,7 +7,9 @@ import { syncServerTime } from '../lib/serverClock'
 import { forgetSeen } from './auctionLedger'
 import { applyAuction, forgetOwnBidRefreshes } from './bidding'
 import { noteHello, noteStreamDown, onReseed, onStaleStream } from './dataEpoch'
+import { openEventStream } from './sharedStream'
 import { streamLive } from './streamGate'
+import { CLOSED, type Source } from './streamHub'
 import type { AuctionEvent } from './types'
 
 export type Connection = 'connecting' | 'live' | 'reconnecting'
@@ -45,7 +47,7 @@ export const useConnection = (): Connection =>
   )
 
 /**
- * One app-wide subscription to /api/events. Each bid is written straight into every cached copy
+ * One app-wide subscription to /api/events, shared by all of the app's tabs (sharedStream.ts). Each bid is written straight into every cached copy
  * of that vehicle (run list, detail page, My bids), so prices move everywhere without refetching.
  * The server sends `hello` on every (re)connect. Initial reads wait for the first one
  * (subscribe, then read); after a reconnect, everything on screen is refetched.
@@ -54,7 +56,7 @@ export function useAuctionEvents(): void {
   const queryClient = useQueryClient()
 
   useEffect(() => {
-    let source: EventSource | undefined
+    let source: Source | undefined
     let retry: ReturnType<typeof setTimeout> | undefined
     let silence: ReturnType<typeof setTimeout> | undefined
     let connectedBefore = false
@@ -65,7 +67,7 @@ export function useAuctionEvents(): void {
       source?.close()
       noteStreamDown()
       setConnection(connectedBefore ? 'reconnecting' : 'connecting')
-      connect()
+      connect({ fresh: true })
     }
 
     // Every event (and the server's ping) proves the stream is alive; silence restarts it.
@@ -101,8 +103,12 @@ export function useAuctionEvents(): void {
       }
     }
 
-    const connect = () => {
-      source = new EventSource(`/api/events?bidder_id=${encodeURIComponent(bidderId())}`)
+    // `fresh`: this tab found the stream dead or stale, so a shared one is restarted for every
+    // tab rather than joined as it is (sharedStream.ts).
+    const connect = ({ fresh = false } = {}) => {
+      source = openEventStream(`/api/events?bidder_id=${encodeURIComponent(bidderId())}`, {
+        fresh,
+      })
       expectMore()
       source.addEventListener('ping', () => expectMore())
       source.addEventListener('hello', (message) => {
@@ -138,10 +144,10 @@ export function useAuctionEvents(): void {
         setConnection(connectedBefore ? 'reconnecting' : 'connecting')
         // The browser retries dropped connections itself, but gives up for good on a bad
         // response (e.g. a 502 from a proxy). Then it's on us, or the page goes quietly stale.
-        if (source?.readyState === EventSource.CLOSED) {
+        if (source?.readyState === CLOSED) {
           source.close()
           clearTimeout(silence)
-          retry = setTimeout(connect, RECONNECT_MS)
+          retry = setTimeout(() => connect({ fresh: true }), RECONNECT_MS)
         }
       }
     }

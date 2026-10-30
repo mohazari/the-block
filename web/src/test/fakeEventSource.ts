@@ -33,6 +33,7 @@ export class FakeEventSource {
 
   /** Deliver a server event, as `event: <type>` + `data: <json>`. */
   emit(type: string, data: unknown): void {
+    this.readyState = FakeEventSource.OPEN // an event means the connection is up
     const event = new MessageEvent(type, { data: JSON.stringify(data) })
     this.listeners.get(type)?.forEach((listener) => listener(event))
   }

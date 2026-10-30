@@ -134,6 +134,8 @@ class Conversation:
     thread_id: str | None = None
     thread_generation: int = 0  # the Codex process the thread lives in (see CodexClient)
     turn_id: str | None = None
+    # Stop pressed while a turn was being prepared (no turn id yet): honoured once it has one.
+    stop_requested: bool = False
     last_search: dict[str, Any] | None = None
     zone: tzinfo | None = None  # the buyer's, from their latest message
     choice: dict[str, str] = field(default_factory=dict)  # model and effort of the latest turn
@@ -184,6 +186,7 @@ class Lane:
         self._problem: str | None = None
         # An empty working directory: there is nothing on disk for Codex to look at.
         self._workdir = Path(tempfile.mkdtemp(prefix="lane-"))
+        self._background: set[asyncio.Task[None]] = set()
         client.handle_server_request = self._serve_request
         client.on_account_event(self._account_event)
 
@@ -355,12 +358,10 @@ class Lane:
         conversation = self._conversations.get(conversation_id)
         if conversation is None or conversation.bidder_id != bidder_id:
             return
-        if conversation.thread_id and conversation.turn_id and self._client.running:
-            with contextlib.suppress(CodexError):
-                await self._client.request(
-                    "turn/interrupt",
-                    {"threadId": conversation.thread_id, "turnId": conversation.turn_id},
-                )
+        if conversation.thread_id and conversation.turn_id:
+            await self._interrupt(conversation.thread_id, conversation.turn_id)
+        elif conversation.lock.locked():
+            conversation.stop_requested = True  # the turn hasn't started yet
 
     async def check_choice(self, model: str | None, effort: str | None) -> str | None:
         """Why the model/effort pair can't be used, or None if it can."""
@@ -437,6 +438,7 @@ class Lane:
     async def _turn(
         self, conversation: Conversation, message: LaneMessage
     ) -> AsyncIterator[LaneEvent]:
+        conversation.stop_requested = False
         if not await self._ready():
             yield LaneProblem(code="lane_unavailable", message=self._problem or FAILED[1])
             return
@@ -461,16 +463,40 @@ class Lane:
             if value
         }
         params.update(conversation.choice)
+        if conversation.stop_requested:
+            yield LaneProblem(code="lane_stopped", message="Stopped.")
+            return
 
         async with self._client.thread_events(thread_id) as events:
-            started = await self._client.request("turn/start", params)
-            turn_id = conversation.turn_id = str(started["turn"]["id"])
+            turn_id = await self._start_turn(conversation, thread_id, params)
+            if conversation.stop_requested:
+                await self._interrupt(thread_id, turn_id)  # ends as interrupted below
             try:
                 async for event in self._follow(conversation, events, thread_id, turn_id):
                     yield event
             finally:
                 if conversation.turn_id == turn_id:
                     conversation.turn_id = None
+
+    async def _start_turn(
+        self, conversation: Conversation, thread_id: str, params: dict[str, Any]
+    ) -> str:
+        """Starts a turn and records its id. If the buyer goes away before Codex answers, the
+        turn is interrupted as soon as its id arrives, rather than left running unwatched."""
+        start = asyncio.ensure_future(self._client.request("turn/start", params))
+        try:
+            started = await asyncio.shield(start)
+        except asyncio.CancelledError:
+            self._background.add(task := asyncio.create_task(self._abandon(start, thread_id)))
+            task.add_done_callback(self._background.discard)
+            raise
+        turn_id = conversation.turn_id = str(started["turn"]["id"])
+        return turn_id
+
+    async def _abandon(self, start: asyncio.Future[dict[str, Any]], thread_id: str) -> None:
+        with contextlib.suppress(CodexError, asyncio.CancelledError):
+            started = await start
+            await self._interrupt(thread_id, str(started["turn"]["id"]))
 
     async def _follow(
         self,
@@ -598,13 +624,15 @@ class Lane:
             **conversation.choice,
         }
         text = ""
+        turn_id: str | None = None
+        completed = False
         try:
             async with self._client.thread_events(thread_id) as events:
-                started = await self._client.request("turn/start", params)
-                turn_id = conversation.turn_id = str(started["turn"]["id"])
+                turn_id = await self._start_turn(conversation, thread_id, params)
                 while True:
                     method, event = await asyncio.wait_for(events.get(), TURN_IDLE_SECONDS)
                     if method == "lane/disconnected":
+                        completed = True
                         return []
                     item = event.get("item") or {}
                     if method == "item/completed" and item.get("type") == "agentMessage":
@@ -613,10 +641,17 @@ class Lane:
                         method == "turn/completed"
                         and (event.get("turn") or {}).get("id") == turn_id
                     ):
+                        completed = True
                         break
         except (CodexError, TimeoutError) as exc:
             logger.warning("Lane couldn't recover its picks: %s", exc)
             return []
+        finally:
+            # Timed out, or the buyer left mid-repair: don't let the turn run on their plan.
+            if turn_id is not None and not completed:
+                await self._interrupt(thread_id, turn_id)
+            if turn_id is not None and conversation.turn_id == turn_id:
+                conversation.turn_id = None
         return parse_reply(text).picks if text else []
 
     # Requests from Codex ----------------------------------------------------------------------

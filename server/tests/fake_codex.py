@@ -8,7 +8,9 @@ It speaks the same JSON lines and plays a scenario from the JSON file in FAKE_CO
 
 Each turn is a list of steps, played in order: `tool` (call one of Lane's tools), `reply` (stream
 the final JSON), `text` (a final message that isn't JSON), `fail` (a turn error, by Codex's error
-name), `forbidden` (start a non-Lane tool item) or `hang` (wait to be interrupted). Without a
+name), `forbidden` (start a non-Lane tool item; `complete_after` delays its completion), `sleep`
+(seconds) or `hang` (wait to be interrupted). `turn_start_delay` (top level) slows turn/start.
+The scenario is read when the fake starts, so a restarted fake picks up a rewritten file. Without a
 scenario, every turn searches the inventory and replies with the first vehicle found.
 
 Every message it receives is appended to FAKE_CODEX_LOG, when set, for tests to inspect.
@@ -125,6 +127,7 @@ class Fake:
         if method == "thread/start":
             return {"thread": {"id": f"thread-{self.turn_index}"}, "model": "fake-large"}
         if method == "turn/start":
+            await asyncio.sleep(SCENARIO.get("turn_start_delay", 0))  # a slow model start
             turn_id = f"turn-{self.turn_index}"
             turns: list[list[dict[str, Any]]] = SCENARIO.get("turns", [])
             steps = turns[self.turn_index] if self.turn_index < len(turns) else DEFAULT_TURN
@@ -192,8 +195,11 @@ class Fake:
                 item = {"type": step["forbidden"], "id": "bad-1", "status": "inProgress"}
                 self.notify("item/started", {**ids, "item": item})
                 await self.interrupts[turn_id].wait()
+                await asyncio.sleep(step.get("complete_after", 0))  # a late completion
                 complete("interrupted")
                 return
+            elif "sleep" in step:
+                await asyncio.sleep(step["sleep"])
             elif "hang" in step:
                 await self.interrupts[turn_id].wait()
                 complete("interrupted")

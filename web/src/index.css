@@ -89,6 +89,8 @@
 
   /* Page gutters grow with the screen: 16px on a phone, 48px on a large monitor. */
   --gutter: clamp(16px, 2.5vw, 48px);
+  /* Lane's panel, docked beside the page on wide screens. */
+  --lane-width: clamp(22rem, 28vw, 30rem);
 }
 
 /*
@@ -128,10 +130,13 @@
 }
 
 @theme inline {
-  /* Two breakpoints past Tailwind's 2xl, for the run list's extra columns on wide monitors. In
-     rem like the built-in ones, so the cascade orders them after xl and 2xl. */
-  --breakpoint-3xl: 100rem; /* 1600px */
-  --breakpoint-4xl: 118.75rem; /* 1900px */
+  /* Run-list rows (VehicleRow) lay out by the width of their list: these are the widths the
+     list has on 640, 1280, 1600 and 1900px screens, less its border. In rem like Tailwind's own
+     sizes, so the cascade orders them smallest first. */
+  --container-row-split: 37.5rem;
+  --container-row-table: 58.5rem;
+  --container-row-wide: 75.5rem;
+  --container-row-widest: 91.5rem;
 
   --font-sans: 'Poppins', ui-sans-serif, system-ui, sans-serif;
   --font-figures: 'Block Figures', 'Poppins', ui-sans-serif, system-ui, sans-serif;

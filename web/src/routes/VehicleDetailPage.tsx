@@ -15,12 +15,25 @@ import { Gallery } from './vehicle/Gallery'
 import { SpecSheet } from './vehicle/SpecSheet'
 
 /**
- * Desktop columns, shared with the loading skeleton so nothing moves when the data lands. The
- * column about the car (photos, condition, specs, seller) stops at 60rem, so a wide monitor
- * doesn't blow the picture up past the condition report (uncapped at 1920px, the picture alone
- * filled most of the first screen); the bid column keeps to the right edge, under Watch.
+ * The desktop layout, shared with the loading skeleton so nothing moves when the data lands.
+ *
+ * From 1024px: everything about the car in one column (photos, condition, specs and seller),
+ * the bid panel in a column on the right, sticky. With 88rem of room (a 1536px screen, or a wider
+ * one with Lane docked) the condition report moves up between the photos and the bid panel, so
+ * the price and what's wrong with the car share the first screen, and specs and seller run full
+ * width under both: no empty band on a wide monitor. The switch is a container query on the
+ * page's own width, so docking Lane brings the condition report back under the photos.
+ * The last row is 1fr: the tall bid column's extra height lands there, not as gaps between
+ * sections.
  */
-const COLUMNS = 'lg:grid-cols-[minmax(0,60rem)_clamp(22rem,26vw,27.5rem)] lg:justify-between'
+const LAYOUT = {
+  grid: 'grid items-start gap-x-8 gap-y-10 2xl:gap-x-12 lg:grid-cols-[minmax(0,1fr)_clamp(22rem,26vw,27.5rem)] lg:grid-rows-[auto_auto_1fr] @min-[88rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_clamp(22rem,24vw,27.5rem)] @min-[88rem]:grid-rows-[auto_1fr]',
+  photos: 'min-w-0 lg:col-start-1 lg:row-start-1',
+  bid: 'lg:col-start-2 lg:row-span-3 lg:row-start-1 @min-[88rem]:col-start-3 @min-[88rem]:row-span-2',
+  condition:
+    'min-w-0 lg:col-start-1 lg:row-start-2 @min-[88rem]:col-start-2 @min-[88rem]:row-start-1',
+  details: 'min-w-0 lg:col-start-1 lg:row-start-3 @min-[88rem]:col-span-2 @min-[88rem]:row-start-2',
+}
 
 export function VehicleDetailPage() {
   const { vehicleId = '' } = useParams()
@@ -61,34 +74,24 @@ function VehicleDetailContent({ vehicleId }: { vehicleId: string }) {
     <article aria-labelledby="vehicle-heading" className="pb-24 lg:pb-0">
       <BackLink />
       <Header vehicle={vehicle} />
-      {/* One bid panel, placed by the grid: after the photos on phones, a sticky column on
-          desktop. Everything about the car reads down one column at every width: photos, then
-          its condition, then specs and seller. The last row is 1fr: the tall bid column's extra
-          height lands there, not as gaps between sections. */}
-      <div
-        className={cn(
-          'mt-6 grid items-start gap-x-8 gap-y-10 lg:grid-rows-[auto_auto_1fr] 2xl:gap-x-12',
-          COLUMNS,
-        )}
-      >
-        <div className="min-w-0 lg:col-start-1 lg:row-start-1">
-          <Gallery vehicle={vehicle} />
-        </div>
-        <aside
-          aria-label="Bidding"
-          id="bid"
-          className="scroll-mt-20 lg:col-start-2 lg:row-span-3 lg:row-start-1"
-        >
-          <div className="lg:sticky lg:top-20">
-            <BidPanel vehicle={vehicle} />
+      {/* One bid panel, placed by the grid: after the photos on phones, a column on desktop. */}
+      <div className="@container mt-6">
+        <div className={LAYOUT.grid}>
+          <div className={LAYOUT.photos}>
+            <Gallery vehicle={vehicle} />
           </div>
-        </aside>
-        <div className="min-w-0 lg:col-start-1 lg:row-start-2">
-          <ConditionReport vehicle={vehicle} />
-        </div>
-        <div className="min-w-0 space-y-10 lg:col-start-1 lg:row-start-3">
-          <SpecSheet vehicle={vehicle} />
-          <Seller vehicle={vehicle} />
+          <aside aria-label="Bidding" id="bid" className={cn('scroll-mt-20', LAYOUT.bid)}>
+            <div className="lg:sticky lg:top-20">
+              <BidPanel vehicle={vehicle} />
+            </div>
+          </aside>
+          <div className={LAYOUT.condition}>
+            <ConditionReport vehicle={vehicle} />
+          </div>
+          <div className={cn('space-y-10', LAYOUT.details)}>
+            <SpecSheet vehicle={vehicle} />
+            <Seller vehicle={vehicle} />
+          </div>
         </div>
       </div>
       <MobileBidBar vehicle={vehicle} />
@@ -202,9 +205,19 @@ function DetailSkeleton() {
     <div aria-busy="true" aria-label="Loading vehicle">
       <div className="bg-surface-sunk h-4 w-24 rounded" />
       <div className="bg-surface-sunk mt-4 h-9 w-72 rounded" />
-      <div className={cn('mt-6 grid gap-8 2xl:gap-x-12', COLUMNS)}>
-        <div className="bg-surface-sunk aspect-[40/17] rounded-[var(--radius-panel)]" />
-        <div className="bg-surface-sunk h-96 rounded-[var(--radius-panel)]" />
+      <div className="@container mt-6">
+        <div className={LAYOUT.grid}>
+          <div
+            className={cn(
+              LAYOUT.photos,
+              'bg-surface-sunk aspect-[40/17] rounded-[var(--radius-panel)]',
+            )}
+          />
+          <div className={cn(LAYOUT.bid, 'bg-surface-sunk h-96 rounded-[var(--radius-panel)]')} />
+          <div
+            className={cn(LAYOUT.condition, 'bg-surface-sunk h-40 rounded-[var(--radius-panel)]')}
+          />
+        </div>
       </div>
     </div>
   )

@@ -69,6 +69,7 @@ export function FilterPanel({ query, data, update, clearCount }: Props) {
         onChange={(make) => update({ make })}
         collapseAfter={6}
         searchNoun="makes"
+        clearCount={clearCount}
       />
 
       <CheckboxGroup
@@ -121,6 +122,7 @@ export function FilterPanel({ query, data, update, clearCount }: Props) {
         onChange={(province) => update({ province })}
         collapseAfter={4}
         searchNoun="provinces"
+        clearCount={clearCount}
       />
 
       <CheckboxGroup
@@ -163,6 +165,7 @@ function CheckboxGroup({
   hint,
   order,
   searchNoun,
+  clearCount = 0,
 }: {
   legend: string
   name: ListFilter
@@ -176,9 +179,16 @@ function CheckboxGroup({
   order?: string[]
   /** Adds a search box over a long list ("makes" → "Search makes"). */
   searchNoun?: string
+  /** Bumped by "Clear all": the search box empties with the filters. */
+  clearCount?: number
 }) {
   const [expanded, setExpanded] = useState(false)
   const [search, setSearch] = useState('')
+  const [searchCleared, setSearchCleared] = useState(clearCount)
+  if (searchCleared !== clearCount) {
+    setSearchCleared(clearCount)
+    setSearch('')
+  }
   const searchId = useId()
   const sorted = [...values].sort((a, b) =>
     order
@@ -187,8 +197,10 @@ function CheckboxGroup({
   )
   // While searching, the list is the matches (plus anything already ticked); otherwise it may be
   // collapsed. Selected values always stay visible either way.
-  const term = search.trim().toLocaleLowerCase()
   const searchable = Boolean(searchNoun) && values.length > (collapseAfter ?? 0)
+  // Other filters can shrink the list until the box goes away: its text then stops filtering,
+  // or values would stay hidden with no box left to clear it from.
+  const term = searchable ? search.trim().toLocaleLowerCase() : ''
   const visible = term
     ? sorted.filter(
         (facet) =>

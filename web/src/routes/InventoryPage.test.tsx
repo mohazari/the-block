@@ -153,6 +153,48 @@ describe('InventoryPage', () => {
     expect(rail.getByRole('status')).toHaveTextContent('No makes match “zzz”.')
   })
 
+  it('drops a make search when other filters shrink the list until its box goes away', async () => {
+    const many = ['Audi', 'BMW', 'Chevrolet', 'Ford', 'GMC', 'Honda', 'Kia', 'Toyota']
+    const few = ['BMW', 'Ford', 'Toyota']
+    const api = stubApi((url) =>
+      url.pathname === '/api/vehicles'
+        ? vehicleList([vehicle()], {
+            facets: {
+              make: (url.searchParams.has('province') ? few : many).map((value) => ({
+                value,
+                count: 3,
+              })),
+            },
+          })
+        : undefined,
+    )
+    vi.stubGlobal('fetch', api.fetch)
+    const { router } = renderRoute('/')
+    const rail = within(await screen.findByRole('complementary', { name: 'Filters' }))
+    await userEvent.type(await rail.findByRole('searchbox', { name: 'Search makes' }), 'for')
+    expect(rail.queryByRole('checkbox', { name: /BMW/ })).not.toBeInTheDocument()
+
+    // Another filter leaves too few makes for a search box: the term must stop hiding them.
+    await router.navigate('/?province=Quebec')
+    expect(await rail.findByRole('checkbox', { name: /BMW/ })).toBeInTheDocument()
+    expect(rail.getByRole('checkbox', { name: /Toyota/ })).toBeInTheDocument()
+    expect(rail.queryByRole('searchbox', { name: 'Search makes' })).not.toBeInTheDocument()
+  })
+
+  it('empties the make search on "Clear all"', async () => {
+    const makes = ['Audi', 'BMW', 'Chevrolet', 'Ford', 'GMC', 'Honda', 'Kia', 'Toyota']
+    serve(
+      vehicleList([vehicle()], { facets: { make: makes.map((value) => ({ value, count: 3 })) } }),
+    )
+    renderRoute('/?make=Ford')
+    const rail = within(await screen.findByRole('complementary', { name: 'Filters' }))
+    const box = await rail.findByRole('searchbox', { name: 'Search makes' })
+    await userEvent.type(box, 'for')
+    await userEvent.click(rail.getByRole('button', { name: 'Clear all' }))
+    expect(box).toHaveValue('')
+    expect(rail.getByRole('checkbox', { name: /BMW/ })).toBeInTheDocument()
+  })
+
   it('shows the range of the page it is on', async () => {
     serve(vehicleList([vehicle()], { total: 30 }))
     renderRoute('/?page=2')

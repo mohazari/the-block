@@ -33,7 +33,8 @@ export function AuctionClock({ auction, className, labelClassName }: Props) {
   const remaining = Date.parse(auction.ends_at) - now
   return (
     <span className={cn(remaining < ENDING_SOON_MS && 'text-caution font-semibold', className)}>
-      <span className={labelClassName}>Ends in </span>
+      {/* The space sits outside the label, so a visually hidden label still reads "Ends in 3h". */}
+      <span className={labelClassName}>Ends in</span>{' '}
       <time dateTime={auction.ends_at} className="tabular">
         {formatDuration(remaining)}
       </time>

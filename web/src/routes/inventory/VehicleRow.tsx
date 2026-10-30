@@ -32,13 +32,13 @@ const EDGE = {
  * price, time) right, so like alignments sit together: a right-aligned figure against
  * left-aligned text reads as one phrase. The reserve sits under the price it qualifies.
  *
- *   row-table:  128 + vehicle + 120 + 112 + 136 + 40 (+ 5 × 32)    vehicle ≥ 240px
- *   row-wide:   + odometer 104 (+ 32)                              vehicle ≥ 376px
- *   row-widest: + location 144 (+ 32)                              vehicle ≥ 456px
- * The time column fits "Opens Thu 2:00 p.m." for upcoming auctions.
+ *   row-table:  128 + vehicle + 120 + 112 + 144 + 40 (+ 5 × 32, + 24 row padding)  vehicle ≥ 208px
+ *   row-wide:   + odometer 104 (+ 32)                                              vehicle ≥ 344px
+ *   row-widest: + location 144 (+ 32)                                              vehicle ≥ 424px
+ * The time column fits "Opens Thu 12:00 p.m." for upcoming auctions.
  */
 const TABLE_COLUMNS =
-  '@row-table:grid-cols-[8rem_minmax(0,1fr)_7.5rem_7rem_8.5rem_2.5rem] @row-table:gap-x-8 @row-wide:grid-cols-[8rem_minmax(0,1fr)_7.5rem_6.5rem_7rem_8.5rem_2.5rem] @row-widest:grid-cols-[8rem_minmax(0,1fr)_7.5rem_9rem_6.5rem_7rem_8.5rem_2.5rem]'
+  '@row-table:grid-cols-[8rem_minmax(0,1fr)_7.5rem_7rem_9rem_2.5rem] @row-table:gap-x-8 @row-wide:grid-cols-[8rem_minmax(0,1fr)_7.5rem_6.5rem_7rem_9rem_2.5rem] @row-widest:grid-cols-[8rem_minmax(0,1fr)_7.5rem_9rem_6.5rem_7rem_9rem_2.5rem]'
 
 /** Column labels over the run list's table layout (wide lists only). */
 export function VehicleRowHeader() {
@@ -76,18 +76,6 @@ export function VehicleRow({ vehicle, note }: { vehicle: VehicleSummary; note?: 
   const hasBids = auction.current_bid !== null
   const name = vehicleName(vehicle)
   const light = conditionLight(vehicle)
-  // Rendered location first, then odometer: text columns before figures (see TABLE_COLUMNS).
-  const odometer = (
-    <p className="tabular @row-wide:block hidden text-right text-sm">
-      {formatKm(vehicle.odometer_km)}
-    </p>
-  )
-  const location = (
-    <p className="@row-widest:block hidden min-w-0 text-sm">
-      <span className="block truncate">{vehicle.city}</span>
-      <span className="text-ink-muted block truncate text-xs">{vehicle.province}</span>
-    </p>
-  )
 
   return (
     <article
@@ -118,9 +106,10 @@ export function VehicleRow({ vehicle, note }: { vehicle: VehicleSummary; note?: 
       {/* Right padding on phones keeps text clear of the floating watch button. */}
       <div className="@row-split:pr-0 @row-table:self-center @row-table:[grid-area:auto] min-w-0 self-end pr-10 [grid-area:id]">
         {/* In the table the trim joins the name line, to keep rows short. It sits beside the
-            heading, not in it, so the car's accessible name stays its name. */}
-        <div className="@row-table:flex min-w-0 items-baseline gap-1.5">
-          <h3 className="max-w-full shrink-0 truncate text-base leading-snug font-semibold">
+            heading, not in it, so the car's accessible name stays its name; when the line is
+            tight the trim gives way first. */}
+        <div className="@row-table:flex @row-table:gap-1.5 min-w-0 items-baseline">
+          <h3 className="min-w-0 truncate text-base leading-snug font-semibold">
             {/* Stretched link: the whole row opens the vehicle, with one link for screen readers. */}
             <Link
               to={`/vehicles/${vehicle.id}`}
@@ -130,11 +119,10 @@ export function VehicleRow({ vehicle, note }: { vehicle: VehicleSummary; note?: 
               {name}
             </Link>
           </h3>
-          <span className="text-ink-muted @row-table:block hidden min-w-0 truncate text-base">
+          <span className="text-ink-muted @row-table:text-base block min-w-0 shrink-[100] truncate text-sm">
             {vehicle.trim}
           </span>
         </div>
-        <p className="text-ink-muted @row-table:hidden truncate text-sm">{vehicle.trim}</p>
         <ul className="text-ink-muted @row-split:flex mt-1 hidden flex-wrap gap-x-3 text-sm">
           <li className="tabular @row-wide:hidden">{formatKm(vehicle.odometer_km)}</li>
           <li>{label(vehicle.drivetrain)}</li>
@@ -161,8 +149,14 @@ export function VehicleRow({ vehicle, note }: { vehicle: VehicleSummary; note?: 
         </span>
       </p>
 
-      {location}
-      {odometer}
+      <p className="@row-widest:block hidden min-w-0 text-sm">
+        <span className="block truncate">{vehicle.city}</span>
+        <span className="text-ink-muted block truncate text-xs">{vehicle.province}</span>
+      </p>
+
+      <p className="tabular @row-wide:block hidden text-right text-sm">
+        {formatKm(vehicle.odometer_km)}
+      </p>
 
       <div className="@row-split:self-end @row-split:text-right @row-table:self-center @row-table:[grid-area:auto] self-end [grid-area:money]">
         <p className="text-ink-faint @row-table:sr-only text-xs">

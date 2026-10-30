@@ -52,8 +52,8 @@ it off.
 
 - **Run list.** Dense rows, not a card grid, the way auction run lists are read. Each row shows
   the vehicle, key specs, a **condition light**, price, a live countdown, and your standing.
-  From 1280px it's a table with aligned columns, and wider monitors add columns (odometer,
-  reserve, location) instead of empty space. Search (make, model, trim, VIN, lot, city, dealer),
+  From 1280px it's a table with aligned, evenly spaced columns (the reserve under the price),
+  and wider monitors add columns (odometer, location) instead of empty space. Search (make, model, trim, VIN, lot, city, dealer),
   multi-select filters with live counts (searchable for makes and provinces), sorting, and
   pagination all live in the URL. Filters sit in a rail on desktop and a bottom sheet on phones.
 - **Vehicle detail.** Illustrated views in the car's real paint colour, a condition report that
@@ -134,9 +134,9 @@ The ones that shaped the product:
 - **Web: 146 Vitest tests.** Formatting and rules, the API client, the clock sync, URL filter
   state, the run list, the bid flow (two-step confirm, outbid recovery, amount pinning), live
   events through a fake `EventSource`, toasts, My bids, and Lane's panel.
-- **End to end: 6 Playwright tests** on desktop and a phone viewport. They find a car, bid,
+- **End to end: 7 Playwright tests** on desktop and a phone viewport. They find a car, bid,
   return to the filtered run list, and see the bid in My bids. They also cover the mobile filter
-  sheet, asking Lane for a car and opening its pick, and where the vehicle page puts the condition report at each width.
+  sheet, asking Lane for a car and opening its pick, where the vehicle page puts the condition report at each width, and the run-list table's columns.
 - **Manual QA in a real browser** (desktop, dark mode, 390px): found and fixed the search
   over-matching ("ford" matched "Oxford White"), filter checkboxes reordering under the cursor, a
   cropped illustration, and the animated price lingering on "$13,997". It also confirmed a real
